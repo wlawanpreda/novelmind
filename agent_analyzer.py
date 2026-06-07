@@ -1,0 +1,212 @@
+import os
+import json
+import sys
+import glob
+from typing import Dict, Any, Tuple
+from google import genai
+from google.genai import types
+
+# Load environment variables from .env file if it exists
+env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+if os.path.exists(env_path):
+    with open(env_path, "r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                os.environ[key.strip()] = val.strip().strip('"').strip("'")
+
+# Setup Gemini API Key
+API_KEY = os.environ.get("GEMINI_API_KEY")
+
+def parse_markdown_file(filepath: str) -> Tuple[Dict[str, Any], str]:
+    """Parse Obsidian markdown file and separate frontmatter from body content."""
+    with open(filepath, "r", encoding="utf-8") as f:
+        content = f.read()
+        
+    frontmatter = {}
+    body = content
+    
+    # Match YAML frontmatter
+    import re
+    match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
+    if match:
+        yaml_text = match.group(1)
+        body = match.group(2)
+        
+        # Simple YAML parser for key-value strings
+        for line in yaml_text.splitlines():
+            if ":" in line:
+                key, val = line.split(":", 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                
+                # Check for tags list
+                if key == "tags":
+                    frontmatter[key] = []
+                elif line.startswith("  - ") and "tags" in frontmatter:
+                    tag_val = line.replace("  - ", "").strip().strip('"').strip("'")
+                    frontmatter["tags"].append(tag_val)
+                else:
+                    frontmatter[key] = val
+                    
+    return frontmatter, body
+
+def update_markdown_file(filepath: str, frontmatter: Dict[str, Any], body: str):
+    """Write back frontmatter and updated body to the markdown file."""
+    yaml_lines = ["---"]
+    for k, v in frontmatter.items():
+        if k == "tags" and isinstance(v, list):
+            yaml_lines.append("tags:")
+            for tag in v:
+                yaml_lines.append(f"  - {tag}")
+        else:
+            yaml_lines.append(f'{k}: "{v}"')
+    yaml_lines.append("---\n")
+    
+    full_content = "\n".join(yaml_lines) + body
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(full_content)
+
+def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, Any]:
+    """Send novel data to Gemini to perform translation, market fit analysis and localization suggestion in JSON format."""
+    if not API_KEY:
+        raise ValueError("GEMINI_API_KEY is not set. Please set the environment variable first.")
+        
+    client = genai.Client(api_key=API_KEY)
+    
+    prompt = f"""
+คุณคือ "Chief AI Architect & Literary Strategist" ผู้เชี่ยวชาญด้านการวิเคราะห์ตลาดนิยายออนไลน์ระดับสากลและผู้เชี่ยวชาญด้าน Creative Localization
+
+หน้าที่ของคุณคือการวิเคราะห์เนื้อหานิยายดิบที่ดึงมาได้นี้ แล้วทำการแปลสกัดเนื้อหา วิเคราะห์ความคุ้มค่าเชิงธุรกิจสำหรับตลาดไทย และนำเสนอแนวทางการดัดแปลง/ดึงจุดเด่น (Inspired Concept) ที่ถูกกฎหมายและถูกจริตคนไทย
+
+ข้อมูลนิยายดิบ:
+- ชื่อเรื่อง: {frontmatter.get('title')}
+- แหล่งที่มา: {frontmatter.get('source')}
+- หมวดหมู่: {frontmatter.get('genre')}
+- ผู้เขียน: {frontmatter.get('author')}
+- เรื่องย่อ/เนื้อหาดิบ:
+{body}
+
+ให้ผลลัพธ์การวิเคราะห์ในรูปแบบ JSON เท่านั้น โดยมีโครงสร้างคีย์ดังนี้:
+{{
+  "thai_working_titles": ["ชื่อภาษาไทยที่น่าดึงดูดใจ 1", "ชื่อภาษาไทยที่น่าดึงดูดใจ 2"],
+  "localized_synopsis": "เรื่องย่อภาษาไทยที่มีการเกลาสำนวนวรรณศิลป์อย่างสละสลวยและน่าติดตาม",
+  "market_fit_score": 9, (คะแนน 1-10 เป็นตัวเลขเท่านั้น)
+  "market_fit_reasoning": "วิเคราะห์โอกาสทางธุรกิจและความนิยมของผู้อ่านชาวไทยต่อพล็อตแนวนี้โดยละเอียด",
+  "core_tropes": ["แนวพล็อตเด่น 1", "แนวพล็อตเด่น 2", "สูตรสำเร็จที่ดึงดูดใจ"],
+  "inspired_concept": "แนวทางการดัดแปลงใหม่ให้กลายเป็น Original IP ที่ไม่ละเมิดลิขสิทธิ์ และการปรับเปลี่ยน Setting ให้โดนใจคนไทย"
+}}
+"""
+    response = client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            response_mime_type="application/json",
+        ),
+    )
+    
+    try:
+        data = json.loads(response.text)
+        return data
+    except Exception as e:
+        print(f"[!] Error parsing JSON response: {response.text}")
+        raise e
+
+def process_scouting_pool(second_brain_dir: str):
+    """Scan the scouting pool for 'Scouted' novels and process them."""
+    scouting_pool_dir = os.path.join(second_brain_dir, "01_Scouting_Pool")
+    md_files = glob.glob(os.path.join(scouting_pool_dir, "*.md"))
+    
+    print(f"[*] Scanning {len(md_files)} files in Scouting Pool...")
+    
+    processed_count = 0
+    for filepath in md_files:
+        try:
+            frontmatter, body = parse_markdown_file(filepath)
+            
+            # Only process if status is 'Scouted'
+            if frontmatter.get("status") != "Scouted":
+                continue
+                
+            print(f"\n[*] Processing: {frontmatter.get('title')} ({frontmatter.get('source')})...")
+            
+            # Run AI Analysis (JSON)
+            analysis = analyze_novel_with_ai(frontmatter, body)
+            
+            # Format analysis as beautiful markdown to write back to the file
+            thai_titles_str = "\n".join([f"1. **{t}**" for t in analysis.get("thai_working_titles", [])])
+            tropes_str = "\n".join([f"- **{t}**" for t in analysis.get("core_tropes", [])])
+            
+            ai_analysis_md = f"""
+## 🇹🇭 บทวิเคราะห์ภาษาไทย (AI Literary Analysis)
+
+### 1. ชื่อเรื่องภาษาไทยที่แนะนำ (Thai Working Titles)
+{thai_titles_str}
+
+### 2. เรื่องย่อฉบับปรับปรุงบริบทไทย (Localized Synopsis)
+{analysis.get("localized_synopsis")}
+
+### 3. การประเมินตลาดและความคุ้มค่าเชิงพาณิชย์ (Market Viability)
+- **คะแนนความเหมาะสมของตลาด (Market Fit Score):** `{analysis.get("market_fit_score")}/10`
+- **บทวิเคราะห์ความต้องการเชิงลึก:** 
+  {analysis.get("market_fit_reasoning")}
+
+### 4. แกนพล็อตเด่นที่ต้องสกัด (Core Tropes & Hooks)
+{tropes_str}
+
+### 5. แนวทางการสร้างเรื่องใหม่ (Inspired Concept & Localization)
+{analysis.get("inspired_concept")}
+"""
+            
+            # Form updated body
+            new_body = f"""
+# {frontmatter.get('title')}
+
+## 📖 ข้อมูลพื้นฐาน (Basic Info)
+- **แหล่งที่มา:** [{frontmatter.get('source')}]({frontmatter.get('url')})
+- **ผู้เขียน:** {frontmatter.get('author')}
+- **หมวดหมู่:** {frontmatter.get('genre')}
+- **จำนวนตอนสะสม:** {frontmatter.get('chapters')} ตอน
+- **ยอดบุ๊กมาร์ก/ผู้ติดตาม:** {frontmatter.get('bookmarks', 0)}
+- **อัปเดตล่าสุด:** {frontmatter.get('last_updated')}
+
+---
+{ai_analysis_md}
+---
+
+## 🛠️ ขั้นตอนถัดไปในระบบ ANSRE (ANSRE Pipeline Status)
+- [x] **Step 1: ตรวจสอบลิขสิทธิ์ในไทยเบื้องต้น (Copyright Check)**
+- [x] **Step 2: สกัดแก่นเรื่องและจุดดึงดูดใจ (Core Concept Extraction)**
+- [ ] **Step 3: ปรับแต่งฉากและตัวละครให้เข้ากับบริบทไทย (Localization & Design)**
+- [ ] **Step 4: เจนตอนแรกและบทนิยายเสียง (Text & Audio Generation)**
+"""
+            
+            # Update status and parameters
+            frontmatter["status"] = "Analyzed"
+            
+            titles = analysis.get("thai_working_titles", [])
+            if titles:
+                frontmatter["thai_working_title"] = titles[0]
+            frontmatter["market_fit_score"] = analysis.get("market_fit_score", "0")
+                
+            # Save updated file
+            update_markdown_file(filepath, frontmatter, new_body)
+            print(f"[+] Successfully analyzed and updated: {filepath}")
+            processed_count += 1
+            
+        except Exception as e:
+            print(f"[!] Error processing {filepath}: {e}")
+            
+    print(f"\n[+] Analysis batch completed. Processed {processed_count} files.")
+
+if __name__ == "__main__":
+    second_brain_path = "./SecondBrain"
+    if len(sys.argv) > 1:
+        second_brain_path = sys.argv[1]
+        
+    if not API_KEY:
+        print("[!] ERROR: GEMINI_API_KEY is not set. Cannot run analyzer.")
+        sys.exit(1)
+        
+    process_scouting_pool(second_brain_path)

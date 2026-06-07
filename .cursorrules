@@ -1,0 +1,36 @@
+# Rules and File Structure Conventions
+
+## 🎙️ Audiobook & Novel File Structure Rules
+
+To ensure correct detection and rendering of novels, audiobooks, and teaser videos on the dashboard web application, always follow these rules when naming and placing files:
+
+### 1. Raw Inputs (`data/raw/` or `SecondBrain/05_Active_Projects/Chapters/`)
+- Raw text files should be named using one of the following patterns:
+  - `{project_id}_ch{num}.txt` (e.g., `speedrun_detective_ch01.txt`)
+  - `{project_id}_chapter_{num}.txt`
+- The scanner detects chapter numbers dynamically via regex.
+
+### 2. Audio Production Scripts (`SecondBrain/05_Active_Projects/Audio_Scripts/`)
+- Formatting: `{Novel_Title}_AudioScript_{num:02d}.md`
+- Example: `ยอดนักสืบสปีดรัน_AudioScript_01.md`
+
+### 3. Audiobook Outputs (`SecondBrain/05_Active_Projects/Audio_Output/` & `output/{project_id}/audio/`)
+- Formatting: `{Novel_Title}_Audiobook_{num:02d}.mp3`
+- Subtitles Formatting: `{Novel_Title}_Audiobook_{num:02d}.srt`
+- The system must match files containing `_chapter_chapter_`, `_chapter_`, `_ch_`, or digits and map them cleanly to standard `ch{num}` keys.
+- Example: `ยอดนักสืบสปีดรัน_Audiobook_01.mp3` / `ยอดนักสืบสปีดรัน_Audiobook_01.srt`
+
+### 4. Cover Images (`SecondBrain/05_Active_Projects/Covers/`)
+- Formatting: `{Novel_Title}_Cover.{png|jpg|jpeg}`
+- Example: `ยอดนักสืบสปีดรัน_Cover.jpg`
+- Cover art is a strict prerequisite for generating video teasers.
+
+### 5. Video Teasers (`SecondBrain/05_Active_Projects/Teaser_Output/`)
+- Formatting: `{Novel_Title}_Teaser_{num:02d}.mp4`
+- Example: `ยอดนักสืบสปีดรัน_Teaser_01.mp4`
+
+---
+
+## ⚙️ Scanning & Implementation Logic (Python / regex)
+- When scanning raw text files: Use `(?:ch|chapter|chapter_)(\d+)` to identify the chapter number.
+- When scanning audio files: Use regex `(?:chapter_chapter_|chapter_|ch|chapter_ch|_)(\d+)` to resolve the chapter number key to `ch{num}`.
