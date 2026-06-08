@@ -15,6 +15,7 @@ ANSRE — single entry point. ใช้ผ่านตัวห่อ ./ansre <c
   studio (visual/video/audio-script/bible/idea-loop/chapter-loop)
   scout · analyze · write · continue (เขียนตอนต่อ) · cover · audio · teaser · pipeline · publish
   usage (ดูค่า token) · selftest (เช็ค LLM backend) · local (เช็ค+เบนช์มาร์ก Mac mini)
+  gateway [health|serve] (เช็ค/เปิด LLM+Image gateway — ดู SERVICE_ARCHITECTURE.md)
 """
 import os
 import sys
@@ -156,6 +157,17 @@ def cmd_doctor():
             print(f"{WARN} local LLM ต่อไม่ได้: {host}:{port} (จะ fallback ไป Gemini)")
             problems.append(f"เปิด Ollama บน {host}:{port} (ดู MACMINI_SETUP.md) — หรือใช้ LLM_BACKEND=gemini ชั่วคราว")
 
+    # gateway (เฉพาะเมื่อเปิดใช้)
+    gw = os.environ.get("ANSRE_GATEWAY_URL")
+    if gw:
+        try:
+            import urllib.request
+            urllib.request.urlopen(gw.rstrip("/") + "/healthz", timeout=5).read()
+            print(f"{OK} gateway ต่อได้: {gw}  (LLM+Image route ผ่าน gateway)")
+        except Exception:
+            print(f"{WARN} gateway ต่อไม่ได้: {gw} (provider จะ fallback ทำเองในเครื่อง)")
+            problems.append(f"เปิด gateway: ./ansre gateway serve หรือ bash macmini_gateway_setup.sh บน Mac mini")
+
     # worker
     if os.path.exists(LAUNCH_PLIST):
         running = subprocess.run(["launchctl", "list", LAUNCH_LABEL], capture_output=True).returncode == 0
@@ -222,6 +234,40 @@ def cmd_stop():
     return 0
 
 
+def cmd_gateway(rest):
+    """เช็ค/เปิด ANSRE Gateway (LLM+Image HTTP service)"""
+    sub = rest[0] if rest else "health"
+    url = os.environ.get("ANSRE_GATEWAY_URL", "http://localhost:9000").rstrip("/")
+    token = os.environ.get("ANSRE_GATEWAY_TOKEN", "")
+
+    if sub == "serve":
+        if not have_venv():
+            print(f"{WARN} ยังไม่ได้ติดตั้ง — รัน:  ./ansre setup")
+            return 1
+        host = os.environ.get("ANSRE_GATEWAY_HOST", "0.0.0.0")
+        port = os.environ.get("ANSRE_GATEWAY_PORT", "9000")
+        print(f"🚪 เปิด ANSRE Gateway ที่ http://{host}:{port}  (Ctrl+C เพื่อหยุด)")
+        print("   deploy ถาวรบน Mac mini:  bash macmini_gateway_setup.sh")
+        return run([venv_py(), "-m", "uvicorn", "gateway:app", "--host", host, "--port", port])
+
+    # default: health
+    import urllib.request
+    req = urllib.request.Request(url + "/healthz",
+                                 headers={"X-ANSRE-Token": token} if token else {})
+    try:
+        with urllib.request.urlopen(req, timeout=8) as r:
+            data = json.loads(r.read().decode())
+        print(f"{OK} gateway: {url}")
+        for k, v in data.items():
+            print(f"   {k}: {v}")
+        return 0
+    except Exception as e:
+        print(f"{BAD} ต่อ gateway ไม่ได้ ({url}): {e}")
+        print("   เปิดเอง:        ./ansre gateway serve")
+        print("   หรือ deploy:   bash macmini_gateway_setup.sh (บน Mac mini)")
+        return 1
+
+
 # ---------------------------------------------------------------------------
 def need_gem_or_exit():
     backend = os.environ.get("LLM_BACKEND", "gemini")
@@ -250,6 +296,8 @@ def main():
         return cmd_start()
     if cmd == "stop":
         return cmd_stop()
+    if cmd == "gateway":
+        return cmd_gateway(rest)
 
     if not have_venv():
         print(f"{WARN} ยังไม่ได้ติดตั้ง — รัน:  ./ansre setup")
