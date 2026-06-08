@@ -4,9 +4,7 @@ import sys
 import json
 import time
 import requests
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
+from llm_provider import generate
 
 # 1. Configuration & Credentials
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
@@ -27,12 +25,7 @@ if os.path.exists(env_path):
                 os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if not API_KEY:
-    print("[!] Error: GEMINI_API_KEY is not set.")
-    sys.exit(1)
-
-client = genai.Client(api_key=API_KEY)
-MODEL_NAME = "gemini-2.5-flash"
+# LLM backend chosen by llm_provider (this experimental brainstorm loop routes to local in hybrid)
 
 # Notion API Headers
 notion_headers = {
@@ -130,29 +123,7 @@ def parse_markdown_to_blocks(text):
                 })
     return blocks
 
-# Set safety settings to allow creative writing
-safety_settings = [
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-    types.SafetySetting(
-        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold=types.HarmBlockThreshold.BLOCK_NONE,
-    ),
-]
-
-config = types.GenerateContentConfig(
-    safety_settings=safety_settings
-)
+# Safety settings are handled inside llm_provider (BLOCK_NONE for the gemini backend).
 
 def post_iteration_to_notion(iteration_num, title, concept, chapter_content, review, evaluation):
     url = "https://api.notion.com/v1/pages"
@@ -209,17 +180,18 @@ def post_iteration_to_notion(iteration_num, title, concept, chapter_content, rev
         
     return page_url
 
-# Helper to call Gemini with retries and exponential backoff
-def call_gemini_with_retry(prompt, retry_config=config, max_retries=5):
+# Thin response shim so existing `res.text` call sites keep working
+class _Resp:
+    def __init__(self, text):
+        self.text = text
+
+# Helper to call the LLM (routed by role) with retries and exponential backoff
+def call_gemini_with_retry(prompt, role="brainstorm", temperature=None, max_retries=5):
     delay = 5
     for attempt in range(1, max_retries + 1):
         try:
-            res = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt,
-                config=retry_config
-            )
-            return res
+            text = generate(prompt, role=role, temperature=temperature)
+            return _Resp(text)
         except Exception as e:
             print(f"    [!] API call failed (Attempt {attempt}/{max_retries}): {str(e)}")
             if attempt == max_retries:
@@ -328,11 +300,7 @@ def run_loop():
 3. พล็อตย่อ (Synopsis) และจุดขายหลัก (Hook): [อธิบายพล็อตและชั้นเชิงเหลี่ยมคมของตัวเอก]"""
         
         # We increase temperature to 1.0 for creative brainstorming
-        concept_config = types.GenerateContentConfig(
-            safety_settings=safety_settings,
-            temperature=1.0
-        )
-        concept_res = call_gemini_with_retry(concept_prompt, retry_config=concept_config)
+        concept_res = call_gemini_with_retry(concept_prompt, role="brainstorm", temperature=1.0)
         current_concept = concept_res.text or "Concept Blocked"
         print("    [Done] Concept generated.")
         
@@ -346,7 +314,7 @@ def run_loop():
 
 กรุณาเขียนบทประพันธ์บทที่ 1 ภาษาไทย โดยใช้คำที่เข้าใจง่าย ไม่ซับซ้อน อ่านง่ายลื่นไหล กระชับ ชัดเจน และดึงดูดความสนใจผู้อ่านอย่างรวดเร็ว โดยเน้นภาษาที่เป็นมิตรกับคนอ่านทั่วไป หลีกเลี่ยงคำศัพท์ที่ยากหรือซับซ้อนเกินจำเป็น และแสดงให้เห็นความฉลาดเล่ห์เหลี่ยมของตัวเอกตั้งแต่บทแรก"""
         
-        draft_res = call_gemini_with_retry(draft_prompt)
+        draft_res = call_gemini_with_retry(draft_prompt, role="brainstorm")
         current_chapter = draft_res.text or "Draft Blocked"
         print("    [Done] Chapter 1 drafted.")
         
@@ -364,7 +332,7 @@ def run_loop():
 - โครงเรื่อง: {current_concept}
 - บทที่ 1: {current_chapter}"""
         
-        review_res = call_gemini_with_retry(review_prompt)
+        review_res = call_gemini_with_retry(review_prompt, role="reviewer")
         last_review = review_res.text or "Review Blocked"
         print("    [Done] Review completed.")
         
@@ -375,7 +343,7 @@ def run_loop():
 บทวิจารณ์:
 {last_review}"""
         
-        eval_res = call_gemini_with_retry(eval_prompt)
+        eval_res = call_gemini_with_retry(eval_prompt, role="evaluator")
         evaluation = eval_res.text.strip() if eval_res.text else "ควรเปลี่ยนไปลองไอเดียใหม่อื่นๆ"
         print(f"    [Done] Evaluation status: {evaluation}")
         

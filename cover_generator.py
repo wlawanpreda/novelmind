@@ -3,6 +3,7 @@ import re
 import sys
 import glob
 from google import genai
+from llm_provider import generate
 
 # Load environment variables from .env file if it exists
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -14,10 +15,10 @@ if os.path.exists(env_path):
                 key, val = line.split("=", 1)
                 os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
-# Setup Gemini API Key
+# Imagen (image generation) ต้องใช้ Gemini เสมอ — คีย์จึงยังจำเป็นสำหรับ cover
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
-    print("[!] ERROR: GEMINI_API_KEY is not set.")
+    print("[!] ERROR: GEMINI_API_KEY is not set (required for Imagen cover generation).")
     sys.exit(1)
 
 client = genai.Client(api_key=API_KEY)
@@ -34,13 +35,12 @@ def generate_cover_prompt(outline_content: str) -> str:
         "Return ONLY the prompt text, without quotes, introductions, or formatting."
     )
     
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=f"Novel Outline:\n{outline_content}",
-        config={"system_instruction": system_instruction}
-    )
-    
-    prompt = response.text.strip()
+    # text prompt step routed through provider (role "cover_prompt" -> local in hybrid)
+    prompt = generate(
+        f"Novel Outline:\n{outline_content}",
+        role="cover_prompt",
+        system=system_instruction,
+    ).strip()
     # Clean up any potential markdown code blocks or quotes
     prompt = re.sub(r"^```\w*\n", "", prompt)
     prompt = re.sub(r"\n```$", "", prompt)

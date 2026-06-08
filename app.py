@@ -6,8 +6,7 @@ import subprocess
 from typing import Dict, Any, Tuple, List
 import streamlit as st
 import pandas as pd
-from google import genai
-from google.genai import types
+from llm_provider import generate
 
 # Setup Gemini API Key
 API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -22,7 +21,7 @@ if not API_KEY:
                     os.environ[key.strip()] = val.strip().strip('"').strip("'")
     API_KEY = os.environ.get("GEMINI_API_KEY")
 
-client = genai.Client(api_key=API_KEY) if API_KEY else None
+# LLM calls go through llm_provider.generate (gemini/local by role)
 
 # ----------------- Page Configuration -----------------
 st.set_page_config(
@@ -732,11 +731,7 @@ with tab4:
                     3. รายละเอียดตอนที่ 1 ถึงตอนที่ 10 (อธิบายเนื้อหา ปมความขัดแย้งย่อย และทิ้งท้ายบทกระชับแต่เห็นภาพ)
                     """
                     try:
-                        response = client.models.generate_content(
-                            model="gemini-2.5-flash",
-                            contents=prompt
-                        )
-                        st.session_state.brainstorm_outline = response.text
+                        st.session_state.brainstorm_outline = generate(prompt, role="brainstorm")
                         st.session_state.brainstorm_history = [{"role": "system", "content": "เริ่มต้นร่างโครงเรื่องแรกสำเร็จ"}]
                         st.success("สร้างพล็อตตั้งต้นสำเร็จ!")
                     except Exception as e:
@@ -765,11 +760,7 @@ with tab4:
                         จงนำเสนอโครงร่างที่อัปเดตและขัดเกลาคำใหม่ตามฟีดแบ็กอย่างเป็นมืออาชีพ โดยคงโครงสร้าง 10 ตอนเหมือนเดิม ปรับเฉพาะจุดที่ผู้เขียนระบุ หรือขยายความเพิ่มเติมให้ลงตัว
                         """
                         try:
-                            response = client.models.generate_content(
-                                model="gemini-2.5-flash",
-                                contents=refine_prompt
-                            )
-                            st.session_state.brainstorm_outline = response.text
+                            st.session_state.brainstorm_outline = generate(refine_prompt, role="brainstorm")
                             st.session_state.brainstorm_history.append({"role": "user", "content": feedback})
                             st.success("ปรับปรุงพล็อตและคำเรียบร้อยแล้ว!")
                         except Exception as e:

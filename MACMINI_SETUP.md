@@ -1,0 +1,230 @@
+# 🖥️ ตั้ง Mac mini ที่บ้านเป็น "AI Compute Node" ของ ANSRE
+
+เป้าหมาย: ย้ายงาน LLM ปริมาณมาก (วิเคราะห์, วางฉาก, รีวิว, brainstorm 50 รอบ) มารันบน Mac mini
+ที่บ้าน → **ค่า token เป็นศูนย์** เก็บ Gemini ไว้เฉพาะงานคุณภาพคอขาด (เขียนร้อยแก้ว/เกลาสำนวน)
+
+> สรุปกลยุทธ์: **Hybrid** — local ทำงานหนักได้ไม่อั้นฟรี, cloud ทำเฉพาะจุดที่คุณภาพต้องสูงสุด
+
+---
+
+## 0. ก่อนเริ่ม: ความจริงเรื่องค่าใช้จ่าย
+
+| งาน | ใช้ token ไหม | ของเดิม | แผนใหม่ |
+|-----|:---:|---------|---------|
+| LLM (วิเคราะห์/เขียน/รีวิว) | ✅ มาก | Gemini เสียเงินทุกครั้ง | → **local บน Mac mini (ฟรี)** |
+| TTS (เสียงพากย์) | ❌ **ไม่** | edge-tts (ฟรีอยู่แล้ว) | คงเดิม / +macOS say offline |
+| Cover (รูปปก) | ✅ | Imagen เสียเงิน | คงไว้ (local image gen คุณภาพ/ลิขสิทธิ์ยุ่ง) |
+
+**จุดที่ประหยัดจริงคือ LLM token** — TTS ของเดิม (edge-tts) ฟรีอยู่แล้ว ไม่ได้กิน token
+ดังนั้น Mac mini จะเน้นเป็น **LLM server** เป็นหลัก ส่วน TTS แค่เพิ่ม fallback แบบ offline
+
+---
+
+## 1. เลือกรุ่นโมเดลตาม RAM ของ Mac mini
+
+โมเดลรันบน RAM (unified memory) — เผื่อ RAM ให้ระบบ ~6-8GB
+
+| RAM Mac mini | โมเดลแนะนำ (ภาษาไทย) | ระดับงานที่ไหว |
+|---|---|---|
+| **16 GB** | `scb10x/typhoon2.1-gemma3-12b` หรือ `qwen2.5:7b` | วิเคราะห์/รีวิว/วางฉาก |
+| **24 GB** | `qwen2.5:14b` + `typhoon2.1` | + brainstorm, outline คุณภาพดี |
+| **32–36 GB** | `qwen2.5:32b` (Q4) | งานหนักเกือบทั้งหมด รวมร่างร้อยแก้ว |
+| **64 GB+** | `qwen2.5:72b` (Q4) | แทน Gemini ได้เกือบหมด |
+
+**ทำไมแนะนำ Typhoon:** เป็นโมเดลที่ fine-tune ภาษาไทยโดย SCB10X — สำนวนไทยลื่นกว่าโมเดลฝรั่งขนาดเท่ากัน
+เหมาะกับ ANSRE ที่ผลิตคอนเทนต์ไทยโดยตรง ส่วน Qwen2.5 multilingual แข็งแรงและมีหลายขนาดให้เลือก
+
+> ตรวจ RAM: `  ` → About This Mac → Memory
+
+---
+
+## ⚡ ทางลัด: ติดตั้งทั้งหมดด้วยคำสั่งเดียว (บน Mac mini)
+```bash
+# คัดลอก repo (หรือแค่ไฟล์ macmini_setup.sh) ไปที่ Mac mini แล้วรัน:
+bash macmini_setup.sh
+```
+สคริปต์จะ: ติดตั้ง Ollama → เลือก+โหลดโมเดลตาม RAM อัตโนมัติ → ตั้ง launchd service
+→ กันเครื่องหลับ → บอกค่า `.env` ที่ต้องใส่ในเครื่อง ANSRE
+
+จากนั้นบนเครื่อง ANSRE ตรวจการเชื่อมต่อ + เบนช์มาร์กคุณภาพไทย:
+```bash
+./ansre local       # ✅ ต่อได้ไหม / มีโมเดลอะไร / เร็วแค่ไหน / เทียบคุณภาพกับ Gemini
+```
+
+> ด้านล่างคือขั้นตอนแบบ manual (ถ้าอยากทำเอง/เข้าใจรายละเอียด)
+
+---
+
+## 2. ติดตั้ง Ollama + โหลดโมเดล (บน Mac mini)
+
+Ollama ให้ **OpenAI-compatible API** ที่ `llm_provider.py` ต่อได้ตรงๆ
+
+```bash
+# บน Mac mini
+brew install ollama          # หรือโหลด .app จาก ollama.com
+
+# โหลดโมเดล (เลือกตาม RAM จากตารางข้อ 1)
+ollama pull qwen2.5:14b
+ollama pull scb10x/typhoon2.1-gemma3-12b   # โมเดลไทยเฉพาะทาง
+
+# ทดสอบเร็วๆ
+ollama run qwen2.5:14b "เขียนประโยคเปิดนิยายสืบสวนไทยให้หน่อย"
+```
+
+---
+
+## 3. รัน Ollama เป็น **service ถาวร** (launchd) + เปิดให้เครื่องอื่นในบ้านเรียกได้
+
+ค่าเริ่มต้น Ollama ฟัง `127.0.0.1:11434` (localhost เท่านั้น) — ต้องตั้ง `OLLAMA_HOST=0.0.0.0`
+เพื่อให้เครื่องที่รัน ANSRE เรียกข้ามเครื่องในเครือข่ายบ้านได้
+
+สร้างไฟล์ `~/Library/LaunchAgents/com.ansre.ollama.plist` บน Mac mini:
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ansre.ollama</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/ollama</string>
+    <string>serve</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>OLLAMA_HOST</key>
+    <string>0.0.0.0:11434</string>
+    <key>OLLAMA_KEEP_ALIVE</key>
+    <string>30m</string>            <!-- คาโมเดลใน RAM ไว้ ไม่ต้องโหลดใหม่ทุกครั้ง -->
+    <key>OLLAMA_MAX_LOADED_MODELS</key>
+    <string>2</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>                            <!-- ล้มแล้วเด้งกลับเอง -->
+  <key>StandardOutPath</key>
+  <string>/tmp/ollama.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ollama.err</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl load -w ~/Library/LaunchAgents/com.ansre.ollama.plist
+# ตรวจว่าฟังอยู่
+curl http://localhost:11434/v1/models
+```
+
+**ตั้ง Mac mini ไม่ให้หลับ** (สำคัญมากสำหรับ "รันเรื่อยๆ"):
+```bash
+sudo pmset -a sleep 0 disksleep 0   # ไม่หลับเมื่อเสียบไฟ
+# System Settings → Lock Screen → ปิด display หลับได้ แต่อย่าให้ "เครื่อง" หลับ
+```
+
+---
+
+## 4. เชื่อมเครื่อง ANSRE → Mac mini
+
+### ทางเลือก A: อยู่บ้านเดียวกัน (LAN) — ง่ายสุด
+หา IP/ชื่อ Mac mini: `ipconfig getifaddr en0` หรือใช้ Bonjour name `macmini.local`
+
+### ทางเลือก B: คนละที่ / ออกนอกบ้าน — แนะนำ **Tailscale** (ฟรี, ปลอดภัย)
+```bash
+# ติดตั้งทั้งสองเครื่อง
+brew install tailscale && tailscale up
+# จะได้ IP วงใน เช่น 100.x.x.x ที่เรียกข้ามเน็ตได้โดยไม่ต้องเปิด port router
+```
+> อย่าเปิด port 11434 ออกอินเทอร์เน็ตตรงๆ — Ollama ไม่มี auth ใครก็เรียกได้ ใช้ Tailscale ปลอดภัยกว่ามาก
+
+### ชี้ ANSRE ไปที่ Mac mini — แก้ `.env` บนเครื่องที่รัน pipeline
+```bash
+LLM_BACKEND=hybrid
+LOCAL_LLM_BASE_URL=http://macmini.local:11434/v1     # หรือ http://100.x.x.x:11434/v1 (Tailscale)
+LOCAL_LLM_MODEL=qwen2.5:14b
+LOCAL_LLM_MODEL_HEAVY=qwen2.5:32b                      # ถ้า RAM พอ; ไม่งั้นใส่เท่ากับตัวบน
+```
+
+ดู `.env.example` สำหรับคีย์ทั้งหมด
+
+---
+
+## 5. ทดสอบว่าใช้ได้จริง
+
+```bash
+# จากเครื่อง ANSRE
+python3 llm_provider.py --selftest
+# คาดหวัง: [local ] OK -> 2   และ  [gemini] OK -> 2
+
+# ทดสอบ route จริง: analyzer ควรวิ่งไป local
+python3 llm_provider.py --probe "วิเคราะห์จุดขายนิยายย้อนเวลา 1 บรรทัด" --role analyzer
+```
+
+---
+
+## 6. กลยุทธ์ Routing (ปรับได้หมดใน `llm_provider.py` / .env)
+
+ค่าเริ่มต้นโหมด `hybrid`:
+
+| Role | ไป backend | เหตุผล |
+|------|:---:|--------|
+| `writer`, `enhancer` | **gemini** | ร้อยแก้ว/สำนวน = หัวใจคุณภาพ ยอมจ่าย |
+| `analyzer`, `reviewer`, `researcher`, `editor`, `evaluator` | **local** | งานประเมิน ปริมาณมาก ทนคุณภาพรองได้ |
+| `outline`, `characters`, `scene_planner`, `audio_script` | **local** | งานโครงสร้าง local ทำได้ดี |
+| `brainstorm` (ลูป 50 รอบ) | **local** | กิน token มหาศาล → ประหยัดสุดเมื่อย้าย local |
+
+**ปรับรายตัวได้ทันทีโดยไม่แตะโค้ด** เช่น อยากให้ outline ใช้ Gemini ชั่วคราว:
+```bash
+LLM_ROLE_OUTLINE=gemini
+```
+อยากประหยัดสุดขีด (ทุกอย่าง local):
+```bash
+LLM_BACKEND=local
+```
+อยากกลับไปใช้ Gemini ล้วน (เหมือนเดิมก่อนเปลี่ยน):
+```bash
+LLM_BACKEND=gemini
+```
+
+มี **auto-fallback**: ถ้า Mac mini ดับ/เน็ตหลุด งานจะเด้งไป Gemini ให้อัตโนมัติ pipeline ไม่สะดุด
+
+---
+
+## 7. TTS: ของเดิมฟรีอยู่แล้ว + เพิ่ม offline fallback
+
+- **edge-tts** (ค่า default) = เสียง neural ไทยคุณภาพดี **ฟรี** ไม่กิน token — ใช้ต่อไป
+- **macOS `say -v Kanya`** = local 100% ไม่ง้อเน็ต — มีในโค้ดแล้ว ใช้เป็น fallback ตอนเน็ตหลุด
+  ```bash
+  TTS_ENGINE=edge-tts     # ปกติ
+  TTS_ENGINE=macos        # โหมด offline ล้วน
+  ```
+- โมเดล TTS ไทย local คุณภาพสูง (เช่น XTTS/F5-TTS) ยัง setup ยากและเสียงไทยยังสู้ edge-tts ไม่ได้
+  → **ยังไม่คุ้มลงทุนตอนนี้** บันทึกไว้เป็นงานอนาคต
+
+---
+
+## 8. ทำให้ Mac mini ทำงาน "เรื่อยๆ" (เชื่อมกับ roadmap Phase 1–2)
+
+Mac mini ไม่ได้เป็นแค่ LLM server — ให้มันเป็น **worker host** ของทั้ง pipeline ได้เลย:
+
+1. ติดตั้ง ANSRE repo บน Mac mini ด้วย
+2. ตั้ง launchd อีกตัว (`com.ansre.worker`) เรียก `orchestrator.py --once` ทุก 15–30 นาที
+   (orchestrator จะสร้างใน Phase 1 — ดู `ROADMAP.md`)
+3. ผล: Mac mini รัน **ทั้ง LLM และ pipeline** ในเครื่องเดียว เน็ตในบ้านไม่ต้องวิ่งข้ามเครื่องด้วยซ้ำ
+   → `LOCAL_LLM_BASE_URL=http://localhost:11434/v1`
+
+นี่คือสถาปัตยกรรมที่ถูกที่สุด + ทนที่สุด: คอมพิวเตอร์เปิดทิ้งไว้ที่บ้าน 1 เครื่อง ผลิตคอนเทนต์เองทั้งวัน
+
+---
+
+## สรุปขั้นตอนสั้นๆ
+1. `brew install ollama` + `ollama pull` โมเดลตาม RAM
+2. ตั้ง launchd ให้ Ollama เป็น service (`OLLAMA_HOST=0.0.0.0`)
+3. `pmset` กันเครื่องหลับ
+4. แก้ `.env`: `LLM_BACKEND=hybrid` + ชี้ `LOCAL_LLM_BASE_URL`
+5. `python3 llm_provider.py --selftest` ให้ผ่านทั้งคู่
+6. (Phase 1) ติดตั้ง worker บน Mac mini ให้ผลิตเองทั้งวัน

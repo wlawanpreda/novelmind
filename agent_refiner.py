@@ -3,8 +3,7 @@ import re
 import sys
 import json
 from datetime import datetime
-from google import genai
-from google.genai import types
+from llm_provider import generate, resolve_backend, _coerce_json
 
 # Load environment variables from .env file
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -17,11 +16,11 @@ if os.path.exists(env_path):
                 os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if not API_KEY:
-    print("[!] ERROR: GEMINI_API_KEY is not set.")
+# GEMINI key required only if any refiner role still routes to gemini
+if not API_KEY and "gemini" in {resolve_backend(r) for r in ("researcher", "writer", "editor")}:
+    print("[!] ERROR: GEMINI_API_KEY is not set and a refiner role routes to gemini.")
+    print("    Set GEMINI_API_KEY, or use LLM_BACKEND=local for a fully local run.")
     sys.exit(1)
-
-client = genai.Client(api_key=API_KEY)
 
 # ----------------- System Prompts for Roles -----------------
 
@@ -88,38 +87,33 @@ EDITOR_PROMPT = f"""
 
 # ----------------- Helper Functions -----------------
 
-def call_gemini(prompt: str, system_instruction: str, is_retry: bool = False) -> dict:
-    """Helper to query Gemini with system instructions, JSON constraint, and self-healing safety retries."""
+def call_gemini(prompt: str, system_instruction: str, role: str = "default", is_retry: bool = False) -> dict:
+    """Query the unified LLM provider (gemini/local by role) with JSON + self-healing safety retries.
+
+    Name kept as call_gemini for backward-compat; backend is chosen by `role` via llm_provider.
+    """
     if is_retry:
         # Tweak the prompt to be extremely safe, bypassing safety filters on retry
         prompt = f"[SAFETY RETRY - กรุณาเขียนและวิเคราะห์ด้วยโทนที่ปลอดภัยระดับครอบครัว PG-13 หลีกเลี่ยงความน่ากลัวรุนแรง ผี และเรื่องสยองขวัญทุกชนิด เปลี่ยนไปเน้นความแฟนตาซี มิติลี้ลับ และระบบสตรีมเมอร์สุดระทึกแทน!]\n{prompt}"
-        
+
     try:
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                system_instruction=system_instruction,
-            ),
-        )
-        if not response.candidates:
+        raw = generate(prompt, role=role, is_json=True, system=system_instruction)
+        if not raw or not raw.strip():
             if not is_retry:
-                print("    [!] Prompt blocked by safety filter. Retrying with safe instructions...")
-                return call_gemini(prompt, system_instruction, is_retry=True)
-            else:
-                print("    [!] Prompt blocked even on safe retry. Returning dummy schema.")
-                return {}
-        return json.loads(response.text)
+                print("    [!] Empty response. Retrying with safe instructions...")
+                return call_gemini(prompt, system_instruction, role, is_retry=True)
+            print("    [!] Empty even on safe retry. Returning empty schema.")
+            return {}
+        return json.loads(_coerce_json(raw))
     except Exception as e:
         err_msg = str(e).lower()
-        if "candidates is empty" in err_msg or "blocked" in err_msg or "prohibited_content" in err_msg:
-            if not is_retry:
-                print("    [!] Exception blocked by safety. Retrying with safe instructions...")
-                return call_gemini(prompt, system_instruction, is_retry=True)
-            else:
-                print("    [!] Exception blocked on retry as well. Returning empty schema.")
-                return {}
+        recoverable = any(k in err_msg for k in ("candidates", "blocked", "prohibited", "json", "expecting"))
+        if recoverable and not is_retry:
+            print("    [!] Generation/parse issue. Retrying with safe instructions...")
+            return call_gemini(prompt, system_instruction, role, is_retry=True)
+        if is_retry:
+            print("    [!] Failed even on safe retry. Returning empty schema.")
+            return {}
         raise e
 
 def run_loop(second_brain_dir: str, max_iterations: int = 50):
@@ -176,7 +170,7 @@ def run_loop(second_brain_dir: str, max_iterations: int = 50):
 {last_critique}
 """
         try:
-            research_res = call_gemini(research_prompt, RESEARCHER_PROMPT)
+            research_res = call_gemini(research_prompt, RESEARCHER_PROMPT, role="researcher")
             last_research = research_res
             print(f"[+] Suggested Hook: \"{research_res.get('suggested_hooks', ['N/A'])[0]}\"")
         except Exception as e:
@@ -199,7 +193,7 @@ def run_loop(second_brain_dir: str, max_iterations: int = 50):
 {current_social_script}
 """
         try:
-            writer_res = call_gemini(writer_prompt, WRITER_PROMPT)
+            writer_res = call_gemini(writer_prompt, WRITER_PROMPT, role="writer")
             current_social_script = writer_res.get("social_hook_script", current_social_script)
             current_chapter_intro = writer_res.get("refined_chapter_intro", current_chapter_intro)
             print("[+] Writer completed rewriting.")
@@ -217,7 +211,7 @@ def run_loop(second_brain_dir: str, max_iterations: int = 50):
 {current_chapter_intro}
 """
         try:
-            editor_res = call_gemini(editor_prompt, EDITOR_PROMPT)
+            editor_res = call_gemini(editor_prompt, EDITOR_PROMPT, role="editor")
             last_critique = editor_res.get("critique", "")
             score = editor_res.get("overall_score", 0)
             scores = editor_res.get("scores", {})

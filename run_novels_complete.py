@@ -23,8 +23,7 @@ import sys
 import json
 import time
 import requests
-from google import genai
-from google.genai import types
+from llm_provider import generate
 
 # ─── ENV & CREDENTIALS ────────────────────────────────────────────────────────
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -38,8 +37,7 @@ if os.path.exists(env_path):
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
-    print("[!] ERROR: GEMINI_API_KEY is not set.")
-    sys.exit(1)
+    print("[!] WARNING: GEMINI_API_KEY not set — relying on local LLM backend (LLM_BACKEND=local|hybrid).")
 
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
 if not NOTION_TOKEN:
@@ -48,45 +46,20 @@ if not NOTION_TOKEN:
 
 PARENT_PAGE_ID = "373d71ae-c6a9-805a-b8ac-d6a558d4943a"
 
-client = genai.Client(api_key=API_KEY)
-WRITER_MODEL = "gemini-2.5-flash"   # fast writer
-REVIEW_MODEL = "gemini-2.5-flash"   # reviewer
-
 notion_headers = {
     "Authorization": f"Bearer {NOTION_TOKEN}",
     "Content-Type": "application/json",
     "Notion-Version": "2022-06-28",
 }
 
-# ─── SAFETY SETTINGS ──────────────────────────────────────────────────────────
-safety_settings = [
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,       threshold=types.HarmBlockThreshold.BLOCK_NONE),
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,        threshold=types.HarmBlockThreshold.BLOCK_NONE),
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-]
-
-# ─── GEMINI HELPER ────────────────────────────────────────────────────────────
-def call_gemini(prompt: str, model: str = WRITER_MODEL, is_json: bool = False) -> str:
-    cfg = types.GenerateContentConfig(
-        safety_settings=safety_settings,
-        response_mime_type="application/json" if is_json else "text/plain",
-    )
-    delay = 5
-    for attempt in range(1, 6):
-        try:
-            res = client.models.generate_content(model=model, contents=prompt, config=cfg)
-            if res.text:
-                return res.text
-            print(f"    [!] Empty response (attempt {attempt}/5), retrying...")
-            time.sleep(delay)
-        except Exception as e:
-            print(f"    [!] API error (attempt {attempt}/5): {e}")
-            if attempt == 5:
-                return f"ERROR: {e}"
-            time.sleep(delay)
-            delay = min(delay * 2, 60)
-    return "ERROR: Max retries reached."
+# ─── LLM HELPER (routed via llm_provider: gemini/local by role) ───────────────
+def call_gemini(prompt: str, role: str = "writer", is_json: bool = False) -> str:
+    try:
+        text = generate(prompt, role=role, is_json=is_json)
+        return text if text else "ERROR: empty result"
+    except Exception as e:
+        print(f"    [!] LLM error (role={role}): {e}")
+        return f"ERROR: {e}"
 
 # ─── NOTION HELPERS ───────────────────────────────────────────────────────────
 def md_to_blocks(text: str) -> list:
@@ -188,7 +161,7 @@ def step_a_beat_plan(novel_title: str, outline: str, characters: str,
   }},
   ...
 ]"""
-    raw = call_gemini(prompt, is_json=True)
+    raw = call_gemini(prompt, role="planner", is_json=True)
     try:
         return json.loads(raw)
     except Exception:
@@ -226,7 +199,7 @@ def step_b_write_scene(novel_title: str, characters: str, ch_num: int, ch_title:
 2. ใส่มุกตลกแบบไทยๆ เป็นธรรมชาติ ชิงไหวชิงพริบ
 3. เป้าหมายความยาว 700-900 คำสำหรับฉากนี้
 4. ใช้ภาษาไทยสละสลวย อ่านง่าย ลื่นไหล"""
-    return call_gemini(prompt)
+    return call_gemini(prompt, role="writer")
 
 def step_c_polish(novel_title: str, ch_num: int, ch_title: str, draft: str) -> str:
     """Polish the compiled chapter draft."""
@@ -240,7 +213,7 @@ def step_c_polish(novel_title: str, ch_num: int, ch_title: str, draft: str) -> s
 3. ปิดท้ายบทด้วย Cliffhanger ที่ชวนติดตาม
 4. ห้ามย่อหรือลบรายละเอียดสำคัญ
 ส่งคืนเฉพาะเนื้อหาบทที่ขัดเกลาแล้ว ไม่ต้องมีคำอธิบายเพิ่มเติม"""
-    return call_gemini(prompt, model=WRITER_MODEL)
+    return call_gemini(prompt, role="enhancer")
 
 def step_d_review(novel_title: str, ch_num: int, ch_title: str, chapter: str) -> str:
     """3-reviewer sub-agents review."""
@@ -256,7 +229,7 @@ def step_d_review(novel_title: str, ch_num: int, ch_title: str, chapter: str) ->
 3. [นักการตลาดเนื้อหา]: จุดขาย Viral Potential และสิ่งที่ควรเน้นให้มากขึ้น
 
 สรุปคะแนน (เต็ม 10) และข้อเสนอแนะ 3-5 ข้อที่ชัดเจนสำหรับการเขียนใหม่ (Rewrite Pass)"""
-    return call_gemini(prompt, model=REVIEW_MODEL)
+    return call_gemini(prompt, role="reviewer")
 
 def step_e_rewrite(novel_title: str, ch_num: int, ch_title: str,
                    chapter: str, review: str) -> str:
@@ -276,7 +249,7 @@ def step_e_rewrite(novel_title: str, ch_num: int, ch_title: str,
 3. เพิ่มความสนุก ความฮา และความดึงดูดให้มากขึ้น
 4. Cliffhanger ท้ายบทต้องทรงพลังกว่าเดิม
 ส่งคืนเฉพาะเนื้อหาบทที่เขียนใหม่แล้ว"""
-    return call_gemini(prompt, model=WRITER_MODEL)
+    return call_gemini(prompt, role="writer")
 
 # ─── CHAPTER PROCESSOR ────────────────────────────────────────────────────────
 def process_chapter(novel_title: str, novel_key: str, outline: str, characters: str,

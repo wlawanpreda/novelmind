@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  ANSRE Worker — ยิง orchestrator.py ทุก 20 นาที ให้ pipeline เดินเอง
+  ติดตั้งบนเครื่องที่จะรัน ANSRE (แนะนำ: Mac mini ที่บ้าน):
+
+    1. แก้ <REPO_PATH> ให้ตรงตำแหน่ง repo จริง
+    2. cp deploy/com.ansre.worker.plist ~/Library/LaunchAgents/
+    3. launchctl load -w ~/Library/LaunchAgents/com.ansre.worker.plist
+
+  ดูล็อก: tail -f /tmp/ansre.worker.log  และ  SecondBrain/orchestrator.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.ansre.worker</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>-c</string>
+    <string>cd "&lt;REPO_PATH&gt;" &amp;&amp; .venv/bin/python orchestrator.py --once</string>
+  </array>
+
+  <!-- ยิงทุก 1200 วินาที (20 นาที) -->
+  <key>StartInterval</key>
+  <integer>1200</integer>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>StandardOutPath</key>
+  <string>/tmp/ansre.worker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/tmp/ansre.worker.err</string>
+</dict>
+</plist>

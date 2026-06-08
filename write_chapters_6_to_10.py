@@ -4,8 +4,7 @@ import sys
 import json
 import time
 import requests
-from google import genai
-from google.genai import types
+from llm_provider import generate
 
 # Load environment variables
 env_path = ".env"
@@ -19,11 +18,8 @@ if os.path.exists(env_path):
 
 API_KEY = os.environ.get("GEMINI_API_KEY")
 if not API_KEY:
-    print("[!] ERROR: GEMINI_API_KEY is not set.")
-    sys.exit(1)
+    print("[!] WARNING: GEMINI_API_KEY not set — relying on local LLM backend (LLM_BACKEND=local|hybrid).")
 
-client = genai.Client(api_key=API_KEY)
-MODEL_NAME = "gemini-2.5-flash"
 
 NOTION_TOKEN = os.environ.get("NOTION_TOKEN")
 if not NOTION_TOKEN:
@@ -38,40 +34,18 @@ notion_headers = {
     "Notion-Version": "2022-06-28"
 }
 
-safety_settings = [
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_HARASSMENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-    types.SafetySetting(category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold=types.HarmBlockThreshold.BLOCK_NONE),
-]
 
-def generate_content_safe(prompt: str, is_json: bool = False) -> str:
-    current_config = types.GenerateContentConfig(
-        safety_settings=safety_settings,
-        response_mime_type="application/json" if is_json else "text/plain"
-    )
-    for attempt in range(1, 4):
-        try:
-            response = client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt,
-                config=current_config
-            )
-            if response.text:
-                return response.text
-            print(f"[!] Warning: Empty result (attempt {attempt}/3). Retrying...")
-            time.sleep(2)
-        except Exception as e:
-            print(f"[!] Exception (attempt {attempt}/3): {e}")
-            time.sleep(2)
-    # Final fallback
+def generate_content_safe(prompt: str, is_json: bool = False, role: str = "default") -> str:
+    """Routed through the unified LLM provider (gemini/local by role); see llm_provider.py."""
     try:
-        response = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt + "\n[Note: Please generate safe PG-13 content without extreme elements]",
-            config=current_config
-        )
-        return response.text or "Error: Generation returned empty result."
+        text = generate(prompt, role=role, is_json=is_json)
+        if text:
+            return text
+    except Exception as e:
+        print(f"[!] Exception during generation: {e}")
+    try:
+        softened = prompt + "\n[Note: Please generate safe PG-13 content without extreme elements]"
+        return generate(softened, role=role, is_json=is_json) or "Error: Generation returned empty result."
     except Exception as e:
         return f"Error: {str(e)}"
 

@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ANSRE Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/web/style.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%2322d3ee'/></svg>">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="logo"><span class="dot"></span><div>ANSRE<small>STORY STUDIO</small></div></div>
+    <nav class="nav">
+      <a data-view="overview" class="active"><span class="ic">🏠</span> ภาพรวม</a>
+      <a data-view="ideas"><span class="ic">💡</span> ไอเดีย</a>
+      <a data-view="novels"><span class="ic">📚</span> นิยาย</a>
+      <a data-view="outputs"><span class="ic">🎬</span> ผลผลิต</a>
+      <a data-view="usage"><span class="ic">💰</span> ค่าใช้จ่าย</a>
+      <a data-view="config"><span class="ic">⚙️</span> LLM Routing</a>
+      <a data-view="health"><span class="ic">🩺</span> สุขภาพระบบ</a>
+    </nav>
+    <div class="side-foot">
+      <div class="worker-pill" id="workerPill"><span class="led"></span><span id="workerTxt">worker: …</span></div>
+      <div>v1 · made for continuous creation</div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="head">
+      <div>
+        <h1 id="viewTitle">ภาพรวม</h1>
+        <div class="sub" id="viewSub">สถานะระบบและการผลิตคอนเทนต์</div>
+      </div>
+      <div class="head-actions">
+        <span class="clock" id="clock">—</span>
+        <button class="btn ghost" onclick="refreshAll()">↻ รีเฟรช</button>
+        <button class="btn primary" id="runBtn" onclick="runPipeline()">▶ เดิน Pipeline</button>
+      </div>
+    </div>
+
+    <!-- OVERVIEW -->
+    <section class="view active" id="view-overview">
+      <div class="grid cards" id="statCards"></div>
+      <div class="panel">
+        <h2>🔄 สายการผลิต <span class="line"></span></h2>
+        <div class="flow" id="flow"></div>
+      </div>
+      <div class="panel">
+        <h2>⚡ ลัดสั่งงาน <span class="line"></span></h2>
+        <div class="head-actions" id="quickActions"></div>
+      </div>
+    </section>
+
+    <!-- IDEAS -->
+    <section class="view" id="view-ideas">
+      <div class="card idea-capture">
+        <input id="ideaInput" placeholder="พิมพ์ไอเดียนิยายของคุณ… (เช่น ร้านสะดวกซื้อที่เปิดเฉพาะตอนตี 3)">
+        <button class="btn primary" onclick="addIdea()">+ เก็บไอเดีย</button>
+      </div>
+      <div class="head-actions" style="margin:16px 0">
+        <button class="btn" onclick="runStage('idea-brainstorm')">🤖 ให้ AI คิดไอเดีย</button>
+        <button class="btn" onclick="runStage('idea-score')">⭐ ขยาย+ให้คะแนน</button>
+        <button class="btn" onclick="runStage('idea-fuse')">🧬 ผสมไอเดีย</button>
+        <button class="btn" onclick="runStage('idea-auto')">⚡ รันอัตโนมัติเต็ม</button>
+      </div>
+      <div class="nv" id="ideaList"></div>
+    </section>
+
+    <!-- NOVELS -->
+    <section class="view" id="view-novels">
+      <div class="nv" id="novelList"></div>
+    </section>
+
+    <!-- OUTPUTS -->
+    <section class="view" id="view-outputs">
+      <div class="panel"><h2>🖼️ ปกนิยาย <span class="line"></span></h2><div class="gal" id="galCovers"></div></div>
+      <div class="panel"><h2>🎧 หนังสือเสียง <span class="line"></span></h2><div class="gal" id="galAudio"></div></div>
+      <div class="panel"><h2>🎬 Teaser <span class="line"></span></h2><div class="gal" id="galTeasers"></div></div>
+    </section>
+
+    <!-- USAGE -->
+    <section class="view" id="view-usage">
+      <div class="grid cards" id="usageCards"></div>
+      <div class="panel"><h2>📈 ค่าใช้จ่าย LLM 14 วันล่าสุด (USD) <span class="line"></span></h2>
+        <div class="card"><div class="chart" id="usageChart"></div></div></div>
+      <div class="panel"><h2>🧮 จำนวนเรียกแยกตาม backend <span class="line"></span></h2><div class="routes" id="backendBreak"></div></div>
+    </section>
+
+    <!-- CONFIG -->
+    <section class="view" id="view-config">
+      <div class="grid cards" id="configCards"></div>
+      <div class="panel"><h2>🎛️ ตั้งค่าด่วน (บันทึกลง .env ทันที) <span class="line"></span></h2>
+        <div class="card settings">
+          <label>โหมด LLM
+            <select id="set-backend">
+              <option value="hybrid">hybrid — ร้อยแก้ว Gemini, ที่เหลือ local (แนะนำ)</option>
+              <option value="gemini">gemini — ใช้ Gemini ล้วน</option>
+              <option value="local">local — ใช้ Mac mini ล้วน (ฟรี)</option>
+            </select></label>
+          <label>คุณภาพการเขียน
+            <select id="set-mode">
+              <option value="premium">premium</option><option value="master">master</option><option value="draft">draft</option>
+            </select></label>
+          <label>เพดานค่าใช้จ่าย/วัน (USD, 0=ไม่จำกัด)
+            <input id="set-cap" type="number" step="0.5" min="0"></label>
+          <button class="btn primary" onclick="saveSettings()">💾 บันทึก</button>
+        </div></div>
+      <div class="panel"><h2>🧭 ตารางเส้นทาง LLM (role → backend) <span class="line"></span></h2>
+        <div class="routes" id="routingChips"></div>
+        <p class="sub" style="margin-top:12px">ปรับรายบทบาทเพิ่มได้ใน <code>.env</code> (LLM_ROLE_*) — ดู MACMINI_SETUP.md</p></div>
+    </section>
+
+    <!-- HEALTH -->
+    <section class="view" id="view-health">
+      <div class="panel"><h2>🩺 ผลตรวจระบบ <span class="line"></span></h2><div class="checks" id="healthChecks"></div></div>
+      <div class="panel"><h2>🛠️ การทำงานอัตโนมัติ <span class="line"></span></h2>
+        <div class="head-actions">
+          <button class="btn" onclick="worker('start')">▶ เปิด worker (รันเองทั้งวัน)</button>
+          <button class="btn" onclick="worker('stop')">■ ปิด worker</button>
+        </div></div>
+    </section>
+  </main>
+</div>
+
+<!-- Log drawer -->
+<div class="drawer" id="drawer">
+  <div class="dh">
+    <div><b id="drawerTitle">งาน</b> <span class="st" id="drawerStatus">—</span></div>
+    <button class="btn ghost" onclick="closeDrawer()">✕</button>
+  </div>
+  <pre id="drawerLog">…</pre>
+</div>
+<div class="toasts" id="toasts"></div>
+<script src="/web/app.js"></script>
+</body>
+</html>

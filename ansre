@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# ANSRE single entry point — ตัวห่อให้เรียกง่าย ไม่ต้องรู้เรื่อง venv
+#   ./ansre doctor | setup | run | start | status | ...
+cd "$(dirname "$0")"
+
+# setup รันด้วย python ไหนก็ได้ (ยังไม่มี venv); ที่เหลือใช้ venv ถ้ามี
+if [ "$1" = "setup" ]; then
+  exec bash setup.sh
+fi
+
+if [ -x ".venv/bin/python" ]; then
+  PY=".venv/bin/python"
+else
+  PY="python3"
+  if [ "$1" != "doctor" ] && [ "$1" != "help" ] && [ -z "$1" ]; then
+    echo "⚠️  ยังไม่ได้ติดตั้ง (.venv ไม่มี) — รัน:  ./ansre setup"
+  fi
+fi
+
+exec "$PY" ansre.py "$@"

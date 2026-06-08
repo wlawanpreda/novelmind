@@ -3,8 +3,7 @@ import json
 import sys
 import glob
 from typing import Dict, Any, Tuple
-from google import genai
-from google.genai import types
+from llm_provider import generate, resolve_backend
 
 # Load environment variables from .env file if it exists
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -70,11 +69,6 @@ def update_markdown_file(filepath: str, frontmatter: Dict[str, Any], body: str):
 
 def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, Any]:
     """Send novel data to Gemini to perform translation, market fit analysis and localization suggestion in JSON format."""
-    if not API_KEY:
-        raise ValueError("GEMINI_API_KEY is not set. Please set the environment variable first.")
-        
-    client = genai.Client(api_key=API_KEY)
-    
     prompt = f"""
 คุณคือ "Chief AI Architect & Literary Strategist" ผู้เชี่ยวชาญด้านการวิเคราะห์ตลาดนิยายออนไลน์ระดับสากลและผู้เชี่ยวชาญด้าน Creative Localization
 
@@ -98,19 +92,14 @@ def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, A
   "inspired_concept": "แนวทางการดัดแปลงใหม่ให้กลายเป็น Original IP ที่ไม่ละเมิดลิขสิทธิ์ และการปรับเปลี่ยน Setting ให้โดนใจคนไทย"
 }}
 """
-    response = client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=prompt,
-        config=types.GenerateContentConfig(
-            response_mime_type="application/json",
-        ),
-    )
-    
+    # routed through the unified provider: role "analyzer" -> local (Mac mini) in hybrid mode
+    raw = generate(prompt, role="analyzer", is_json=True)
+
     try:
-        data = json.loads(response.text)
+        data = json.loads(raw)
         return data
     except Exception as e:
-        print(f"[!] Error parsing JSON response: {response.text}")
+        print(f"[!] Error parsing JSON response: {raw}")
         raise e
 
 def process_scouting_pool(second_brain_dir: str):
@@ -205,8 +194,11 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         second_brain_path = sys.argv[1]
         
-    if not API_KEY:
-        print("[!] ERROR: GEMINI_API_KEY is not set. Cannot run analyzer.")
+    # gemini key required only if the analyzer role actually routes to gemini
+    if resolve_backend("analyzer") == "gemini" and not API_KEY:
+        print("[!] ERROR: GEMINI_API_KEY is not set and analyzer routes to gemini.")
+        print("    Set GEMINI_API_KEY, or use a local backend (LLM_BACKEND=local|hybrid).")
         sys.exit(1)
-        
+
+    print(f"[*] Analyzer backend = {resolve_backend('analyzer')}")
     process_scouting_pool(second_brain_path)

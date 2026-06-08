@@ -1,179 +1,307 @@
-import argparse
-import sys
+#!/usr/bin/env python3
+"""
+ANSRE — single entry point. ใช้ผ่านตัวห่อ ./ansre <command>
+
+คำสั่งหลัก (ใช้บ่อย):
+  ./ansre setup            ติดตั้งทุกอย่าง (venv + deps + .env)
+  ./ansre doctor           เช็คว่าทุกอย่างพร้อม/ขาดอะไร พร้อมวิธีแก้
+  ./ansre status           ดูสถานะ pipeline (งานค้างแต่ละขั้น + ค่าใช้จ่ายวันนี้)
+  ./ansre web              🌐 เปิด web dashboard สวยๆ คุมทุกอย่าง (http://localhost:8765)
+  ./ansre run [--loop]     เดิน pipeline 1 รอบ (หรือวนต่อเนื่องด้วย --loop)
+  ./ansre start | stop     เปิด/ปิด worker ให้รันเองทั้งวัน (launchd)
+
+คำสั่งย่อย (รันทีละขั้นได้):
+  idea (คลังไอเดีย: add/brainstorm/score/promote/list/auto)
+  scout · analyze · write · continue (เขียนตอนต่อ) · cover · audio · teaser · pipeline · publish
+  usage (ดูค่า token) · selftest (เช็ค LLM backend) · local (เช็ค+เบนช์มาร์ก Mac mini)
+"""
 import os
+import sys
+import json
+import glob
+import socket
 import subprocess
+from datetime import datetime
+from urllib.parse import urlparse
 
-def run_command(cmd_list, env=None):
-    """Helper to run command as subprocess and stream output."""
-    process = subprocess.Popen(cmd_list, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    for line in process.stdout:
-        print(line, end="")
-    process.wait()
-    return process.returncode
+ROOT = os.path.dirname(os.path.abspath(__file__))
+SB = os.path.join(ROOT, "SecondBrain")
+LAUNCH_LABEL = "com.ansre.worker"
+LAUNCH_PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCH_LABEL}.plist")
 
-def main():
-    # Load environment variables from .env file if it exists
-    env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
-    if os.path.exists(env_path):
-        with open(env_path, "r", encoding="utf-8") as f:
+OK, BAD, WARN = "✅", "❌", "⚠️ "
+
+
+# ---------------------------------------------------------------------------
+def load_env():
+    p = os.path.join(ROOT, ".env")
+    if os.path.exists(p):
+        with open(p, "r", encoding="utf-8") as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
-                    key, val = line.split("=", 1)
-                    os.environ[key.strip()] = val.strip().strip('"').strip("'")
+                    k, v = line.split("=", 1)
+                    os.environ.setdefault(k.strip(), v.strip().strip('"').strip("'"))
 
-    parser = argparse.ArgumentParser(description="ANSRE - Agentic Novel Scouting & Re-creation Engine CLI")
-    subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
-    
-    # 1. Scout Command
-    scout_parser = subparsers.add_parser("scout", help="Scrape trending novels and save to Second Brain")
-    scout_parser.add_argument("--source", type=str, default="all", choices=["syosetu", "royalroad", "all"],
-                              help="Sources to scrape (default: all)")
-    scout_parser.add_argument("--limit", type=int, default=5,
-                              help="Number of novels to scrape per source (default: 5)")
-    scout_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                              help="Second Brain vault path")
-    
-    # 2. Analyze Command
-    analyze_parser = subparsers.add_parser("analyze", help="Analyze scouted novels using AI (Gemini)")
-    analyze_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                                help="Second Brain vault path")
-    
-    # 3. Write Command
-    write_parser = subparsers.add_parser("write", help="Re-create novel concepts, outlines, and write Chapter 1 drafts")
-    write_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                              help="Second Brain vault path")
-    
-    # 4. Cover Command
-    cover_parser = subparsers.add_parser("cover", help="Generate book cover art using Imagen 3")
-    cover_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                              help="Second Brain vault path")
-    
-    # 5. Audio Command
-    audio_parser = subparsers.add_parser("audio", help="Render audio scripts in Second Brain to MP3 audiobooks")
-    audio_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                              help="Second Brain vault path")
-    
-    # 5. Teaser Command
-    teaser_parser = subparsers.add_parser("teaser", help="Generate mobile-friendly video teasers (MP4) from audiobooks and covers")
-    teaser_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                              help="Second Brain vault path")
-    teaser_parser.add_argument("--duration", type=int, default=60,
-                              help="Max video duration in seconds (default: 60)")
-    
-    # 6. Pipeline Command
-    pipeline_parser = subparsers.add_parser("pipeline", help="Run the full pipeline: Scout -> Analyze -> Write -> Audio -> Teaser")
-    pipeline_parser.add_argument("--source", type=str, default="all", choices=["syosetu", "royalroad", "all"],
-                                 help="Sources to scrape (default: all)")
-    pipeline_parser.add_argument("--limit", type=int, default=3,
-                                 help="Number of novels to scrape per source (default: 3)")
-    pipeline_parser.add_argument("--outdir", type=str, default="./SecondBrain",
-                                 help="Second Brain vault path")
-    
-    args = parser.parse_args()
-    
-    if not args.command:
-        parser.print_help()
-        sys.exit(0)
-        
-    python_bin = os.path.join(".venv", "bin", "python")
-    if not os.path.exists(python_bin):
-        python_bin = "python3" # fallback
-        
-    # Environment copy
-    my_env = os.environ.copy()
-    
-    if args.command == "scout":
-        cmd = [python_bin, "scout.py", "--source", args.source, "--limit", str(args.limit), "--outdir", args.outdir]
-        print(f"[*] Running Scouting Module...")
-        run_command(cmd, env=my_env)
-        
-    elif args.command == "analyze":
-        if "GEMINI_API_KEY" not in os.environ:
-            print("[!] Error: GEMINI_API_KEY environment variable is not set.")
-            print("Please export your API key before running: export GEMINI_API_KEY='your_key'")
-            sys.exit(1)
-        cmd = [python_bin, "agent_analyzer.py", args.outdir]
-        print(f"[*] Running AI Analysis Module...")
-        run_command(cmd, env=my_env)
-        
-    elif args.command == "write":
-        if "GEMINI_API_KEY" not in os.environ:
-            print("[!] Error: GEMINI_API_KEY environment variable is not set.")
-            print("Please export your API key before running: export GEMINI_API_KEY='your_key'")
-            sys.exit(1)
-        cmd = [python_bin, "agent_writer.py", args.outdir]
-        print(f"[*] Running Novel Re-creation & Writing Module...")
-        run_command(cmd, env=my_env)
-        
-    elif args.command == "cover":
-        if "GEMINI_API_KEY" not in os.environ:
-            print("[!] Error: GEMINI_API_KEY environment variable is not set.")
-            print("Please export your API key before running: export GEMINI_API_KEY='your_key'")
-            sys.exit(1)
-        cmd = [python_bin, "cover_generator.py", args.outdir]
-        print(f"[*] Running Automated Cover Generator Module...")
-        run_command(cmd, env=my_env)
-        
-    elif args.command == "audio":
-        cmd = [python_bin, "audio_engine.py", args.outdir]
-        print(f"[*] Running Audio TTS Engine Module...")
-        run_command(cmd, env=my_env)
-        
-    elif args.command == "teaser":
-        cmd = [python_bin, "teaser_generator.py", args.outdir, str(args.duration)]
-        print(f"[*] Running TikTok Teaser Generator Module...")
-        run_command(cmd, env=my_env)
-        
-    elif args.command == "pipeline":
-        if "GEMINI_API_KEY" not in os.environ:
-            print("[!] Error: GEMINI_API_KEY environment variable is not set.")
-            print("Please export your API key before running: export GEMINI_API_KEY='your_key'")
-            sys.exit(1)
-            
-        print("\n=== STEP 1: SCOUTING TRENDS ===")
-        scout_cmd = [python_bin, "scout.py", "--source", args.source, "--limit", str(args.limit), "--outdir", args.outdir]
-        code = run_command(scout_cmd, env=my_env)
-        if code != 0:
-            print("[!] Scout step failed. Aborting pipeline.")
-            sys.exit(code)
-            
-        print("\n=== STEP 2: RUNNING AI ANALYZER ===")
-        analyze_cmd = [python_bin, "agent_analyzer.py", args.outdir]
-        code = run_command(analyze_cmd, env=my_env)
-        if code != 0:
-            print("[!] Analysis step failed. Aborting pipeline.")
-            sys.exit(code)
-            
-        print("\n=== STEP 3: RUNNING NOVEL RE-CREATOR & WRITER ===")
-        write_cmd = [python_bin, "agent_writer.py", args.outdir]
-        code = run_command(write_cmd, env=my_env)
-        if code != 0:
-            print("[!] Writing step failed. Aborting pipeline.")
-            sys.exit(code)
-            
-        print("\n=== STEP 3.5: GENERATING COVER ART ===")
-        cover_cmd = [python_bin, "cover_generator.py", args.outdir]
-        code = run_command(cover_cmd, env=my_env)
-        if code != 0:
-            print("[!] Cover generation step failed. Aborting pipeline.")
-            sys.exit(code)
-            
-        print("\n=== STEP 4: RENDERING AUDIOBOOKS ===")
-        audio_cmd = [python_bin, "audio_engine.py", args.outdir]
-        code = run_command(audio_cmd, env=my_env)
-        if code != 0:
-            print("[!] Audio rendering step failed. Aborting pipeline.")
-            sys.exit(code)
-            
-        print("\n=== STEP 5: GENERATING TEASER VIDEOS ===")
-        teaser_cmd = [python_bin, "teaser_generator.py", args.outdir, "60"]
-        code = run_command(teaser_cmd, env=my_env)
-        if code != 0:
-            print("[!] Teaser generation step failed. Aborting pipeline.")
-            sys.exit(code)
-            
-        print("\n[+] Full ANSRE pipeline finished successfully!")
+
+def venv_py():
+    cand = os.path.join(ROOT, ".venv", "bin", "python")
+    return cand if os.path.exists(cand) else "python3"
+
+
+def have_venv():
+    return os.path.exists(os.path.join(ROOT, ".venv", "bin", "python"))
+
+
+def run(cmd):
+    return subprocess.run(cmd, cwd=ROOT).returncode
+
+
+def count_status(*statuses):
+    n = 0
+    for fp in glob.glob(os.path.join(SB, "01_Scouting_Pool", "*.md")):
+        try:
+            with open(fp, "r", encoding="utf-8") as f:
+                head = f.read(1500)
+            if any(f'status: "{s}"' in head or f"status: {s}" in head for s in statuses):
+                n += 1
+        except Exception:
+            pass
+    return n
+
+
+def count_files(*parts):
+    return len(glob.glob(os.path.join(SB, *parts)))
+
+
+def today_spend():
+    log = os.path.join(SB, "llm_usage.jsonl")
+    if not os.path.exists(log):
+        return 0.0
+    today = datetime.now().strftime("%Y-%m-%d")
+    total = 0.0
+    with open(log, "r", encoding="utf-8") as f:
+        for line in f:
+            try:
+                e = json.loads(line)
+                if e.get("date") == today:
+                    total += e.get("est_usd", 0.0)
+            except Exception:
+                pass
+    return total
+
+
+# ---------------------------------------------------------------------------
+def cmd_doctor():
+    print("🩺 ANSRE Doctor\n" + "=" * 40)
+    problems = []
+
+    # venv + python
+    if have_venv():
+        ver = subprocess.run([venv_py(), "-c", "import sys;print(f'{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}')"],
+                             capture_output=True, text=True).stdout.strip()
+        ok = ver.startswith("3.13")
+        print(f"{OK if ok else WARN} venv Python: {ver}" + ("" if ok else "  (แนะนำ 3.13)"))
+        if not ok:
+            problems.append("venv ไม่ใช่ Python 3.13 — ลบ .venv แล้ว ./ansre setup ใหม่")
+    else:
+        print(f"{BAD} ยังไม่มี .venv")
+        problems.append("รัน:  ./ansre setup")
+
+    # deps
+    if have_venv():
+        r = subprocess.run([venv_py(), "-c", "import streamlit, google.genai, edge_tts, pydub, requests, googleapiclient"],
+                           capture_output=True, text=True)
+        if r.returncode == 0:
+            print(f"{OK} dependencies ครบ")
+        else:
+            print(f"{BAD} dependencies ขาด: {r.stderr.strip().splitlines()[-1] if r.stderr else '?'}")
+            problems.append("รัน:  ./ansre setup")
+
+    # ffmpeg
+    if subprocess.run(["which", "ffmpeg"], capture_output=True).returncode == 0:
+        print(f"{OK} ffmpeg")
+    else:
+        print(f"{BAD} ไม่มี ffmpeg")
+        problems.append("ติดตั้ง:  brew install ffmpeg")
+
+    # .env keys
+    if os.path.exists(os.path.join(ROOT, ".env")):
+        print(f"{OK} .env")
+        backend = os.environ.get("LLM_BACKEND", "gemini")
+        gem = os.environ.get("GEMINI_API_KEY")
+        notion = os.environ.get("NOTION_TOKEN")
+        need_gem = backend in ("gemini", "hybrid")
+        print(f"   {OK if gem else (WARN if backend=='local' else BAD)} GEMINI_API_KEY "
+              + ("set" if gem else ("ไม่จำเป็น (backend=local)" if not need_gem else "ขาด!")))
+        print(f"   {OK if notion else WARN} NOTION_TOKEN " + ("set" if notion else "ขาด (จำเป็นถ้าจะ sync Notion)"))
+        if need_gem and not gem:
+            problems.append("ใส่ GEMINI_API_KEY ใน .env")
+        print(f"   ℹ️  LLM_BACKEND = {backend}")
+    else:
+        print(f"{BAD} ไม่มี .env")
+        problems.append("รัน:  ./ansre setup  แล้วใส่คีย์ใน .env")
+
+    # local LLM (ollama) reachability
+    backend = os.environ.get("LLM_BACKEND", "gemini")
+    if backend in ("local", "hybrid"):
+        url = os.environ.get("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1")
+        u = urlparse(url)
+        host, port = u.hostname or "localhost", u.port or 11434
+        try:
+            with socket.create_connection((host, port), timeout=2):
+                print(f"{OK} local LLM ต่อได้: {host}:{port}")
+        except Exception:
+            print(f"{WARN} local LLM ต่อไม่ได้: {host}:{port} (จะ fallback ไป Gemini)")
+            problems.append(f"เปิด Ollama บน {host}:{port} (ดู MACMINI_SETUP.md) — หรือใช้ LLM_BACKEND=gemini ชั่วคราว")
+
+    # worker
+    if os.path.exists(LAUNCH_PLIST):
+        running = subprocess.run(["launchctl", "list", LAUNCH_LABEL], capture_output=True).returncode == 0
+        print(f"{OK if running else WARN} worker (launchd): {'running' if running else 'installed แต่ยังไม่โหลด'}")
+    else:
+        print(f"ℹ️  worker ยังไม่ติดตั้ง (./ansre start เพื่อรันต่อเนื่อง)")
+
+    print("=" * 40)
+    if problems:
+        print("🔧 ต้องแก้:")
+        for p in problems:
+            print(f"   - {p}")
+    else:
+        print("🎉 พร้อมใช้งานครบทุกอย่าง!")
+    return 1 if problems else 0
+
+
+def cmd_status():
+    if not os.path.isdir(SB):
+        print("ยังไม่มีข้อมูล (SecondBrain ว่าง) — เริ่มด้วย ./ansre run")
+        return 0
+    print("📊 ANSRE Status\n" + "=" * 40)
+    print("Pipeline (Scouting Pool):")
+    print(f"   🔍 Scouted (รอวิเคราะห์)  : {count_status('Scouted')}")
+    print(f"   🧠 Analyzed (รอเขียน)     : {count_status('Analyzed')}")
+    print(f"   ✍️  Processed (เขียนแล้ว)  : {count_status('Processed')}")
+    print("ผลผลิต:")
+    print(f"   📖 บทนิยาย   : {count_files('05_Active_Projects','Chapters','*.md')}")
+    print(f"   🖼️  ปก        : {count_files('05_Active_Projects','Covers','*')}")
+    print(f"   🎧 หนังสือเสียง: {count_files('05_Active_Projects','Audio_Output','*.mp3')}")
+    print(f"   🎬 teaser    : {count_files('05_Active_Projects','Teaser_Output','*.mp4')}")
+    print(f"   📤 คิวเผยแพร่ : {count_files('05_Active_Projects','Publish_Queue','*')}")
+    print("=" * 40)
+    print(f"💰 ค่า LLM วันนี้: ${today_spend():.4f}")
+    return 0
+
+
+def cmd_start():
+    """ติดตั้ง + โหลด launchd worker ให้รันต่อเนื่อง"""
+    src = os.path.join(ROOT, "deploy", "com.ansre.worker.plist")
+    if not os.path.exists(src):
+        print(f"{BAD} ไม่พบ {src}")
+        return 1
+    with open(src, "r", encoding="utf-8") as f:
+        content = f.read().replace("<REPO_PATH>", ROOT).replace("&lt;REPO_PATH&gt;", ROOT)
+    os.makedirs(os.path.dirname(LAUNCH_PLIST), exist_ok=True)
+    with open(LAUNCH_PLIST, "w", encoding="utf-8") as f:
+        f.write(content)
+    subprocess.run(["launchctl", "unload", LAUNCH_PLIST], capture_output=True)
+    rc = subprocess.run(["launchctl", "load", "-w", LAUNCH_PLIST]).returncode
+    if rc == 0:
+        print(f"{OK} worker เริ่มทำงานแล้ว — จะเดิน pipeline เองทุก 20 นาที")
+        print(f"   ดูล็อก:  tail -f /tmp/ansre.worker.log")
+        print(f"   ปิด:     ./ansre stop")
+    return rc
+
+
+def cmd_stop():
+    if os.path.exists(LAUNCH_PLIST):
+        subprocess.run(["launchctl", "unload", LAUNCH_PLIST])
+        print(f"{OK} หยุด worker แล้ว")
+    else:
+        print("worker ยังไม่ได้ติดตั้ง")
+    return 0
+
+
+# ---------------------------------------------------------------------------
+def need_gem_or_exit():
+    backend = os.environ.get("LLM_BACKEND", "gemini")
+    if backend in ("gemini", "hybrid") and not os.environ.get("GEMINI_API_KEY"):
+        print(f"{BAD} GEMINI_API_KEY ไม่ได้ตั้ง (LLM_BACKEND={backend}). ใส่ใน .env หรือใช้ LLM_BACKEND=local")
+        sys.exit(1)
+
+
+def main():
+    load_env()
+    args = sys.argv[1:]
+    cmd = args[0] if args else "help"
+    rest = args[1:]
+    py = venv_py()
+
+    if cmd in ("help", "-h", "--help"):
+        print(__doc__)
+        return 0
+
+    # commands ที่ไม่ต้องใช้ venv ก่อน
+    if cmd == "doctor":
+        return cmd_doctor()
+    if cmd == "status":
+        return cmd_status()
+    if cmd == "start":
+        return cmd_start()
+    if cmd == "stop":
+        return cmd_stop()
+
+    if not have_venv():
+        print(f"{WARN} ยังไม่ได้ติดตั้ง — รัน:  ./ansre setup")
+        return 1
+
+    # map คำสั่ง -> สคริปต์
+    if cmd == "idea":
+        return run([py, "ideation.py"] + rest)
+    if cmd == "continue":
+        need_gem_or_exit()
+        return run([py, "chapter_continuer.py", SB] + rest)
+    if cmd == "web":
+        port = os.environ.get("ANSRE_WEB_PORT", "8765")
+        print(f"🌐 เปิด dashboard ที่ http://localhost:{port}")
+        return run([py, "dashboard.py"])
+    if cmd == "run":
+        return run([py, "orchestrator.py"] + (rest if rest else ["--once"]))
+    if cmd == "scout":
+        return run([py, "scout.py", "--source", "all", "--limit", "3", "--outdir", SB] + rest)
+    if cmd == "analyze":
+        need_gem_or_exit(); return run([py, "agent_analyzer.py", SB])
+    if cmd == "write":
+        need_gem_or_exit(); return run([py, "agent_writer.py", SB])
+    if cmd == "cover":
+        need_gem_or_exit(); return run([py, "cover_generator.py", SB])
+    if cmd == "audio":
+        return run([py, "audio_engine.py", SB])
+    if cmd == "teaser":
+        return run([py, "teaser_generator.py", SB, os.environ.get("ANSRE_TEASER_DURATION", "60")])
+    if cmd == "publish":
+        return run([py, "publisher.py", SB] + rest)
+    if cmd == "usage":
+        return run([py, "llm_provider.py", "--usage"])
+    if cmd == "selftest":
+        return run([py, "llm_provider.py", "--selftest"])
+    if cmd == "local":
+        return run([py, "llm_provider.py", "--local-check"])
+    if cmd == "pipeline":
+        need_gem_or_exit()
+        for step in (["scout.py", "--source", "all", "--limit", "3", "--outdir", SB],
+                     ["agent_analyzer.py", SB], ["agent_writer.py", SB],
+                     ["cover_generator.py", SB], ["audio_engine.py", SB],
+                     ["teaser_generator.py", SB, "60"]):
+            print(f"\n=== {step[0]} ===")
+            if run([py] + step) != 0:
+                print(f"{BAD} หยุดที่ {step[0]}")
+                return 1
+        print(f"\n{OK} pipeline เสร็จครบ")
+        return 0
+
+    print(f"ไม่รู้จักคำสั่ง '{cmd}'. ดู:  ./ansre help")
+    return 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

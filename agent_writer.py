@@ -5,8 +5,7 @@ import sys
 import glob
 from typing import Dict, Any, Tuple, List
 from datetime import datetime
-from google import genai
-from google.genai import types
+from llm_provider import generate, resolve_backend
 
 # Load environment variables from .env file if it exists
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
@@ -18,27 +17,13 @@ if os.path.exists(env_path):
                 key, val = line.split("=", 1)
                 os.environ[key.strip()] = val.strip().strip('"').strip("'")
 
-# Setup Gemini API Key
+# Setup Gemini API Key (required only if any writing stage routes to gemini)
 API_KEY = os.environ.get("GEMINI_API_KEY")
-if not API_KEY:
-    print("[!] ERROR: GEMINI_API_KEY is not set.")
+_WRITER_ROLES = ("outline", "characters", "planner", "writer", "enhancer", "audio")
+if not API_KEY and "gemini" in {resolve_backend(r) for r in _WRITER_ROLES}:
+    print("[!] ERROR: GEMINI_API_KEY is not set and a writing stage routes to gemini.")
+    print("    Set GEMINI_API_KEY, or use LLM_BACKEND=local for a fully local run.")
     sys.exit(1)
-
-client = genai.Client(api_key=API_KEY)
-
-# Setup Writing Mode
-WRITING_MODE = os.environ.get("WRITING_MODE", "premium").lower()
-
-def get_model(stage: str) -> str:
-    """Return model name based on stage and WRITING_MODE config."""
-    if WRITING_MODE == "master":
-        return "gemini-2.5-pro"
-    elif WRITING_MODE == "premium":
-        if stage in ["writer", "enhancer"]:
-            return "gemini-2.5-pro"
-        return "gemini-2.5-flash"
-    else: # draft
-        return "gemini-2.5-flash"
 
 def parse_markdown_file(filepath: str) -> Tuple[Dict[str, Any], str]:
     """Parse Obsidian markdown file and separate frontmatter from body content."""
@@ -90,57 +75,69 @@ def update_markdown_file(filepath: str, frontmatter: Dict[str, Any], body: str):
 
 # ----------------- ✍️ Multi-Stage Creative Writing Engine -----------------
 
-def generate_content_safe(model: str, prompt: str, is_json: bool = False) -> str:
-    """Helper to generate content from Gemini with safety checks disabled to prevent None responses."""
-    safety_settings = [
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-            threshold=types.HarmBlockThreshold.BLOCK_NONE,
-        ),
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-            threshold=types.HarmBlockThreshold.BLOCK_NONE,
-        ),
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-            threshold=types.HarmBlockThreshold.BLOCK_NONE,
-        ),
-        types.SafetySetting(
-            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-            threshold=types.HarmBlockThreshold.BLOCK_NONE,
-        ),
-    ]
-    
-    config = types.GenerateContentConfig(
-        safety_settings=safety_settings,
-        response_mime_type="application/json" if is_json else "text/plain"
-    )
-    
-    for attempt in range(1, 4):
-        try:
-            response = client.models.generate_content(
-                model=model,
-                contents=prompt,
-                config=config
-            )
-            if response.text:
-                return response.text
-            
-            print(f"[!] Warning: Gemini returned empty text (Attempt {attempt}/3). Retrying with simple adjustment...")
-            time.sleep(2)
-        except Exception as e:
-            print(f"[!] Exception during generation (Attempt {attempt}/3): {e}")
-            time.sleep(2)
-            
-    # Final fallback attempt with simplified instruction
+# คำสั่งมาตรฐานต่อท้าย prompt: กัน AI พูดถึงตัวเอง/ใส่คำนำ-คำลงท้าย
+NO_META = ("\n\n[สำคัญ] ส่งคืน 'เฉพาะเนื้อหา' เท่านั้น "
+           "ห้ามมีคำนำ คำทักทาย การบรรยายบทบาทตัวเอง (เช่น 'ในฐานะ...', 'ผมขอ...', "
+           "'นี่คือผลลัพธ์...') หรือคำลงท้ายใดๆ เริ่มที่เนื้อหาจริงทันที")
+
+# วลีที่บ่งบอกว่าเป็น meta-talk ของ AI (ใช้ตัดทิ้งหัว/ท้าย)
+_META_MARK = ("ในฐานะ", "chief", "ข้าพเจ้า", "ผมขอ", "ผมจะ", "นี่คือผลลัพธ์", "นี่คือบท",
+              "นี่คือโครง", "ยอดเยี่ยม", "ตามที่ท่าน", "ตามที่คุณ", "คำบัญชา", "เจียระไน",
+              "ขอรับช่วง", "ด้วยความยินดี", "ผมได้", "ข้าพเจ้าได้", "หวังว่า", "เรียบร้อยแล้วครับ")
+
+
+def _tone_note() -> str:
+    """โทนการเขียนที่ผู้ใช้กำหนดผ่าน ANSRE_TONE (เช่น 'ตลกเบาสมอง ภาษาง่ายๆ')"""
+    t = os.environ.get("ANSRE_TONE", "").strip()
+    return f"\n\n[โทน/สไตล์ที่ต้องการ — สำคัญมาก ให้ยึดเป็นหลัก] {t}" if t else ""
+
+
+def strip_meta(text: str) -> str:
+    """ตัด meta-talk ของ AI ที่หัว/ท้ายออก (เช่น 'ในฐานะ Chief Editor ข้าพเจ้า...')"""
+    if not text:
+        return text
+    lines = text.split("\n")
+    # ตัดหัว: ลบบรรทัดว่าง / meta / '---' เดี่ยวๆ (สูงสุด 8 บรรทัดแรก เพื่อความปลอดภัย)
+    popped = 0
+    while lines and popped < 8:
+        s = lines[0].strip()
+        if s == "" or s == "---" or any(m in s.lower() for m in _META_MARK):
+            lines.pop(0)
+            popped += 1
+        else:
+            break
+    # ตัดท้าย: ลบบรรทัดว่าง / meta / '---' เดี่ยวๆ ท้ายไฟล์
+    popped = 0
+    while lines and popped < 5:
+        s = lines[-1].strip()
+        if s == "" or s == "---" or any(m in s.lower() for m in _META_MARK):
+            lines.pop()
+            popped += 1
+        else:
+            break
+    return "\n".join(lines).strip()
+
+
+def generate_content_safe(role: str, prompt: str, is_json: bool = False) -> str:
+    """Generate content via the unified provider (gemini/local chosen by role).
+
+    `role` is the writing stage name (outline/characters/planner/writer/enhancer/audio).
+    Retries + safety settings are handled inside llm_provider.generate.
+    """
     try:
-        response = client.models.generate_content(
-            model=model,
-            contents=prompt + "\n[Note: Please generate safe PG-13 content without extreme elements]",
-            config=config
-        )
-        return response.text or "Error: Generation returned empty result."
-    except Exception as e:
+        text = generate(prompt, role=role, is_json=is_json)
+        if text:
+            return text
+    except Exception as e:  # noqa: BLE001
+        print(f"[!] Exception during generation (role={role}): {e}")
+
+    # Final fallback attempt with a softened, PG-13 instruction
+    try:
+        return generate(
+            prompt + "\n[Note: Please generate safe PG-13 content without extreme elements]",
+            role=role, is_json=is_json,
+        ) or "Error: Generation returned empty result."
+    except Exception as e:  # noqa: BLE001
         return f"Error: {str(e)}"
 
 def run_stage_1_outline(title: str, analysis: str) -> str:
@@ -160,7 +157,7 @@ def run_stage_1_outline(title: str, analysis: str) -> str:
 2. แนวคิดแกนเรื่อง (Core Premise / World Building Rules)
 3. รายละเอียดตอนที่ 1 ถึงตอนที่ 10 (อธิบายเนื้อหาและเป้าหมายตัวละครย่อยแต่ละตอนอย่างกระชับ)
 """
-    return generate_content_safe(get_model("outline"), prompt)
+    return strip_meta(generate_content_safe("outline", prompt + _tone_note() + NO_META))
 
 def run_stage_2_characters(title: str, outline: str) -> str:
     """Stage 2: Character Sculptor - Designs detailed character database."""
@@ -175,7 +172,7 @@ def run_stage_2_characters(title: str, outline: str) -> str:
 2. ตัวละครสมทบสำคัญ (เช่น วิญญาณ ผีเด็ก หรือเจ้าของแอปฯ)
 3. ระบบความสัมพันธ์ (Character Dynamics/Conflict Matrix)
 """
-    return generate_content_safe(get_model("characters"), prompt)
+    return strip_meta(generate_content_safe("characters", prompt + NO_META))
 
 def run_stage_3_scene_planner(outline: str, characters: str) -> List[Dict[str, Any]]:
     """Stage 3: Scene Planner - Breaks down Chapter 1 into 4 logical beats."""
@@ -200,16 +197,20 @@ def run_stage_3_scene_planner(outline: str, characters: str) -> List[Dict[str, A
   ... (รวมทั้งหมด 4 ฉาก)
 ]
 """
-    res_text = generate_content_safe(get_model("planner"), prompt, is_json=True)
+    res_text = generate_content_safe("planner", prompt, is_json=True)
     return json.loads(res_text)
 
-def run_stage_4_scene_writer(title: str, scene_plan: Dict[str, str], prev_scenes_content: str, characters: str) -> str:
+def run_stage_4_scene_writer(title: str, scene_plan: Dict[str, str], prev_scenes_content: str, characters: str, world: str = "") -> str:
     """Stage 4: Draft Writer - Writes full detailed prose for a single scene."""
     scene_num = scene_plan.get("scene_number")
     print(f"    [Stage 4] Draft Writer: Writing detailed prose for Scene {scene_num}/4...")
+    scene_words = int(os.environ.get("ANSRE_SCENE_WORDS", "450"))
     prompt = f"""
 คุณคือ "Master Novelist" ผู้เชี่ยวชาญการแต่งนิยายพรรณนาภาษาไทยสละสลวยดึงดูดใจ
 หน้าที่ของคุณคือแต่งเนื้อเรื่องฉากย่อยฉากนี้เพื่อประกอบเป็นนิยายตอนที่ 1 ของเรื่อง: {title}
+
+กฎของโลก/ระบบในเรื่อง (ห้ามเขียนขัดแย้งกับสิ่งนี้เด็ดขาด):
+{world[:2500]}
 
 ข้อมูลตัวละครหลัก:
 {characters}
@@ -229,11 +230,12 @@ def run_stage_4_scene_writer(title: str, scene_plan: Dict[str, str], prev_scenes
 2. หลีกเลี่ยงสำนวนภาษาแปลกๆ หรือแปลตรงตัวจากต่างประเทศ ใช้สำนวนและภาษาไทยที่สละสลวย เป็นธรรมชาติ ลื่นไหล เข้ากับบริบทไทย
 3. ใส่บทสนทนาโต้ตอบที่สมจริงสะท้อนอารมณ์ นัยยะ และลักษณะนิสัยเฉพาะของตัวละคร ห้ามสรุปความเด็ดขาด
 4. เน้นอารมณ์ความตึงเครียด ความหวาดกลัว ความหวัง หรือความขัดแย้งภายในจิตใจของตัวละครเอกให้ลึกซึ้ง
-5. แต่งฉากนี้ให้ออกมาละเอียดประณีตและยาวที่สุดเพื่อสร้างอารมณ์ร่วม (เป้าหมาย 600-800 คำสำหรับฉากนี้)
+5. แต่งให้กระชับ ลื่นไหล ได้อารมณ์ ความยาวประมาณ {scene_words} คำ (ห้ามยืดเยื้อ ห้ามน้ำท่วมทุ่ง)
+6. ต้องสอดคล้องกับกฎของโลก/ระบบและฉากก่อนหน้า ไม่ขัดแย้งตัวเลข/สถานะใดๆ
 """
-    return generate_content_safe(get_model("writer"), prompt)
+    return strip_meta(generate_content_safe("writer", prompt + _tone_note() + NO_META))
 
-def run_stage_5_prose_enhancer(title: str, full_draft: str, characters: str) -> str:
+def run_stage_5_prose_enhancer(title: str, full_draft: str, characters: str, world: str = "") -> str:
     """Stage 5: Prose Enhancer - Polishes the compiled chapter, refines vocabulary and cliffhanger."""
     print("    [Stage 5] Editorial Prose Enhancer: Polishing vocabulary and Cliffhanger...")
     prompt = f"""
@@ -241,37 +243,53 @@ def run_stage_5_prose_enhancer(title: str, full_draft: str, characters: str) -> 
 นี่คือดราฟต์ตอนแรกของนิยายเรื่อง {title}:
 {full_draft}
 
+กฎของโลก/ระบบในเรื่อง (ใช้ตรวจความสอดคล้อง ห้ามให้เนื้อหาขัดแย้งกับกฎหรือตัวเลข/สถานะ):
+{world[:2500]}
+
 ข้อมูลตัวละคร:
 {characters}
 
 กรุณาปรับแต่งขัดเกลาภาษานิยายตอนแรกนี้ โดย:
 1. ขัดเกลาสำนวนพรรณนาให้สละสลวย มีวรรณศิลป์ ทรงพลัง และเห็นภาพเด่นชัด
-2. ปรับแต่งจังหวะการเล่าเรื่อง (Pacing) บทสนทนา และการตัดบทให้กระชับ ลื่นไหล ไม่ยืดเยื้อหรือเร่งเร้าจนเสียอารมณ์
-3. ตรวจสอบสำนวนสะกดคำและไวยากรณ์ไทย ปรับการเปรียบเปรยและการแปลให้เป็นบริบทไทยที่ลึกซึ้ง
-4. ปรับจังหวะปิดท้ายตอน (Cliffhanger) ให้น่าติดตาม ดึงดูด และทิ้งปริศนาชวนให้ผู้อ่านต้องการอ่านตอนต่อไปทันที
-5. ห้ามลบรายละเอียดสำคัญหรือย่อเนื้อหาที่สร้างอารมณ์ร่วมออก
+2. ปรับจังหวะการเล่าเรื่อง (Pacing) บทสนทนา และการตัดบทให้กระชับ ลื่นไหล
+3. ตรวจสำนวนสะกดคำและไวยากรณ์ไทย และ "แก้จุดที่ขัดแย้งกับกฎของระบบ/ตัวเลข/สถานะ" ให้ถูกต้อง
+4. ปรับ Cliffhanger ปิดท้ายตอนให้ทิ้งปริศนาชวนอ่านต่อ
+5. **ห้ามขยายความยาว** — รักษาความยาวใกล้เคียงดราฟต์เดิม เน้นเกลาให้คมขึ้น ไม่ใช่เพิ่มคำ
 """
-    return generate_content_safe(get_model("enhancer"), prompt)
+    return strip_meta(generate_content_safe("enhancer", prompt + _tone_note() + NO_META))
+
+def _chunk_text(text: str, size: int = 3000):
+    """แบ่งข้อความเป็นท่อน ~size ตัวอักษร โดยตัดที่ขอบย่อหน้า (กัน audio output ทะลุ token limit)"""
+    paras = text.split("\n\n")
+    chunks, cur = [], ""
+    for p in paras:
+        if len(cur) + len(p) > size and cur:
+            chunks.append(cur)
+            cur = p
+        else:
+            cur += ("\n\n" if cur else "") + p
+    if cur.strip():
+        chunks.append(cur)
+    return chunks or [text]
+
 
 def run_stage_6_audio_script(title: str, final_chapter: str) -> str:
-    """Stage 6: Audio Script Adapter - Formats chapter into an audio production script."""
+    """Stage 6: Audio Script Adapter — แปลงเป็นบทเสียงทีละท่อน (กัน output ยาวเกิน token limit)"""
     print("    [Stage 6] Audio Script Adapter: Generating audio production script...")
-    prompt = f"""
-คุณคือ "Audio Production Director" ผู้กำกับละครวิทยุและนิยายเสียง
-จงแปลงนิยายตอนแรกของเรื่อง {title} ด้านล่างนี้ ให้กลายเป็นบทนิยายเสียงพากย์ (Audio Script) สำหรับการผลิตเสียง MP3:
-{final_chapter}
-
-กฎการเขียนบทเสียง:
-1. ระบุผู้พูดและน้ำเสียงในวงเล็บเหลี่ยมให้ชัดเจน เช่น:
-   [ผู้บรรยาย, โทน: หม่นหมอง, สิ้นหวัง]
-   [อคิน, โทน: ตะโกนอย่างเดือดดาล]
-   [ระบบ, โทน: เสียงสังเคราะห์เย็นชา]
-2. ระบุคิวเสียงเอฟเฟกต์ (SFX) ในบรรทัดแยกหรือแทรกในบทพูด เช่น:
-   [SFX: เสียงกระดาษขยำทิ้งและเสียงถอนหายใจ]
-   [SFX: เสียงแจ้งเตือนโทรศัพท์สั่นสะเทือนถี่ๆ]
-3. ดัดแปลงเนื้อหาเล็กน้อยให้เหมาะสมกับการฟัง แต่ยังคงรักษาโครงเรื่องและความน่าตื่นเต้นไว้ทั้งหมด
-"""
-    return generate_content_safe(get_model("audio"), prompt)
+    rules = """กฎการเขียนบทเสียง:
+1. ระบุผู้พูดและน้ำเสียงในวงเล็บเหลี่ยม เช่น [ผู้บรรยาย, โทน: หม่นหมอง] / [ระบบ, โทน: เย็นชา]
+2. ระบุคิวเสียง [SFX: ...] แทรกได้
+3. คงโครงเรื่องและอารมณ์ไว้ครบ ส่งคืนเฉพาะบทเสียง"""
+    chunks = _chunk_text(final_chapter, 3000)
+    parts = []
+    for i, chunk in enumerate(chunks):
+        print(f"        audio chunk {i+1}/{len(chunks)}...")
+        prompt = (f"คุณคือ Audio Production Director แปลงเนื้อนิยายเรื่อง {title} "
+                  f"(ท่อนที่ {i+1}/{len(chunks)}) ให้เป็นบทนิยายเสียงพากย์:\n{chunk}\n\n{rules}")
+        seg = strip_meta(generate_content_safe("audio", prompt + NO_META))
+        if seg and not seg.startswith("Error:"):
+            parts.append(seg)
+    return "\n\n".join(parts) if parts else "[ไม่สามารถสร้างบทเสียงได้]"
 
 # ----------------- Main Orchestration Loop -----------------
 
@@ -307,15 +325,15 @@ def process_analyzed_novels(second_brain_dir: str):
             chapter_scenes = []
             prev_scenes_content = ""
             for idx, scene_plan in enumerate(scene_plans):
-                scene_content = run_stage_4_scene_writer(novel_title, scene_plan, prev_scenes_content, characters)
+                scene_content = run_stage_4_scene_writer(novel_title, scene_plan, prev_scenes_content, characters, world=outline)
                 chapter_scenes.append(scene_content)
                 # Append to memory of prev scenes
                 prev_scenes_content += f"\n\n--- [ฉากที่ {idx+1}] ---\n\n" + scene_content
-                
+
             compiled_draft = "\n\n".join(chapter_scenes)
-            
+
             # Stage 5: Editor Polishing & Enhancements
-            final_chapter = run_stage_5_prose_enhancer(novel_title, compiled_draft, characters)
+            final_chapter = run_stage_5_prose_enhancer(novel_title, compiled_draft, characters, world=outline)
             
             # Stage 6: Audio Script Formatting
             final_audio_script = run_stage_6_audio_script(novel_title, final_chapter)
@@ -328,7 +346,8 @@ def process_analyzed_novels(second_brain_dir: str):
             os.makedirs(chapters_dir, exist_ok=True)
             os.makedirs(audio_scripts_dir, exist_ok=True)
             
-            clean_title = re.sub(r'[^\w\-_\s]', '', thai_title)
+            # เก็บอักษรไทย (รวมสระ/วรรณยุกต์ U+0E00–U+0E7F) ไม่ให้ถูกตัดทิ้ง
+            clean_title = re.sub(r'[^\w\-_\s฀-๿]', '', thai_title)
             clean_title = clean_title.strip().replace(' ', '_')
             
             # Save Outline
