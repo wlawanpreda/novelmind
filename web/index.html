@@ -104,9 +104,10 @@
     <section class="view" id="view-studio">
       <div class="card studio-bar">
         <label style="flex:1">เลือกเรื่อง
-          <select id="studioProject"></select></label>
+          <select id="studioProject" onchange="studioStatus()"></select></label>
         <button class="btn ghost" onclick="loadProjects()">↻</button>
       </div>
+      <div class="studio-status" id="studioStatus"></div>
       <div class="head-actions" style="margin:16px 0;flex-wrap:wrap">
         <button class="btn" onclick="studio('visual')">🎨 Prompt ภาพตัวละคร/ฉาก</button>
         <button class="btn" onclick="studio('video')">🎬 Video / Google Flow</button>

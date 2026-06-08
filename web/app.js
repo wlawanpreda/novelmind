@@ -275,7 +275,19 @@ async function loadProjects() {
     ? projects.map(p => `<option value="${esc(p)}">${esc(p.length > 50 ? p.slice(0, 50) + "…" : p)}</option>`).join("")
     : `<option value="">(ยังไม่มีเรื่อง — เขียนนิยายก่อน)</option>`;
 }
-const loadStudio = loadProjects;
+const loadStudio = () => loadProjects().then(studioStatus);
+
+async function studioStatus() {
+  const title = $("#studioProject")?.value;
+  const box = $("#studioStatus");
+  if (!box || !title) { if (box) box.innerHTML = ""; return; }
+  const r = await api("/api/studio/status?title=" + encodeURIComponent(title));
+  if (!r.ok) { box.innerHTML = ""; return; }
+  const chip = (ok, label) => `<span class="schip ${ok ? "on" : ""}">${ok ? "✅" : "⚪"} ${label}</span>`;
+  box.innerHTML = `<span class="schip ${r.chapters ? "on" : ""}">📖 ${r.chapters} ตอน</span>`
+    + chip(r.status.visual, "ภาพ") + chip(r.status.video, "วิดีโอ")
+    + chip(r.status.audio, "เสียง") + chip(r.status.bible, "bible");
+}
 
 async function studio(action) {
   const title = $("#studioProject").value;

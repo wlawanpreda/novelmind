@@ -176,15 +176,32 @@ def api_doctor():
     add(bool(os.environ.get("NOTION_TOKEN")), "NOTION_TOKEN",
         "set" if os.environ.get("NOTION_TOKEN") else "ขาด (sync Notion)", level="warn")
 
-    if backend in ("local", "hybrid"):
-        import socket
-        u = urlparse(os.environ.get("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1"))
-        host, port = u.hostname or "localhost", u.port or 11434
+    import socket
+
+    def probe(env_url, default, label, fallback_note):
+        u = urlparse(os.environ.get(env_url, default))
+        host, port = u.hostname or "localhost", u.port or (u.scheme == "https" and 443 or 80)
         try:
             with socket.create_connection((host, port), timeout=2):
-                add(True, "Local LLM (Mac mini)", f"{host}:{port} ต่อได้")
+                add(True, label, f"{host}:{port} ต่อได้")
         except Exception:
-            add(False, "Local LLM (Mac mini)", f"{host}:{port} ต่อไม่ได้ (fallback Gemini)", level="warn")
+            add(False, label, f"{host}:{port} ต่อไม่ได้ ({fallback_note})", level="warn")
+
+    if backend in ("local", "hybrid"):
+        probe("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1", "Local LLM (Mac mini)", "fallback Gemini")
+    # Image backend (ComfyUI)
+    img_backend = os.environ.get("IMAGE_BACKEND", "gemini")
+    if img_backend in ("local", "hybrid"):
+        probe("LOCAL_IMAGE_BASE_URL", "http://localhost:8188", "Image gen (ComfyUI)", "fallback Imagen")
+    # Gateway (ถ้าตั้ง)
+    if os.environ.get("ANSRE_GATEWAY_URL"):
+        probe("ANSRE_GATEWAY_URL", "", "ANSRE Gateway", "ใช้ตรงแทน")
+    # ffmpeg + libass (สำหรับ teaser)
+    has_ff = subprocess.run(["which", "ffmpeg"], capture_output=True).returncode == 0
+    libass = has_ff and b"subtitles" in subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                                                        capture_output=True).stdout
+    add(has_ff, "ffmpeg (teaser)", "พร้อม" + (" + libass" if libass else " (ไม่มี libass — caption ผ่าน PIL)"),
+        level="bad")
 
     add(_worker_running(), "Auto worker", "กำลังทำงาน" if _worker_running() else "หยุดอยู่", level="warn")
     return {"backend": backend, "checks": checks,
@@ -358,6 +375,21 @@ def api_studio_output(kind, title):
         if os.path.exists(fp):
             return {"ok": True, "content": _read_head(fp, 60000), "file": os.path.basename(fp)}
         return {"ok": True, "content": "", "file": ""}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def api_studio_status(title):
+    """เช็คว่าเรื่องนี้มี studio output อะไรแล้วบ้าง (visual/video/audio/bible)"""
+    try:
+        import studio
+        base = studio._match_base(title) or studio._slug(title)
+        st = {}
+        for kind, (folder, suffix) in _STUDIO_OUT.items():
+            st[kind] = os.path.exists(os.path.join(SB, "05_Active_Projects", folder, f"{base}{suffix}"))
+        # นับบทด้วย
+        ch = len(glob.glob(os.path.join(SB, "05_Active_Projects", "Chapters", f"{base}_Chapter_*.md")))
+        return {"ok": True, "status": st, "chapters": ch}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)}
 
@@ -628,6 +660,8 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/studio/output":
                 qs = parse_qs(u.query)
                 return self._send(200, api_studio_output(qs.get("kind", [""])[0], qs.get("title", [""])[0]))
+            if p == "/api/studio/status":
+                return self._send(200, api_studio_status(parse_qs(u.query).get("title", [""])[0]))
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
