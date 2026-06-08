@@ -198,7 +198,17 @@ def run_stage_3_scene_planner(outline: str, characters: str) -> List[Dict[str, A
 ]
 """
     res_text = generate_content_safe("planner", prompt, is_json=True)
-    return json.loads(res_text)
+    # ทน JSON ของ local model ที่อาจไม่ strict: coerce + fallback แทน crash
+    for candidate in (res_text, re.sub(r"```json|```", "", res_text or "").strip()):
+        try:
+            data = json.loads(candidate)
+            if isinstance(data, list) and data:
+                return data
+        except Exception:
+            continue
+    print("    [Stage 3] beats JSON ไม่ผ่าน — ใช้ fallback 4 ฉาก")
+    return [{"scene_number": str(i + 1), "setting": f"ฉากที่ {i+1}", "goal": "เดินเรื่อง",
+             "action": "เหตุการณ์ต่อเนื่องในตอน", "climax": "ปม/อารมณ์ของฉาก"} for i in range(4)]
 
 def run_stage_4_scene_writer(title: str, scene_plan: Dict[str, str], prev_scenes_content: str, characters: str, world: str = "") -> str:
     """Stage 4: Draft Writer - Writes full detailed prose for a single scene."""

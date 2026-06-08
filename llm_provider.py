@@ -298,6 +298,8 @@ def _local_generate(prompt, role, is_json, temperature, system):
         "model": model,
         "messages": messages,
         "temperature": 0.8 if temperature is None else temperature,
+        # สำคัญ: Ollama default num_predict = 128 token → output ถูกตัดสั้น ต้องตั้งให้ยาวพอ
+        "max_tokens": int(os.environ.get("LOCAL_LLM_MAX_TOKENS", "4096")),
         "stream": False,
     }
     if is_json:
