@@ -273,6 +273,8 @@ def main():
         return run([py, "scout.py", "--source", "all", "--limit", "3", "--outdir", SB] + rest)
     if cmd == "analyze":
         need_gem_or_exit(); return run([py, "agent_analyzer.py", SB])
+    if cmd == "trends":
+        return run([py, "trends.py"] + rest)
     if cmd == "write":
         need_gem_or_exit(); return run([py, "agent_writer.py", SB])
     if cmd == "cover":

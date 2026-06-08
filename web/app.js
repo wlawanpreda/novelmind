@@ -133,14 +133,21 @@ async function viewStudio(kind) {
 
 // ---- novels ----
 async function loadNovels() {
-  const { novels } = await api("/api/novels");
-  $("#novelList").innerHTML = novels.length ? novels.map(n => `
+  const [{ novels }, trend] = await Promise.all([api("/api/novels"), api("/api/trends")]);
+  const fmtViews = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v;
+  $("#novelList").innerHTML = `
+    <div class="head-actions" style="margin-bottom:14px">
+      <button class="btn" onclick="runStage('scout')">🔍 Scout เรื่องใหม่</button>
+      <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์</button>
+      <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
+    </div>` + (trend.content ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><pre class="studio-out" style="margin-top:12px">${esc(trend.content)}</pre></details>` : "")
+    + (novels.length ? novels.map(n => `
     <div class="nv-row">
-      <div><div class="ti">${esc(n.title)}</div>
-        <div class="meta">${esc(n.source)} · ${esc(n.genre || "—")} ${n.original ? "· " + esc(n.original) : ""}</div></div>
-      ${n.score ? `<div class="score">${esc(n.score)}<small style="color:var(--muted);font-size:11px">/10</small></div>` : "<div></div>"}
+      <div><div class="ti">${n.rank ? `<span class="rankbadge">#${n.rank}</span> ` : ""}${esc(n.title)}</div>
+        <div class="meta">${esc(n.source)} · ${esc(n.genre || "—")}${n.rating ? ` · ⭐${esc(n.rating)}` : ""}${n.views ? ` · 👁 ${fmtViews(n.views)}` : ""}</div></div>
+      ${n.popularity ? `<div class="score">${n.popularity}<small style="color:var(--muted);font-size:11px">/100</small></div>` : "<div></div>"}
       <div class="tag ${n.status}">${esc(n.status)}</div>
-    </div>`).join("") : `<div class="empty">ยังไม่มีนิยาย — กด “เดิน Pipeline” หรือ run Scout เพื่อเริ่ม</div>`;
+    </div>`).join("") : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`);
 }
 
 // ---- outputs ----

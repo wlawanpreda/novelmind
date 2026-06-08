@@ -90,8 +90,10 @@ video: ## prompt วิดีโอ/Google Flow — make video ARGS="<title>"
 .PHONY: scout analyze write continue cover audio teaser publish
 scout: ## ดึง trending novels
 	@$(ANSRE) scout $(ARGS)
-analyze: ## วิเคราะห์ novels ที่ scout มา
+analyze: ## วิเคราะห์ novels ที่ scout มา (สกัดจุดเด่น/hook/adapt)
 	@$(ANSRE) analyze
+trends: ## 📈 สรุปเทรนด์ตลาด → คำแนะนำเรื่องต่อไป
+	@$(ANSRE) trends
 write: ## เขียนนิยาย (6-stage) จากที่ analyze แล้ว
 	@$(ANSRE) write
 continue: ## เขียนตอนถัดไป — make continue ARGS="2 --title ป้า"

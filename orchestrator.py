@@ -199,6 +199,8 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     # 2) ดันงานผ่านแต่ละ stage (ทุกตัว idempotent: ข้ามงานที่เสร็จแล้ว)
     #    stage ใดล้มเหลว ไม่หยุดทั้งรอบ — ให้ตัวอื่นเดินต่อ รอบหน้าค่อยลองใหม่
     run_stage("analyze", [py, "agent_analyzer.py", SECOND_BRAIN], dry)
+    # สรุปเทรนด์จากนิยายที่ analyze แล้ว → ป้อนเข้า ideation รอบถัดไป
+    run_stage("trends", [py, "trends.py"], dry)
     run_stage("write",   [py, "agent_writer.py", SECOND_BRAIN], dry)
     run_stage("cover",   [py, "cover_generator.py", SECOND_BRAIN], dry)
     run_stage("audio",   [py, "audio_engine.py", SECOND_BRAIN], dry)

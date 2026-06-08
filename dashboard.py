@@ -193,7 +193,7 @@ def api_doctor():
 
 def api_novels():
     items = []
-    for fp in sorted(glob.glob(os.path.join(SB, "01_Scouting_Pool", "*.md"))):
+    for fp in glob.glob(os.path.join(SB, "01_Scouting_Pool", "*.md")):
         fm = _frontmatter(fp)
         items.append({
             "title": fm.get("thai_working_title") or fm.get("title") or os.path.basename(fp),
@@ -202,8 +202,18 @@ def api_novels():
             "status": fm.get("status", "?"),
             "score": fm.get("market_fit_score", ""),
             "genre": fm.get("genre", ""),
+            "popularity": int(fm.get("popularity_score", 0) or 0),
+            "rank": int(fm.get("rank", 0) or 0),
+            "rating": fm.get("rating", ""),
+            "views": int(fm.get("views", 0) or 0),
         })
+    items.sort(key=lambda x: x["popularity"], reverse=True)
     return {"novels": items}
+
+
+def api_trends():
+    fp = os.path.join(SB, "Trend_Report.md")
+    return {"content": _read_head(fp, 30000) if os.path.exists(fp) else ""}
 
 
 def api_config():
@@ -390,8 +400,9 @@ STAGE_CMDS = {
     "idea-brainstorm": ["ideation.py", "brainstorm"],
     "idea-score": ["ideation.py", "score"],
     "idea-fuse": ["ideation.py", "fuse"],
-    "scout": ["scout.py", "--source", "all", "--limit", "3", "--outdir", SB],
+    "scout": ["scout.py", "--source", "all", "--limit", "5", "--outdir", SB],
     "analyze": ["agent_analyzer.py", SB],
+    "trends": ["trends.py"],
     "write": ["agent_writer.py", SB],
     "cover": ["cover_generator.py", SB],
     "audio": ["audio_engine.py", SB],
@@ -511,6 +522,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_usage())
             if p == "/api/novels":
                 return self._send(200, api_novels())
+            if p == "/api/trends":
+                return self._send(200, api_trends())
             if p == "/api/config":
                 return self._send(200, api_config())
             if p == "/api/outputs":

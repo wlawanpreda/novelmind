@@ -35,17 +35,15 @@ def parse_markdown_file(filepath: str) -> Tuple[Dict[str, Any], str]:
         
         # Simple YAML parser for key-value strings
         for line in yaml_text.splitlines():
-            if ":" in line:
+            # tag list item (ขึ้นต้น "- " ไม่มี ":") — ต้องเช็คก่อน เพราะไม่มี colon
+            if re.match(r"^\s+-\s", line) and isinstance(frontmatter.get("tags"), list):
+                frontmatter["tags"].append(line.strip()[2:].strip().strip('"').strip("'"))
+            elif ":" in line:
                 key, val = line.split(":", 1)
                 key = key.strip()
                 val = val.strip().strip('"').strip("'")
-                
-                # Check for tags list
                 if key == "tags":
                     frontmatter[key] = []
-                elif line.startswith("  - ") and "tags" in frontmatter:
-                    tag_val = line.replace("  - ", "").strip().strip('"').strip("'")
-                    frontmatter["tags"].append(tag_val)
                 else:
                     frontmatter[key] = val
                     
@@ -79,17 +77,26 @@ def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, A
 - แหล่งที่มา: {frontmatter.get('source')}
 - หมวดหมู่: {frontmatter.get('genre')}
 - ผู้เขียน: {frontmatter.get('author')}
+- 📊 สัญญาณความนิยม (สำคัญ — ใช้วิเคราะห์ว่าทำไมเรื่องนี้ปัง):
+  คะแนนความนิยม {frontmatter.get('popularity_score','?')}/100 (อันดับ #{frontmatter.get('rank','?')}) ·
+  เรตติ้ง {frontmatter.get('rating','?')} · ยอดวิว {frontmatter.get('views','?')} ·
+  ผู้ติดตาม {frontmatter.get('bookmarks','?')} · รีวิว {frontmatter.get('reviews','?')} ·
+  points {frontmatter.get('points','?')} · {frontmatter.get('chapters','?')} ตอน
 - เรื่องย่อ/เนื้อหาดิบ:
 {body}
 
-ให้ผลลัพธ์การวิเคราะห์ในรูปแบบ JSON เท่านั้น โดยมีโครงสร้างคีย์ดังนี้:
+วิเคราะห์โดยใช้ "ตัวเลขความนิยม" เป็นหลักฐานว่าอะไรทำให้เรื่องนี้ประสบความสำเร็จ
+ให้ผลลัพธ์ JSON เท่านั้น:
 {{
   "thai_working_titles": ["ชื่อภาษาไทยที่น่าดึงดูดใจ 1", "ชื่อภาษาไทยที่น่าดึงดูดใจ 2"],
-  "localized_synopsis": "เรื่องย่อภาษาไทยที่มีการเกลาสำนวนวรรณศิลป์อย่างสละสลวยและน่าติดตาม",
-  "market_fit_score": 9, (คะแนน 1-10 เป็นตัวเลขเท่านั้น)
-  "market_fit_reasoning": "วิเคราะห์โอกาสทางธุรกิจและความนิยมของผู้อ่านชาวไทยต่อพล็อตแนวนี้โดยละเอียด",
-  "core_tropes": ["แนวพล็อตเด่น 1", "แนวพล็อตเด่น 2", "สูตรสำเร็จที่ดึงดูดใจ"],
-  "inspired_concept": "แนวทางการดัดแปลงใหม่ให้กลายเป็น Original IP ที่ไม่ละเมิดลิขสิทธิ์ และการปรับเปลี่ยน Setting ให้โดนใจคนไทย"
+  "localized_synopsis": "เรื่องย่อภาษาไทยที่เกลาสำนวนสละสลวยน่าติดตาม",
+  "market_fit_score": 9,
+  "market_fit_reasoning": "วิเคราะห์โอกาสและความนิยมของผู้อ่านไทยต่อพล็อตแนวนี้",
+  "core_tropes": ["แนวพล็อตเด่น 1", "แนวพล็อตเด่น 2", "สูตรสำเร็จที่ดึงดูด"],
+  "standout_points": ["จุดเด่นที่ทำให้เรื่องนี้ปัง/ติดอันดับ (อิงตัวเลข+เนื้อหา) 1", "2", "3"],
+  "viral_hooks": ["hook/จุดที่ตรึงคนอ่านในฉากแรกๆ 1", "2"],
+  "adapt_strategy": "วิธีดึงจุดเด่นเหล่านี้ไปใช้กับนิยายไทยเรื่องต่อไปของเราอย่างเป็นรูปธรรม (ห้ามลอก ให้เอาแก่นความสำเร็จมาปรับ)",
+  "inspired_concept": "แนวทางสร้างเป็น Original IP ใหม่ที่ถูกกฎหมายและโดนใจคนไทย"
 }}
 """
     # routed through the unified provider: role "analyzer" -> local (Mac mini) in hybrid mode
@@ -126,7 +133,9 @@ def process_scouting_pool(second_brain_dir: str):
             # Format analysis as beautiful markdown to write back to the file
             thai_titles_str = "\n".join([f"1. **{t}**" for t in analysis.get("thai_working_titles", [])])
             tropes_str = "\n".join([f"- **{t}**" for t in analysis.get("core_tropes", [])])
-            
+            standout_str = "\n".join([f"- ⭐ {t}" for t in analysis.get("standout_points", [])])
+            hooks_str = "\n".join([f"- 🪝 {t}" for t in analysis.get("viral_hooks", [])])
+
             ai_analysis_md = f"""
 ## 🇹🇭 บทวิเคราะห์ภาษาไทย (AI Literary Analysis)
 
@@ -138,13 +147,22 @@ def process_scouting_pool(second_brain_dir: str):
 
 ### 3. การประเมินตลาดและความคุ้มค่าเชิงพาณิชย์ (Market Viability)
 - **คะแนนความเหมาะสมของตลาด (Market Fit Score):** `{analysis.get("market_fit_score")}/10`
-- **บทวิเคราะห์ความต้องการเชิงลึก:** 
+- **บทวิเคราะห์ความต้องการเชิงลึก:**
   {analysis.get("market_fit_reasoning")}
 
 ### 4. แกนพล็อตเด่นที่ต้องสกัด (Core Tropes & Hooks)
 {tropes_str}
 
-### 5. แนวทางการสร้างเรื่องใหม่ (Inspired Concept & Localization)
+### 5. ⭐ จุดเด่นที่ทำให้เรื่องนี้ปัง (Standout Points)
+{standout_str}
+
+### 6. 🪝 Hook ที่ตรึงคนอ่าน (Viral Hooks)
+{hooks_str}
+
+### 7. 🎯 วิธีเอามาปรับใช้กับเรื่องต่อไปของเรา (Adapt Strategy)
+{analysis.get("adapt_strategy", "")}
+
+### 8. แนวทางการสร้างเรื่องใหม่ (Inspired Concept & Localization)
 {analysis.get("inspired_concept")}
 """
             

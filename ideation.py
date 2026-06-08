@@ -155,9 +155,19 @@ def capture(text, source="manual", title=None):
 def brainstorm(n=BRAINSTORM_BATCH):
     existing = [fm.get("title", "") for _, fm, _ in load_ideas()]
     avoid = "\n".join(f"- {t}" for t in existing[-25:]) or "(ยังไม่มี)"
+    # ดึงเทรนด์ล่าสุดมาชี้นำ (ถ้ามี) — ปิดด้วย ANSRE_IDEA_USE_TRENDS=0
+    trend_ctx = ""
+    if os.environ.get("ANSRE_IDEA_USE_TRENDS", "1").lower() in ("1", "true", "yes"):
+        try:
+            import trends
+            brief = trends.read_brief()
+            if brief:
+                trend_ctx = f"\n\n📈 เทรนด์ตลาดล่าสุด (ใช้ชี้นำให้ไอเดียตรงกระแสแต่ยังสดใหม่):\n{brief[:1000]}\n"
+        except Exception:
+            pass
     prompt = f"""คุณคือนักคิดพล็อตนิยายไทยที่สร้างสรรค์และไม่ซ้ำใคร
 คิดไอเดียนิยาย {n} เรื่องที่สดใหม่ น่าสนใจ มีจุดขายชัด เหมาะกับคนอ่านไทยและไวรัลบนโซเชียล
-หลากหลายแนว (ลึกลับ/แฟนตาซี/ระบบ/ย้อนเวลา/สืบสวน/โรแมนซ์-คอเมดี)
+หลากหลายแนว (ลึกลับ/แฟนตาซี/ระบบ/ย้อนเวลา/สืบสวน/โรแมนซ์-คอเมดี){trend_ctx}
 
 ห้ามซ้ำกับไอเดียที่มีอยู่แล้วเหล่านี้:
 {avoid}
