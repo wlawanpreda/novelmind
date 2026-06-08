@@ -246,6 +246,7 @@ def api_ideas():
             "id": fm.get("id", ""), "title": fm.get("title", ""), "status": fm.get("status", ""),
             "source": fm.get("source", ""), "score": fm.get("score_total", ""),
             "logline": fm.get("logline", ""), "genre": fm.get("genre", ""),
+            "group": fm.get("group", ""),
         } for _, fm, _ in rows]}
     except Exception as e:  # noqa: BLE001
         return {"ideas": [], "error": str(e)}
@@ -263,6 +264,29 @@ def idea_promote(idea_id):
     import ideation
     fp = ideation.promote(idea_id)
     return {"ok": bool(fp)}
+
+
+def idea_action(payload):
+    """จัดการไอเดีย: delete / archive / group / edit (เร็ว, ไม่เรียก LLM)"""
+    import ideation
+    act = payload.get("action", "")
+    iid = payload.get("id", "")
+    if act == "delete":
+        return {"ok": ideation.delete_idea(iid)}
+    if act == "archive":
+        return {"ok": ideation.archive_idea(iid)}
+    if act == "group":
+        return {"ok": ideation.set_group(iid, payload.get("group", ""))}
+    if act == "edit":
+        return {"ok": ideation.edit_idea(iid, payload.get("text", ""))}
+    return {"ok": False, "error": "bad action"}
+
+
+def idea_merge(ids):
+    """ผสมไอเดียที่เลือก (LLM) — รันเป็น background task"""
+    if not ids or len(ids) < 2:
+        return {"error": "ต้องเลือกอย่างน้อย 2 ไอเดีย"}
+    return {"task": start_argv("idea-merge", ["ideation.py", "merge"] + list(ids))}
 
 
 # ---- Studio (visual/video/loops) ----
@@ -570,6 +594,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_add(payload.get("text", "")))
             if u.path == "/api/idea/promote":
                 return self._send(200, idea_promote(payload.get("id", "")))
+            if u.path == "/api/idea/action":
+                return self._send(200, idea_action(payload))
+            if u.path == "/api/idea/merge":
+                return self._send(200, idea_merge(payload.get("ids", [])))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})

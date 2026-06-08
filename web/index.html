@@ -61,12 +61,32 @@
         <input id="ideaInput" placeholder="พิมพ์ไอเดียนิยายของคุณ… (เช่น ร้านสะดวกซื้อที่เปิดเฉพาะตอนตี 3)">
         <button class="btn primary" onclick="addIdea()">+ เก็บไอเดีย</button>
       </div>
-      <div class="head-actions" style="margin:16px 0">
+      <div class="head-actions" style="margin:14px 0;flex-wrap:wrap">
         <button class="btn" onclick="runStage('idea-brainstorm')">🤖 ให้ AI คิดไอเดีย</button>
         <button class="btn" onclick="runStage('idea-score')">⭐ ขยาย+ให้คะแนน</button>
-        <button class="btn" onclick="runStage('idea-fuse')">🧬 ผสมไอเดีย</button>
         <button class="btn" onclick="runStage('idea-auto')">⚡ รันอัตโนมัติเต็ม</button>
       </div>
+      <div class="idea-toolbar">
+        <input id="ideaSearch" placeholder="🔎 ค้นหาไอเดีย…" oninput="renderIdeas()">
+        <select id="ideaGroupBy" onchange="renderIdeas()" title="จัดกลุ่ม">
+          <option value="none">📄 ไม่จัดกลุ่ม</option>
+          <option value="status">🏷️ ตามสถานะ</option>
+          <option value="source">🔖 ตามแหล่ง</option>
+          <option value="group">🗂️ ตามกลุ่ม</option>
+        </select>
+        <select id="ideaSort" onchange="renderIdeas()" title="เรียง">
+          <option value="score">⭐ คะแนนสูงสุด</option>
+          <option value="title">🔤 ตามชื่อ</option>
+        </select>
+      </div>
+      <div class="bulk-bar" id="ideaBulk">
+        <b id="bulkCount">0</b> เลือกอยู่
+        <button class="btn sm" onclick="bulkMerge()">🧬 รวมที่เลือก</button>
+        <button class="btn sm" onclick="bulkGroup()">🗂️ จัดกลุ่ม</button>
+        <button class="btn sm" onclick="bulkDelete()">🗑️ ลบ</button>
+        <button class="btn sm ghost" onclick="clearSel()">ยกเลิก</button>
+      </div>
+      <p class="sub" style="margin:10px 0 4px">💡 ลากไอเดียไปวางทับอีกอันเพื่อ "ผสม" · ติ๊กเลือกหลายอันเพื่อรวม/จัดกลุ่ม</p>
       <div class="nv" id="ideaList"></div>
     </section>
 

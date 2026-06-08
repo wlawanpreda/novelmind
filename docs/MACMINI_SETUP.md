@@ -13,7 +13,7 @@
 |-----|:---:|---------|---------|
 | LLM (วิเคราะห์/เขียน/รีวิว) | ✅ มาก | Gemini เสียเงินทุกครั้ง | → **local บน Mac mini (ฟรี)** |
 | TTS (เสียงพากย์) | ❌ **ไม่** | edge-tts (ฟรีอยู่แล้ว) | คงเดิม / +macOS say offline |
-| Cover (รูปปก) | ✅ | Imagen เสียเงิน | คงไว้ (local image gen คุณภาพ/ลิขสิทธิ์ยุ่ง) |
+| Cover (รูปปก) | ✅ | Imagen เสียเงิน | → **local ComfyUI/SDXL (ฟรี)** — ดู [MACMINI_IMAGE_SETUP.md](MACMINI_IMAGE_SETUP.md) |
 
 **จุดที่ประหยัดจริงคือ LLM token** — TTS ของเดิม (edge-tts) ฟรีอยู่แล้ว ไม่ได้กิน token
 ดังนั้น Mac mini จะเน้นเป็น **LLM server** เป็นหลัก ส่วน TTS แค่เพิ่ม fallback แบบ offline

@@ -69,20 +69,92 @@ function updateWorker(on) {
 }
 
 // ---- ideas ----
-const SRC_ICON = { manual: "✍️", brainstorm: "🤖", trend: "🔥", fusion: "🧬" };
+const SRC_ICON = { manual: "✍️", brainstorm: "🤖", trend: "🔥", fusion: "🧬", merge: "🧬" };
+let IDEAS = [], SEL = new Set();
+
 async function loadIdeas() {
   const { ideas } = await api("/api/ideas");
-  $("#ideaList").innerHTML = ideas.length ? ideas.map(i => `
-    <div class="nv-row">
-      <div><div class="ti">${SRC_ICON[i.source] || "💡"} ${esc(i.title)}</div>
+  IDEAS = ideas || [];
+  SEL = new Set([...SEL].filter(id => IDEAS.some(i => i.id === id)));
+  renderIdeas();
+}
+
+function ideaCard(i) {
+  const sel = SEL.has(i.id) ? " selected" : "";
+  const score = i.score ? `<div class="score">${esc(i.score)}<small style="color:var(--muted);font-size:11px">/10</small></div>` : "<div></div>";
+  const act = i.status === "Scored"
+    ? `<button class="btn sm" onclick="event.stopPropagation();ideaLoop('${esc(i.id)}')">🔄</button>
+       <button class="btn sm" onclick="event.stopPropagation();promoteIdea('${esc(i.id)}')">→ เขียน</button>`
+    : `<div class="tag ${i.status === "Promoted" ? "Processed" : "Analyzed"}">${esc(i.status)}</div>`;
+  return `<div class="nv-row idea-card${sel}" draggable="true" data-id="${esc(i.id)}"
+       ondragstart="dragIdea(event)" ondragover="event.preventDefault()" ondrop="dropIdea(event)">
+      <input type="checkbox" class="idea-chk" ${sel ? "checked" : ""} onclick="event.stopPropagation();toggleSel('${esc(i.id)}')">
+      <div><div class="ti">${SRC_ICON[i.source] || "💡"} ${esc(i.title)}
+        ${i.group ? `<span class="grp">🗂️ ${esc(i.group)}</span>` : ""}</div>
         <div class="meta">${esc(i.logline || i.genre || "ยังไม่ได้ให้คะแนน")}</div></div>
-      ${i.score ? `<div class="score">${esc(i.score)}<small style="color:var(--muted);font-size:11px">/10</small></div>` : "<div></div>"}
-      ${i.status === "Scored"
-        ? `<span class="head-actions" style="gap:6px">
-             <button class="btn sm" onclick="ideaLoop('${esc(i.id)}')">🔄 loop</button>
-             <button class="btn sm" onclick="promoteIdea('${esc(i.id)}')">→ เขียน</button></span>`
-        : `<div class="tag ${i.status === "Promoted" ? "Processed" : "Analyzed"}">${esc(i.status)}</div>`}
-    </div>`).join("") : `<div class="empty">ยังไม่มีไอเดีย — พิมพ์ด้านบน หรือกด “ให้ AI คิดไอเดีย”</div>`;
+      ${score}
+      <span class="head-actions" style="gap:6px">${act}
+        <button class="btn sm ghost" onclick="event.stopPropagation();delIdea('${esc(i.id)}')" title="ลบ">🗑️</button></span>
+    </div>`;
+}
+
+function renderIdeas() {
+  const q = ($("#ideaSearch")?.value || "").toLowerCase();
+  const groupBy = $("#ideaGroupBy")?.value || "none";
+  const sortBy = $("#ideaSort")?.value || "score";
+  let list = IDEAS.filter(i => !q || (i.title + i.logline + i.genre).toLowerCase().includes(q));
+  list.sort(sortBy === "title" ? (a, b) => a.title.localeCompare(b.title)
+    : (a, b) => (parseFloat(b.score) || 0) - (parseFloat(a.score) || 0));
+  const el = $("#ideaList");
+  if (!list.length) { el.innerHTML = `<div class="empty">ยังไม่มีไอเดีย — พิมพ์ด้านบน หรือกด “ให้ AI คิดไอเดีย”</div>`; updateBulk(); return; }
+  if (groupBy === "none") {
+    el.innerHTML = list.map(ideaCard).join("");
+  } else {
+    const groups = {};
+    list.forEach(i => { const k = i[groupBy] || "(ไม่ระบุ)"; (groups[k] = groups[k] || []).push(i); });
+    el.innerHTML = Object.entries(groups).map(([k, items]) =>
+      `<div class="grp-head">${esc(k)} <span>${items.length}</span></div>` + items.map(ideaCard).join("")).join("");
+  }
+  updateBulk();
+}
+
+// selection
+function toggleSel(id) { SEL.has(id) ? SEL.delete(id) : SEL.add(id); renderIdeas(); }
+function clearSel() { SEL.clear(); renderIdeas(); }
+function updateBulk() {
+  $("#bulkCount").textContent = SEL.size;
+  $("#ideaBulk").style.display = SEL.size ? "flex" : "none";
+}
+// drag-to-merge
+let DRAG_ID = null;
+function dragIdea(e) { DRAG_ID = e.currentTarget.dataset.id; e.dataTransfer.effectAllowed = "move"; }
+function dropIdea(e) {
+  e.preventDefault();
+  const target = e.currentTarget.dataset.id;
+  if (DRAG_ID && target && DRAG_ID !== target) mergeIdeas([DRAG_ID, target]);
+  DRAG_ID = null;
+}
+// bulk actions
+async function mergeIdeas(ids) {
+  const r = await api("/api/idea/merge", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("กำลังผสมไอเดีย 🧬"); openDrawer(r.task, "merge ideas"); clearSel();
+}
+function bulkMerge() { if (SEL.size < 2) return toast("เลือกอย่างน้อย 2 อัน", "bad"); mergeIdeas([...SEL]); }
+async function bulkDelete() {
+  if (!confirm(`ลบ ${SEL.size} ไอเดีย?`)) return;
+  for (const id of SEL) await api("/api/idea/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id }) });
+  toast("ลบแล้ว", "good"); clearSel(); loadIdeas();
+}
+async function bulkGroup() {
+  const g = prompt("ชื่อกลุ่ม:"); if (!g) return;
+  for (const id of SEL) await api("/api/idea/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "group", id, group: g }) });
+  toast("จัดกลุ่มแล้ว 🗂️", "good"); clearSel(); loadIdeas();
+}
+async function delIdea(id) {
+  if (!confirm("ลบไอเดียนี้?")) return;
+  await api("/api/idea/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "delete", id }) });
+  toast("ลบแล้ว", "good"); loadIdeas();
 }
 async function addIdea() {
   const t = $("#ideaInput").value.trim();

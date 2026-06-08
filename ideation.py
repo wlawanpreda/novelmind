@@ -227,6 +227,78 @@ def fuse():
 
 
 # ---------------------------------------------------------------------------
+# จัดการไอเดีย (merge / delete / archive / group / edit)
+# ---------------------------------------------------------------------------
+def _find_idea(idea_id):
+    for fp, fm, body in load_ideas():
+        if fm.get("id") == idea_id or (idea_id and idea_id in fp):
+            return fp, fm, body
+    return None
+
+
+def merge_ideas(ids):
+    """ผสมไอเดียที่เลือก (2+ ตัว) เป็นไอเดียใหม่ 1 ตัว"""
+    items = [x for x in (_find_idea(i) for i in ids) if x]
+    if len(items) < 2:
+        print("[merge] ต้องเลือกอย่างน้อย 2 ไอเดีย")
+        return None
+    descs = "\n".join(f"- {fm.get('title')}: {fm.get('logline') or body.strip()[:200]}"
+                      for _, fm, body in items)
+    prompt = f"""ผสมไอเดียนิยายเหล่านี้ให้เป็นไอเดีย "ใหม่" 1 เรื่องที่ลงตัว ดึงจุดเด่นของแต่ละอันมารวมกันอย่างสร้างสรรค์:
+{descs}
+ตอบ JSON: {{"title": "ชื่อเรื่องลูกผสม", "pitch": "จุดขาย 2-3 ประโยค"}}"""
+    d = generate_json(prompt, role="ideation", temperature=0.9)
+    if d.get("title") and d.get("pitch"):
+        fp = capture(d["pitch"], source="merge", title=d["title"])
+        # บันทึกว่ามาจากการผสมอันไหน
+        _, fm, body = _find_idea(d["title"]) or (None, None, None)
+        print(f"[merge] รวม {len(items)} ไอเดีย → '{d['title']}'")
+        return fp
+    return None
+
+
+def delete_idea(idea_id):
+    hit = _find_idea(idea_id)
+    if hit:
+        os.remove(hit[0])
+        print(f"[delete] ลบ {hit[1].get('title')}")
+        return True
+    return False
+
+
+def archive_idea(idea_id):
+    hit = _find_idea(idea_id)
+    if hit:
+        fp, fm, body = hit
+        fm["status"] = "Archived"
+        write_md(fp, fm, body)
+        return True
+    return False
+
+
+def set_group(idea_id, group):
+    hit = _find_idea(idea_id)
+    if hit:
+        fp, fm, body = hit
+        fm["group"] = group
+        write_md(fp, fm, body)
+        return True
+    return False
+
+
+def edit_idea(idea_id, text):
+    hit = _find_idea(idea_id)
+    if hit and text.strip():
+        fp, fm, body = hit
+        fm["status"] = "Captured"   # แก้แล้วต้องให้คะแนนใหม่
+        for k in ("score_total", "logline"):
+            fm.pop(k, None)
+        write_md(fp, fm, f"\n# ไอเดียดิบ\n{text.strip()}\n")
+        return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # expand + score
 # ---------------------------------------------------------------------------
 def score_one(fp, fm, body):
@@ -421,6 +493,16 @@ if __name__ == "__main__":
         score_all()
     elif cmd == "promote" and len(a) > 1:
         promote(a[1])
+    elif cmd == "merge" and len(a) > 1:
+        merge_ideas(a[1:])
+    elif cmd == "delete" and len(a) > 1:
+        delete_idea(a[1])
+    elif cmd == "archive" and len(a) > 1:
+        archive_idea(a[1])
+    elif cmd == "group" and len(a) > 2:
+        set_group(a[1], a[2])
+    elif cmd == "edit" and len(a) > 2:
+        edit_idea(a[1], " ".join(a[2:]))
     elif cmd == "auto":
         auto()
     elif cmd == "list":
