@@ -82,6 +82,52 @@ function updateWorker(on) {
   $("#workerTxt").textContent = "worker: " + (on ? "ทำงาน" : "หยุด");
 }
 
+// ---- Auto Loop (scout → analyze → write วนเอง) ----
+let LOOP3_ON = false;
+function setLoop3(msg) { const e = $("#loop3Status"); if (e) e.textContent = msg; }
+function updateLoop3Btn() {
+  const b = $("#loop3Btn");
+  if (!b) return;
+  b.textContent = LOOP3_ON ? "■ หยุด Loop" : "🔁 Auto Loop";
+  b.classList.toggle("primary", LOOP3_ON);
+}
+// รัน stage แล้วรอจนเสร็จ (resolve = สำเร็จไหม)
+function runStageAwait(stage, label) {
+  return new Promise(async (resolve) => {
+    const r = await api("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }) });
+    if (!r.task) return resolve(false);
+    const poll = async () => {
+      if (!LOOP3_ON) return resolve(false);
+      const t = await api("/api/task/" + r.task);
+      const tail = (t.output || "").trim().split("\n").slice(-1)[0] || "";
+      setLoop3(`${label} … ${tail.slice(0, 70)}`);
+      if (t.status !== "running") return resolve(t.status === "done");
+      setTimeout(poll, 1500);
+    };
+    poll();
+  });
+}
+async function toggleLoop3() {
+  LOOP3_ON = !LOOP3_ON;
+  updateLoop3Btn();
+  if (!LOOP3_ON) { setLoop3("หยุดแล้ว (จะจบ stage ปัจจุบันก่อน)"); return; }
+  toast("เริ่ม Auto Loop 🔁 (scout→analyze→write วนเอง)");
+  let round = 0;
+  while (LOOP3_ON) {
+    round++;
+    await runStageAwait("scout", `รอบ ${round} · 🔍 scout`);
+    if (!LOOP3_ON) break;
+    await runStageAwait("analyze", `รอบ ${round} · 🧠 analyze`);
+    if (!LOOP3_ON) break;
+    setLoop3(`รอบ ${round}: ✍️ write…`); await runStageAwait("write", `รอบ ${round} · ✍️ write`);
+    if (!LOOP3_ON) break;
+    refreshAll();
+    setLoop3(`✅ จบรอบ ${round} — พัก 3 วิ แล้วเริ่มรอบใหม่`);
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  setLoop3(""); updateLoop3Btn();
+}
+
 // ---- ideas ----
 const SRC_ICON = { manual: "✍️", brainstorm: "🤖", trend: "🔥", fusion: "🧬", merge: "🧬" };
 let IDEAS = [], SEL = new Set();

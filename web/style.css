@@ -135,6 +135,9 @@ body{
 .grp{font-size:10.5px;background:var(--card);border:1px solid var(--card-brd);padding:2px 8px;border-radius:20px;color:var(--acc2);margin-left:8px}
 .grp-head{font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 8px;display:flex;gap:8px;align-items:center}
 .grp-head span{background:var(--card);border-radius:20px;padding:1px 9px;font-size:11px}
+/* auto loop */
+.loop3-status{font-size:12.5px;color:var(--acc);margin:0 0 10px;min-height:18px;font-family:ui-monospace,Menlo,monospace}
+#loop3Btn{margin-left:4px}
 /* studio status chips */
 .studio-status{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0}
 .schip{font-size:12px;padding:5px 11px;border-radius:20px;border:1px solid var(--card-brd);color:var(--muted)}
