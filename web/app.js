@@ -81,21 +81,33 @@ async function loadIdeas() {
 
 function ideaCard(i) {
   const sel = SEL.has(i.id) ? " selected" : "";
+  const exp = EXPANDED === i.id;
   const score = i.score ? `<div class="score">${esc(i.score)}<small style="color:var(--muted);font-size:11px">/10</small></div>` : "<div></div>";
   const act = i.status === "Scored"
     ? `<button class="btn sm" onclick="event.stopPropagation();ideaLoop('${esc(i.id)}')">🔄</button>
        <button class="btn sm" onclick="event.stopPropagation();promoteIdea('${esc(i.id)}')">→ เขียน</button>`
     : `<div class="tag ${i.status === "Promoted" ? "Processed" : "Analyzed"}">${esc(i.status)}</div>`;
-  return `<div class="nv-row idea-card${sel}" draggable="true" data-id="${esc(i.id)}"
-       ondragstart="dragIdea(event)" ondragover="event.preventDefault()" ondrop="dropIdea(event)">
+  const row = `<div class="nv-row idea-card${sel}${exp ? " expanded" : ""}" draggable="true" data-id="${esc(i.id)}"
+       onclick="toggleExpand('${esc(i.id)}')" ondragstart="dragIdea(event)" ondragover="event.preventDefault()" ondrop="dropIdea(event)">
       <input type="checkbox" class="idea-chk" ${sel ? "checked" : ""} onclick="event.stopPropagation();toggleSel('${esc(i.id)}')">
-      <div><div class="ti">${SRC_ICON[i.source] || "💡"} ${esc(i.title)}
+      <div><div class="ti">${exp ? "▾ " : "▸ "}${SRC_ICON[i.source] || "💡"} ${esc(i.title)}
         ${i.group ? `<span class="grp">🗂️ ${esc(i.group)}</span>` : ""}</div>
         <div class="meta">${esc(i.logline || i.genre || "ยังไม่ได้ให้คะแนน")}</div></div>
       ${score}
       <span class="head-actions" style="gap:6px">${act}
         <button class="btn sm ghost" onclick="event.stopPropagation();delIdea('${esc(i.id)}')" title="ลบ">🗑️</button></span>
     </div>`;
+  const detail = exp ? `<div class="idea-detail" id="detail-${esc(i.id)}">
+      <div class="dev-bar">
+        <span style="color:var(--muted);font-size:12px">พัฒนาเนื้อหา:</span>
+        <button class="btn sm" onclick="developIdea('${esc(i.id)}','concept')">🌍 คอนเซ็ป</button>
+        <button class="btn sm" onclick="developIdea('${esc(i.id)}','characters')">👥 ตัวละคร</button>
+        <button class="btn sm" onclick="developIdea('${esc(i.id)}','names')">📛 ชื่อ</button>
+        <button class="btn sm" onclick="developIdea('${esc(i.id)}','plot')">🎬 ปม</button>
+        <button class="btn sm primary" onclick="developIdea('${esc(i.id)}','all')">✨ แตกทั้งหมด</button>
+      </div>
+      <pre class="dev-body">กำลังโหลด…</pre></div>` : "";
+  return row + detail;
 }
 
 function renderIdeas() {
@@ -116,6 +128,22 @@ function renderIdeas() {
       `<div class="grp-head">${esc(k)} <span>${items.length}</span></div>` + items.map(ideaCard).join("")).join("");
   }
   updateBulk();
+  if (EXPANDED) loadDetail(EXPANDED);
+}
+
+// expand + develop
+let EXPANDED = null;
+function toggleExpand(id) { EXPANDED = EXPANDED === id ? null : id; renderIdeas(); }
+async function loadDetail(id) {
+  const r = await api("/api/idea/detail?id=" + encodeURIComponent(id));
+  const el = document.querySelector("#detail-" + CSS.escape(id) + " .dev-body");
+  if (el) el.textContent = (r.body || "").trim() || "(ยังไม่มีเนื้อหาพัฒนา — กดปุ่มด้านบนเพื่อแตกคอนเซ็ป/ตัวละคร/ชื่อ/ปม)";
+}
+async function developIdea(id, kind) {
+  const r = await api("/api/idea/develop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, kind }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("กำลังแตกเนื้อหา " + kind + " ✨ (ดูแผงขวา)");
+  openDrawer(r.task, "develop: " + kind);
 }
 
 // selection

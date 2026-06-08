@@ -135,6 +135,11 @@ body{
 .grp{font-size:10.5px;background:var(--card);border:1px solid var(--card-brd);padding:2px 8px;border-radius:20px;color:var(--acc2);margin-left:8px}
 .grp-head{font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 8px;display:flex;gap:8px;align-items:center}
 .grp-head span{background:var(--card);border-radius:20px;padding:1px 9px;font-size:11px}
+/* idea expand + develop */
+.idea-card.expanded{border-color:var(--acc);border-bottom-left-radius:0;border-bottom-right-radius:0}
+.idea-detail{background:var(--bg);border:1px solid var(--acc);border-top:none;border-radius:0 0 12px 12px;padding:14px 16px;margin:-2px 0 8px}
+.dev-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+.dev-body{background:var(--card);border:1px solid var(--card-brd);border-radius:10px;padding:14px;max-height:50vh;overflow:auto;white-space:pre-wrap;font-size:12.5px;line-height:1.65;color:#cbd5e1;font-family:'Sarabun',sans-serif}
 /* idea capture */
 .idea-capture{display:flex;gap:12px;align-items:center}
 .idea-capture input{flex:1;background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);

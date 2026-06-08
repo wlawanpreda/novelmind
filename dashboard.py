@@ -289,6 +289,23 @@ def idea_merge(ids):
     return {"task": start_argv("idea-merge", ["ideation.py", "merge"] + list(ids))}
 
 
+def idea_detail(idea_id):
+    """เนื้อหาเต็มของไอเดีย (โชว์ในแผงกาง)"""
+    import ideation
+    hit = ideation._find_idea(idea_id)
+    if not hit:
+        return {"ok": False, "body": ""}
+    return {"ok": True, "body": hit[2]}
+
+
+def idea_develop(payload):
+    """แตกเนื้อหาไอเดีย (concept/characters/names/plot/all) — background LLM"""
+    iid, kind = payload.get("id", ""), payload.get("kind", "all")
+    if not iid:
+        return {"error": "no id"}
+    return {"task": start_argv(f"idea-develop-{kind}", ["ideation.py", "develop", iid, kind])}
+
+
 # ---- Studio (visual/video/loops) ----
 _STUDIO_OUT = {
     "visual": ("Visual_Prompts", "_Visual.md"),
@@ -557,6 +574,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_outputs())
             if p == "/api/ideas":
                 return self._send(200, api_ideas())
+            if p == "/api/idea/detail":
+                return self._send(200, idea_detail(parse_qs(u.query).get("id", [""])[0]))
             if p == "/api/projects":
                 return self._send(200, api_projects())
             if p == "/api/studio/output":
@@ -601,6 +620,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_action(payload))
             if u.path == "/api/idea/merge":
                 return self._send(200, idea_merge(payload.get("ids", [])))
+            if u.path == "/api/idea/develop":
+                return self._send(200, idea_develop(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
