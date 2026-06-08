@@ -135,6 +135,19 @@ body{
 .grp{font-size:10.5px;background:var(--card);border:1px solid var(--card-brd);padding:2px 8px;border-radius:20px;color:var(--acc2);margin-left:8px}
 .grp-head{font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 8px;display:flex;gap:8px;align-items:center}
 .grp-head span{background:var(--card);border-radius:20px;padding:1px 9px;font-size:11px}
+/* outputs grouped by story */
+.story-out{display:flex;gap:16px;background:var(--card);border:1px solid var(--card-brd);border-radius:16px;padding:16px;margin-bottom:14px}
+.story-cover{width:150px;height:150px;border-radius:12px;object-fit:cover;background:#000;flex-shrink:0}
+.story-cover.noimg{display:grid;place-items:center;color:var(--muted);font-size:12px;border:1px dashed var(--card-brd)}
+.story-body{flex:1;min-width:0}
+.story-title{font-weight:700;font-size:15px;margin-bottom:10px}
+.story-badge{font-size:13px;margin-left:8px;letter-spacing:2px}
+.story-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.story-row>span:first-child{font-size:12px;color:var(--muted);min-width:70px}
+.story-row audio{flex:1;height:36px}
+.story-row video{width:90px;border-radius:8px;background:#000}
+.story-row .btn.sm{padding:5px 9px}
+@media(max-width:680px){.story-out{flex-direction:column}.story-cover{width:100%;height:auto;aspect-ratio:1}}
 /* idea expand + develop */
 .idea-card.expanded{border-color:var(--acc);border-bottom-left-radius:0;border-bottom-right-radius:0}
 .idea-detail{background:var(--bg);border:1px solid var(--acc);border-top:none;border-radius:0 0 12px 12px;padding:14px 16px;margin:-2px 0 8px}

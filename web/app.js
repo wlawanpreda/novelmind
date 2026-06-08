@@ -302,20 +302,30 @@ async function loadNovels() {
     </div>`).join("") : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`);
 }
 
-// ---- outputs ----
+// ---- outputs (จัดกลุ่มตามเรื่อง) ----
 async function loadOutputs() {
-  const o = await api("/api/outputs");
-  $("#galCovers").innerHTML = o.covers.length ? o.covers.map(c =>
-    `<div class="item"><img loading="lazy" src="${c.url}"><div class="cap">${esc(c.name)}</div></div>`).join("")
-    : emptyGal("ยังไม่มีปก");
-  $("#galAudio").innerHTML = o.audio.length ? o.audio.map(a =>
-    `<div class="item" style="padding:12px"><div class="cap" style="padding:0 0 8px">${esc(a.name)}</div><audio controls preload="none" src="${a.url}"></audio></div>`).join("")
-    : emptyGal("ยังไม่มีหนังสือเสียง");
-  $("#galTeasers").innerHTML = o.teasers.length ? o.teasers.map(t =>
-    `<div class="item"><video controls preload="metadata" src="${t.url}"></video><div class="cap">${esc(t.name)}</div></div>`).join("")
-    : emptyGal("ยังไม่มี teaser");
+  const { stories } = await api("/api/outputs");
+  const el = $("#storyOutputs");
+  if (!stories || !stories.length) { el.innerHTML = `<div class="empty">ยังไม่มีผลผลิต — กด “เดิน Pipeline” หรือผลิตจากหน้านิยาย</div>`; return; }
+  el.innerHTML = stories.map(s => {
+    const done = [s.cover ? "🖼️" : "", s.audio.length ? "🔊" : "", s.teasers.length ? "🎬" : ""].filter(Boolean).join(" ");
+    return `<div class="story-out">
+      <div class="story-media">
+        ${s.cover ? `<a href="${s.cover}" target="_blank"><img class="story-cover" loading="lazy" src="${s.cover}"></a>`
+                  : `<div class="story-cover noimg">ยังไม่มีปก</div>`}
+      </div>
+      <div class="story-body">
+        <div class="story-title">${esc(s.title.length > 55 ? s.title.slice(0, 55) + "…" : s.title)} <span class="story-badge">${done || "—"}</span></div>
+        ${s.teasers.map(t => `<div class="story-row"><span>🎬 teaser</span><video controls preload="metadata" src="${t.url}"></video>
+            <a class="btn sm ghost" href="${t.url}" download>⬇</a></div>`).join("")}
+        ${s.audio.map(a => `<div class="story-row"><span>🔊 ${esc(a.name.match(/_(\d+)\.mp3/) ? "ตอน " + a.name.match(/_(\d+)\.mp3/)[1] : "เสียง")}</span>
+            <audio controls preload="none" src="${a.url}"></audio>
+            <a class="btn sm ghost" href="${a.url}" download>⬇</a></div>`).join("")}
+        ${!s.teasers.length && !s.audio.length ? `<div class="meta">ยังไม่มีเสียง/teaser</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
 }
-const emptyGal = m => `<div class="empty">${m}</div>`;
 
 // ---- usage ----
 async function loadUsage() {

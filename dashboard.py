@@ -31,7 +31,7 @@ import time
 import threading
 import subprocess
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -376,17 +376,40 @@ def studio_launch(payload):
 
 
 def api_outputs():
-    def listing(parts, kind):
-        out = []
-        for fp in sorted(glob.glob(os.path.join(SB, *parts))):
-            out.append({"name": os.path.basename(fp), "kind": kind,
-                        "url": f"/media/{kind}/{os.path.basename(fp)}"})
-        return out
-    return {
-        "covers": listing(("05_Active_Projects", "Covers", "*"), "covers"),
-        "audio": listing(("05_Active_Projects", "Audio_Output", "*.mp3"), "audio"),
-        "teasers": listing(("05_Active_Projects", "Teaser_Output", "*.mp4"), "teasers"),
-    }
+    """จัดกลุ่มสื่อตามเรื่อง (ปก+เสียง+teaser ของเรื่องเดียวกันอยู่ด้วยกัน)"""
+    ap = os.path.join(SB, "05_Active_Projects")
+    stories = {}
+
+    def story(base):
+        return stories.setdefault(base, {"base": base, "title": base.replace("_", " "),
+                                         "cover": "", "audio": [], "teasers": []})
+    # ปก (ใช้ตัวที่มี caption ก่อน)
+    for fp in sorted(glob.glob(os.path.join(ap, "Covers", "*.jpg"))):
+        n = os.path.basename(fp)
+        if n.endswith("_Cover_captioned.jpg"):
+            s = story(n[:-len("_Cover_captioned.jpg")])
+            s["cover"] = f"/media/covers/{n}"
+        elif n.endswith("_Cover.jpg"):
+            s = story(n[:-len("_Cover.jpg")])
+            s.setdefault("_raw", f"/media/covers/{n}")
+    for s in stories.values():
+        if not s["cover"] and s.get("_raw"):
+            s["cover"] = s["_raw"]
+    # เสียง
+    for fp in sorted(glob.glob(os.path.join(ap, "Audio_Output", "*.mp3"))):
+        n = os.path.basename(fp)
+        b = re.sub(r"_Audiobook_\d+\.mp3$", "", n)
+        story(b)["audio"].append({"name": n, "url": f"/media/audio/{n}"})
+    # teaser
+    for fp in sorted(glob.glob(os.path.join(ap, "Teaser_Output", "*.mp4"))):
+        n = os.path.basename(fp)
+        b = re.sub(r"_Teaser_\d+\.mp4$", "", n)
+        story(b)["teasers"].append({"name": n, "url": f"/media/teasers/{n}"})
+    # เรียง: เรื่องที่มี teaser ก่อน
+    rows = sorted(stories.values(), key=lambda s: (-len(s["teasers"]), -len(s["audio"]), s["base"]))
+    for s in rows:
+        s.pop("_raw", None)
+    return {"stories": rows}
 
 
 # ---------------------------------------------------------------------------
@@ -605,9 +628,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, info or {"error": "no task"})
             if p.startswith("/media/"):
                 _, _, cat, fname = p.split("/", 3)
+                fname = unquote(fname)   # ชื่อไฟล์ไทยถูก URL-encode ต้อง decode ก่อนหา
                 d = MEDIA_DIRS.get(cat)
                 if d:
-                    return self._serve_file(os.path.join(d, fname))
+                    # กัน path traversal: อนุญาตเฉพาะ basename
+                    safe = os.path.join(d, os.path.basename(fname))
+                    return self._serve_file(safe)
                 return self._send(404, {"error": "bad media"})
             return self._send(404, {"error": "not found"})
         except Exception as e:  # noqa: BLE001
