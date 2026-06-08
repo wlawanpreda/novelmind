@@ -98,11 +98,23 @@ image job เข้าคิว → worker หยิบ (ทีละ 1) → acq
 
 | Phase | ทำอะไร | ความเสี่ยง | ของเดิมพังไหม |
 |-------|--------|-----------|--------------|
-| **0 (now)** | คงไว้ — provider import ตรง | - | - |
-| **1** | สร้าง gateway (FastAPI) ครอบ provider เดิม + คิว in-proc + SQLite + HEAVY_LOCK รันบน Mac mini | ต่ำ | ไม่ — เพิ่ม service ใหม่ ของเดิมยังใช้ได้ |
-| **2** | เพิ่ม `ansre_client.py` (SDK บางๆ) → ค่อยๆ เปลี่ยนไฟล์ที่ import provider มาเรียก gateway แทน (ทีละไฟล์ มี fallback กลับ import เดิม) | ต่ำ | ทยอยเปลี่ยน เทสต์ทีละจุด |
+| **0** | คงไว้ — provider import ตรง | - | - |
+| **1 ✅ ทำแล้ว** | สร้าง gateway (FastAPI) ครอบ provider เดิม + คิว in-proc + SQLite + HEAVY_LOCK + `ansre_client.py` SDK + `macmini_gateway_setup.sh` | ต่ำ | ไม่ — เพิ่ม service ใหม่ ของเดิมยังใช้ได้ |
+| **2 ✅ ทำแล้ว** | ใส่ gateway-routing **ใน provider เอง** (`llm_provider`/`image_provider`): ถ้าตั้ง `ANSRE_GATEWAY_URL` → route ผ่าน gateway, ล่ม → fallback ทำเองในเครื่อง · กัน recursion ด้วย `ANSRE_GATEWAY_INTERNAL=1` | ต่ำมาก | ไม่ — **ไม่แก้ 9 ไฟล์ pipeline เลย** ทุกไฟล์ได้ gateway ฟรีเมื่อเปิด env (ปิด=พฤติกรรมเดิมเป๊ะ) |
 | **3** | ย้ายคิวเป็น Redis+Arq *เมื่อ* ต้องการ durability/หลาย worker | กลาง | โครง API เดิม เปลี่ยนแค่ชั้น enqueue |
 | **4 (option)** | webhook, priority queue, หลาย worker/เครื่อง, dashboard ผูก `/v1/jobs` | - | - |
+
+### Phase 2 ทำไมเลือก "routing ใน provider" แทนแก้ทีละไฟล์
+ทั้ง 9 ไฟล์เรียก `llm_provider.generate()` / `image_provider.generate_image()` อยู่แล้ว →
+ใส่ทางแยกใน 2 ฟังก์ชันนี้จุดเดียว = ครอบทุกไฟล์ทันที, churn = 0, reversible ด้วย env ตัวเดียว
+
+**วิธีเปิดใช้** (หลัง deploy gateway บน Mac mini ด้วย `macmini_gateway_setup.sh`):
+```bash
+# ใส่ใน .env ฝั่ง client — เท่านี้ทุก stage วิ่งผ่าน gateway อัตโนมัติ (ล่ม→fallback เอง)
+ANSRE_GATEWAY_URL=http://pj-mac-mini.tail9bbbd4.ts.net:9000
+ANSRE_GATEWAY_TOKEN=<token ที่ setup สุ่มให้>
+```
+ไม่ตั้ง = ทำงานเหมือนเดิม (import ตรง) · กลับค่าเดิม = ลบ 2 บรรทัดนี้
 
 ---
 
@@ -127,10 +139,11 @@ job = cli.image("...", wait=False)                                   # async →
 
 ## 7. สรุปคำแนะนำ (ทำตามลำดับนี้)
 
-1. ✅ **ทำ Phase 1** — gateway + คิว in-proc + SQLite + HEAVY_LOCK บน Mac mini (ได้ decouple + multi-client + แก้ RAM ครบ โดยไม่ลง infra ใหม่)
-2. ✅ ใส่ **SDK บางๆ** ให้ ANSRE + client อื่นเรียก แล้วทยอยย้ายทีละไฟล์
-3. ⏳ **อย่าเพิ่ง** Redis/Kafka/Celery — อัปเป็น Redis+Arq เฉพาะตอนต้องการ durable/หลาย worker จริง
-4. ⏳ webhook/priority/หลายเครื่อง = อนาคต
+1. ✅ **Phase 1 ทำแล้ว** — gateway + คิว + SQLite + HEAVY_LOCK + SDK + setup script (test ผ่าน)
+2. ✅ **Phase 2 ทำแล้ว** — gateway-routing ใน provider + fallback + กัน recursion (test ผ่าน, ไม่แตะ pipeline)
+3. ⏳ **Deploy** — รัน `macmini_gateway_setup.sh` บน Mac mini แล้วตั้ง `ANSRE_GATEWAY_URL` ฝั่ง client
+4. ⏳ **อย่าเพิ่ง** Redis/Kafka/Celery — อัปเป็น Redis+Arq เฉพาะตอนต้องการ durable/หลาย worker จริง
+5. ⏳ webhook/priority/หลายเครื่อง = อนาคต
 
 > เป้าใหญ่: Mac mini = "AI service node" ตัวเดียวที่ทุก client ในบ้าน/ทีมยิงเข้ามาได้ ปลอดภัย คุมคิว
 > ไม่ swap และเพิ่ม client ใหม่ = แค่แจก token ไม่ต้องก๊อปคีย์/โค้ด

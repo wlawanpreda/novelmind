@@ -63,6 +63,13 @@ LOCAL_TIMEOUT = int(os.environ.get("LOCAL_LLM_TIMEOUT", "600"))
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
+# --- Phase 2: ถ้าตั้ง ANSRE_GATEWAY_URL จะ route ผ่าน gateway (มี fallback ทำเองในเครื่อง) ---
+# ANSRE_GATEWAY_INTERNAL=1 = กระบวนการ gateway เอง → ทำเองตรง ไม่วนกลับ (กัน recursion)
+GATEWAY_URL = os.environ.get("ANSRE_GATEWAY_URL", "").rstrip("/")
+GATEWAY_TOKEN = os.environ.get("ANSRE_GATEWAY_TOKEN", "")
+_INTERNAL = os.environ.get("ANSRE_GATEWAY_INTERNAL") == "1"
+_USE_GATEWAY = bool(GATEWAY_URL) and not _INTERNAL
+
 # บทบาทที่ต้องใช้ "โมเดลหนัก" ฝั่ง local (งานสร้างสรรค์ร้อยแก้ว)
 _HEAVY_ROLES = {"writer", "enhancer", "outline"}
 
@@ -363,7 +370,26 @@ def generate(prompt: str, role: str = "default", is_json: bool = False,
     สร้างข้อความจาก LLM โดยเลือก backend ตาม role อัตโนมัติ
 
     fallback=True : ถ้า backend ที่เลือกล้ม จะ fallback ไปอีก backend หนึ่งให้ (กัน pipeline สะดุด)
+
+    ถ้าตั้ง ANSRE_GATEWAY_URL: ส่งผ่าน gateway ก่อน, ล่ม -> fallback ทำเองในเครื่อง (ตรรกะเดิม)
     """
+    if _USE_GATEWAY:
+        try:
+            return _via_gateway_llm(prompt, role, is_json, system)
+        except Exception as e:  # noqa: BLE001
+            print(f"[llm] gateway ล้มเหลว ({e}); fallback -> ทำเองในเครื่อง")
+    return _generate_direct(prompt, role, is_json, temperature, system, fallback)
+
+
+def _via_gateway_llm(prompt, role, is_json, system) -> str:
+    """ส่ง prompt ไป ANSRE Gateway (ใช้ SDK บางๆ)."""
+    from ansre_client import Ansre
+    return Ansre(GATEWAY_URL, GATEWAY_TOKEN).llm(prompt, role=role, system=system, is_json=is_json)
+
+
+def _generate_direct(prompt: str, role: str = "default", is_json: bool = False,
+                     temperature=None, system: str = None, fallback: bool = True) -> str:
+    """เรียก LLM เองในเครื่องนี้ (Gemini/local) — ตรรกะเดิมก่อนมี gateway."""
     backend = resolve_backend(role)
 
     # Circuit breaker: ถ้า Gemini เพิ่งล้มต่อเนื่อง (โดน throttle) อยู่ในช่วงพัก → ใช้ local ไปก่อน

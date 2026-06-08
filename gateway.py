@@ -38,6 +38,8 @@ from fastapi import FastAPI, Header, HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from pydantic import BaseModel
 
+# กัน recursion: บอก provider ว่า "นี่คือ gateway เอง" ก่อน import (provider อ่าน env ตอน import)
+os.environ["ANSRE_GATEWAY_INTERNAL"] = "1"
 import llm_provider
 import image_provider
 

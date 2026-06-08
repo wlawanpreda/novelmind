@@ -75,6 +75,13 @@ LOCAL_DIM_SCALE = float(os.environ.get("LOCAL_IMAGE_DIM_SCALE", "1.0"))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
 
+# --- Phase 2: ถ้าตั้ง ANSRE_GATEWAY_URL จะ route ผ่าน gateway (มี fallback ทำเองในเครื่อง) ---
+# ANSRE_GATEWAY_INTERNAL=1 = กระบวนการ gateway เอง → ต้องทำเองตรง ไม่วนกลับ (กัน recursion)
+GATEWAY_URL = os.environ.get("ANSRE_GATEWAY_URL", "").rstrip("/")
+GATEWAY_TOKEN = os.environ.get("ANSRE_GATEWAY_TOKEN", "")
+_INTERNAL = os.environ.get("ANSRE_GATEWAY_INTERNAL") == "1"
+_USE_GATEWAY = bool(GATEWAY_URL) and not _INTERNAL
+
 
 # แปลง aspect ratio -> ขนาดที่ SDXL ถนัด (รวมพิกเซลใกล้ 1024^2)
 _SDXL_DIMS = {
@@ -327,7 +334,31 @@ def generate_image(prompt: str, output_path: str, aspect_ratio: str = "1:1",
       local  -> ComfyUI เท่านั้น
       gemini -> Imagen เท่านั้น
       hybrid -> ลอง ComfyUI ก่อน, ดับ/พัง -> fallback Imagen
+
+    ถ้าตั้ง ANSRE_GATEWAY_URL: ส่งงานผ่าน gateway ก่อน, ล่ม -> fallback ทำเองในเครื่อง
     """
+    if _USE_GATEWAY:
+        try:
+            return _via_gateway_image(prompt, output_path, aspect_ratio, backend)
+        except Exception as e:  # noqa: BLE001
+            print(f"    [~] gateway สร้างรูปล้มเหลว ({e}) — fallback ทำเองในเครื่อง")
+    return _generate_image_direct(prompt, output_path, aspect_ratio, backend)
+
+
+def _via_gateway_image(prompt, output_path, aspect_ratio, backend) -> bool:
+    """ส่งงานสร้างรูปไป ANSRE Gateway แล้วรอผล (ใช้ SDK บางๆ)."""
+    from ansre_client import Ansre
+    print(f"    [*] สร้างรูปผ่าน gateway: {GATEWAY_URL}")
+    Ansre(GATEWAY_URL, GATEWAY_TOKEN).image(
+        prompt, save_to=output_path, aspect_ratio=aspect_ratio,
+        backend=backend, wait=True, poll_timeout=LOCAL_TIMEOUT)
+    print(f"    [+] บันทึกรูป (gateway) -> {output_path}")
+    return True
+
+
+def _generate_image_direct(prompt: str, output_path: str, aspect_ratio: str = "1:1",
+                           backend: str | None = None) -> bool:
+    """สร้างรูปเองในเครื่องนี้ (ComfyUI/Imagen) — ตรรกะเดิมก่อนมี gateway."""
     be = (backend or IMAGE_BACKEND).lower()
 
     if be == "local":

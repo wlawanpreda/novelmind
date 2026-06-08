@@ -49,6 +49,7 @@ cat > "$PLIST" <<EOF
   <key>WorkingDirectory</key><string>$REPO</string>
   <key>EnvironmentVariables</key><dict>
     <key>ANSRE_GATEWAY_TOKEN</key><string>$TOKEN</string>
+    <key>ANSRE_GATEWAY_INTERNAL</key><string>1</string>
     <key>ANSRE_FREE_LLM_BEFORE_IMAGE</key><string>1</string>
     <key>ANSRE_GATEWAY_WORKERS</key><string>1</string>
   </dict>
