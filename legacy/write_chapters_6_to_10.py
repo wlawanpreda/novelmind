@@ -4,6 +4,8 @@ import sys
 import json
 import time
 import requests
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # allow imports from repo root
 from llm_provider import generate
 
 # Load environment variables
@@ -149,8 +151,8 @@ def publish_to_notion(title, content):
         return None
 
 def main():
-    outline_path = "SecondBrain/02_Concept_Extraction/รานคาเหนอโลก_สตรมดนเจยนลาเทพ_Outline.md"
-    chars_path = "SecondBrain/04_Character_Database/รานคาเหนอโลก_สตรมดนเจยนลาเทพ_Characters.md"
+    outline_path = "SecondBrain/02_Concept_Extraction/รหสลบใตเงา_บทเพลงแหงกาลเวลา_Outline.md"
+    chars_path = "SecondBrain/04_Character_Database/รหสลบใตเงา_บทเพลงแหงกาลเวลา_Characters.md"
     
     if not os.path.exists(outline_path) or not os.path.exists(chars_path):
         print("[!] ERROR: Outline or Characters DB files not found.")
@@ -165,17 +167,25 @@ def main():
     print("[*] Loaded Outline and Character Database successfully.")
     
     chapter_details = {
-        18: {
-            "title": "พรานล่าเวลา",
-            "desc": "สมาคมส่งนักล่าเวลาบุกร้านพิทักษ์กาล อคินใช้เหลี่ยมกลยุทธ์จัดวางของเก่าสะท้อนเวลา ล่อเหยื่อเข้าสู่ลูปเวลาปิดในห้องใต้ดินจนสามารถจับกุมและเค้นข้อมูลแผนงานขั้นถัดไปของพวกมันได้"
+        6: {
+            "title": "บาดแผลแห่งแก่นแท้",
+            "desc": "โซล (อคิน) ถูกส่งไปยังห้วงมิติที่เวลาดำเนินไปในอดีตซ้ำๆ ของเซนธาเรีย เผชิญหน้ากับเหตุการณ์อดีตที่นำไปสู่บาดแผลของแก่นมรดก และพบว่าเงาปริศนาคือจิตวิญญาณของผู้พิทักษ์ที่บิดเบี้ยว โซลใช้พลังบิดผันเพื่อกลับมารวมกลุ่มกับบลู (ชล) และไอริส (อัญ) พร้อมได้เบาะแส 'บทเพลงแห่งกาลเวลา'"
         },
-        19: {
-            "title": "กระจกไร้ขอบเขต",
-            "desc": "อคินและนาราบุกรังลับของสมาคมที่สถานีก่อสร้างใต้ดิน เผชิญหน้ากับ 'กระจกไร้ขอบเขต' ที่สะท้อนตัวตนคู่ขนาน อคินจงใจยอมรับความล้มเหลวในมิติเสมือนเพื่อหลอกตัวจับสัญญาณ และป้อนรหัสลวงทำลายระบบพลังงานของสมาคมจากวงใน"
+        7: {
+            "title": "จิตแห่งเงา",
+            "desc": "ทีมพยายามสื่อสารกับเงาปริศนาตัวหลัก โซลต้องก้าวข้ามขีดจำกัดด้วยการบิดผันการรับรู้ทางจิตวิญญาณเพื่อเข้าสู่ห้วงสำนึกของศัตรู เป็นการต่อสู้ทางจิตวิทยาที่ตึงเครียดเพื่อเรียนรู้วิธีเยียวยาแก่นมรดกแทนการทำลายล้าง"
         },
-        20: {
-            "title": "สมรภูมิแห่งอัตตา",
-            "desc": "การต่อสู้กับหัวหน้าสาขาของสมาคมระดับสูง อคินใช้อุบายสร้างมิติประวัติศาสตร์ปลอมบิดเบือนการรับรู้ของศัตรู ทำให้รอดพ้นจากการลบตัวตน และทำลายฐานสมาคมลงได้สำเร็จ ทิ้งปมถึงรอยแยกกาลเวลาขนาดใหญ่ที่กระจายอยู่ทั่วโลกในตอนท้าย"
+        8: {
+            "title": "เงื่อนงำในกาลเวลา",
+            "desc": "เมื่อกาลเวลาเริ่มถล่มรวดเร็วขึ้น ทีมต้องเตรียมพิธีเยียวยา บลูสร้างอุปกรณ์แปลงพลังงานช่วยพยุงจิตของโซล ในขณะที่ไอริสแกะรอยประวัติศาสตร์เพื่อถอดทำนองบทเพลง โซลได้เห็นเบาะแสของแก่นมรดกชิ้นอื่นๆ ในจักรวาลที่ส่งสัญญาณร้องขอความช่วยเหลือ"
+        },
+        9: {
+            "title": "บทเพลงแห่งการเยียวยา",
+            "desc": "ฉากไคลแมกซ์ของการต่อสู้ปกป้องโซลระหว่างที่เขาทำพิธีปรับสมดุลมิติเวลา บลูและไอริสใช้ทุกเครื่องมือป้องกันเงาที่บ้าคลั่งเข้าขัดขวาง โซลสามารถขัดเกลาคลื่นพลังงานได้จนแก่นมรดกชิ้นแรกสงบนิ่งและเงาสลายตัวลงอย่างสันติ"
+        },
+        10: {
+            "title": "มรดกบทใหม่",
+            "desc": "สลัดคราบภัยพิบัติบนเซนธาเรีย มิติเวลากลับมาเสถียรชั่วคราว โซลเข้าใจพลังของตนเองและภัยคุกคามในสเกลที่ใหญ่กว่าเดิมอย่างถ่องแท้ ทีมตัดสินใจไม่กลับดาวหลัก แต่จะออกเดินทางเพื่อเดินทางไปกอบกู้แก่นมรดกชิ้นต่อๆ ไปในกาแล็กซีเพื่อปกป้องความสมดุลของทุกชีวิต"
         }
     }
 
@@ -184,7 +194,7 @@ def main():
     os.makedirs(chapters_dir, exist_ok=True)
     os.makedirs(audio_scripts_dir, exist_ok=True)
 
-    for ch_num in range(18, 21):
+    for ch_num in range(6, 11):
         title = chapter_details[ch_num]["title"]
         desc = chapter_details[ch_num]["desc"]
         
@@ -193,7 +203,7 @@ def main():
         # Step A: Beat breakdown
         print(f"[*] Step A: Planning 4 scenes for Chapter {ch_num}...")
         beat_prompt = f"""คุณคือ "Screenwriter & Narrative Planner" ผู้เชี่ยวชาญการกำหนดฉากย่อย
-อ้างอิงจากแผนภาพรวม 20 ตอน:
+อ้างอิงจากแผนภาพรวม 10 ตอน:
 {outline_content}
 
 ข้อมูลตัวละครหลัก:
@@ -234,7 +244,7 @@ def main():
             
             write_prompt = f"""
 คุณคือ "Master Novelist" ผู้เชี่ยวชาญการแต่งนิยายพรรณนาภาษาไทยอ่านง่าย เข้าใจง่าย กระชับ และสนุกสนาน
-หน้าที่ของคุณคือแต่งเนื้อเรื่องฉากย่อยนี้เพื่อประกอบเป็นตอนที่ {ch_num}: {title} ของนิยายเรื่อง ร้านค้าเหนือโลก: กระจกเงาคนตาย
+หน้าที่ของคุณคือแต่งเนื้อเรื่องฉากย่อยนี้เพื่อประกอบเป็นตอนที่ {ch_num}: {title} ของนิยายเรื่อง เงามิติผัน: รหัสบรรเลงกาล (Inspired by Ciphered Shadows)
 
 ข้อมูลตัวละครหลัก:
 {characters_content}
@@ -251,7 +261,7 @@ def main():
 
 คำแนะนำการแต่ง:
 1. เขียนบรรยายโดยใช้ภาษาที่เข้าใจง่าย ไม่ซับซ้อน อ่านง่ายลื่นไหล กระชับ ดำเนินเรื่องคึกคักรวดเร็ว
-2. โฟกัสไปที่ความฉลาดและเล่ห์เหลี่ยมชั้นเชิง (มีเหลี่ยม) ของตัวเอก (อคิน) และการประสานงานกับนาราและลุงแสง
+2. โฟกัสไปที่ความฉลาดและเล่ห์เหลี่ยมชั้นเชิง (มีเหลี่ยม) ของตัวเอก (อคิน/โซล) และการประสานงานของทีม (ชล, อัญ)
 3. ใส่บทสนทนาโต้ตอบที่สมจริงสะท้อนอารมณ์ คาแรกเตอร์ตัวละคร และมีความฉลาดชิงไหวชิงพริบ
 4. แต่งให้มีความยาวและรายละเอียดที่สมจริงที่สุด (เป้าหมาย 600-800 คำสำหรับฉากนี้)
 """
@@ -288,19 +298,19 @@ def main():
         final_audio_script = generate_content_safe(audio_prompt)
         
         # Step E: Save locally
-        chapter_file_path = os.path.join(chapters_dir, f"รานคาเหนอโลก_สตรมดนเจยนลาเทพ_Chapter_{ch_num:02d}.md")
+        chapter_file_path = os.path.join(chapters_dir, f"รหสลบใตเงา_บทเพลงแหงกาลเวลา_Chapter_{ch_num:02d}.md")
         with open(chapter_file_path, "w", encoding="utf-8") as f:
             f.write(final_chapter)
         print(f"[+] Saved Chapter {ch_num} locally to: {chapter_file_path}")
         
-        audio_file_path = os.path.join(audio_scripts_dir, f"รานคาเหนอโลก_สตรมดนเจยนลาเทพ_AudioScript_{ch_num:02d}.md")
+        audio_file_path = os.path.join(audio_scripts_dir, f"รหสลบใตเงา_บทเพลงแหงกาลเวลา_AudioScript_{ch_num:02d}.md")
         with open(audio_file_path, "w", encoding="utf-8") as f:
             f.write(final_audio_script)
         print(f"[+] Saved Audio Script {ch_num} locally to: {audio_file_path}")
         
         # Step F: Publish to Notion
         print(f"[*] Step F: Syncing Chapter {ch_num} to Notion...")
-        notion_title = f"ร้านค้าเหนือโลก: กระจกเงาคนตาย - บทที่ {ch_num}: {title}"
+        notion_title = f"เงามิติผัน: รหัสบรรเลงกาล - บทที่ {ch_num}: {title}"
         notion_url = publish_to_notion(notion_title, final_chapter)
         if notion_url:
             print(f"[+] Sync successful! Page URL: {notion_url}")

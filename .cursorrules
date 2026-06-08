@@ -1,5 +1,7 @@
 # Rules and File Structure Conventions
 
+> 📖 เอกสารกลางของโปรเจกต์อยู่ที่ **AGENT.md** (อ่านก่อนแก้โค้ด) — ไฟล์นี้เก็บเฉพาะกฎการตั้งชื่อไฟล์สื่อ
+
 ## 🎙️ Audiobook & Novel File Structure Rules
 
 To ensure correct detection and rendering of novels, audiobooks, and teaser videos on the dashboard web application, always follow these rules when naming and placing files:

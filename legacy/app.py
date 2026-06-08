@@ -6,6 +6,8 @@ import subprocess
 from typing import Dict, Any, Tuple, List
 import streamlit as st
 import pandas as pd
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # allow imports from repo root
 from llm_provider import generate
 
 # Setup Gemini API Key

@@ -4,6 +4,8 @@ import sys
 import json
 import time
 import requests
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # allow imports from repo root
 from llm_provider import generate
 
 # Load environment variables
@@ -120,12 +122,36 @@ def append_blocks_in_chunks(page_id, blocks):
                 print(f"    [!] Error appending blocks chunk (Attempt {attempt}/3): {str(e)}")
             time.sleep(2)
 
-def publish_to_notion(title, content):
+def create_notion_subpage(parent_page_id, title):
+    url = "https://api.notion.com/v1/pages"
+    payload = {
+        "parent": {"page_id": parent_page_id},
+        "properties": {
+            "title": {
+                "title": [{"text": {"content": title}}]
+            }
+        }
+    }
+    try:
+        res = requests.post(url, json=payload, headers=notion_headers)
+        if res.status_code == 200:
+            subpage_id = res.json().get("id")
+            subpage_url = res.json().get("url")
+            print(f"[*] Created sub-page on Notion successfully! Title: {title} | URL: {subpage_url}")
+            return subpage_id
+        else:
+            print(f"[!] FAILED to create sub-page: {res.text}")
+            return parent_page_id
+    except Exception as e:
+        print(f"[!] ERROR creating sub-page: {e}")
+        return parent_page_id
+
+def publish_to_notion(title, content, parent_id):
     url = "https://api.notion.com/v1/pages"
     blocks = parse_markdown_to_blocks(content)
     
     payload = {
-        "parent": {"page_id": PARENT_PAGE_ID},
+        "parent": {"page_id": parent_id},
         "properties": {
             "title": {
                 "title": [{"text": {"content": title}}]
@@ -149,8 +175,8 @@ def publish_to_notion(title, content):
         return None
 
 def main():
-    outline_path = "SecondBrain/02_Concept_Extraction/รหสลบใตเงา_บทเพลงแหงกาลเวลา_Outline.md"
-    chars_path = "SecondBrain/04_Character_Database/รหสลบใตเงา_บทเพลงแหงกาลเวลา_Characters.md"
+    outline_path = "SecondBrain/02_Concept_Extraction/สมาคมประกันภัยลี้ลับ_Outline.md"
+    chars_path = "SecondBrain/04_Character_Database/สมาคมประกันภัยลี้ลับ_Characters.md"
     
     if not os.path.exists(outline_path) or not os.path.exists(chars_path):
         print("[!] ERROR: Outline or Characters DB files not found.")
@@ -164,26 +190,25 @@ def main():
 
     print("[*] Loaded Outline and Character Database successfully.")
     
+    print("[*] Creating dedicated folder for the novel on Notion...")
+    insurance_parent_page_id = create_notion_subpage(PARENT_PAGE_ID, "สมาคมประกันภัยลี้ลับ: แผนกเคลมกรรม")
+    
     chapter_details = {
-        6: {
-            "title": "บาดแผลแห่งแก่นแท้",
-            "desc": "โซล (อคิน) ถูกส่งไปยังห้วงมิติที่เวลาดำเนินไปในอดีตซ้ำๆ ของเซนธาเรีย เผชิญหน้ากับเหตุการณ์อดีตที่นำไปสู่บาดแผลของแก่นมรดก และพบว่าเงาปริศนาคือจิตวิญญาณของผู้พิทักษ์ที่บิดเบี้ยว โซลใช้พลังบิดผันเพื่อกลับมารวมกลุ่มกับบลู (ชล) และไอริส (อัญ) พร้อมได้เบาะแส 'บทเพลงแห่งกาลเวลา'"
+        1: {
+            "title": "เกิดอุบัติกรรมลี้ลับ",
+            "desc": "ลูกค้ารายใหญ่ยื่นใบเคลมประกัน อ้างว่าโดนผีเจ้าที่ผลักตกบันไดบ้านทรงไทยโบราณจนขาหัก เรียกค่ารักษา 2 แสนบาท เอกผู้เป็นหัวหน้าฝ่ายประเมินความเสียหายจอมเหนียว และจิ๊บนักศึกษาฝึกงานขวัญอ่อน ต้องเดินทางไปตรวจสอบที่เกิดเหตุกลางดึก"
         },
-        7: {
-            "title": "จิตแห่งเงา",
-            "desc": "ทีมพยายามสื่อสารกับเงาปริศนาตัวหลัก โซลต้องก้าวข้ามขีดจำกัดด้วยการบิดผันการรับรู้ทางจิตวิญญาณเพื่อเข้าสู่ห้วงสำนึกของศัตรู เป็นการต่อสู้ทางจิตวิทยาที่ตึงเครียดเพื่อเรียนรู้วิธีเยียวยาแก่นมรดกแทนการทำลายล้าง"
+        2: {
+            "title": "ชันสูตรความชัน",
+            "desc": "เอกตรวจสอบบันไดอย่างละเอียด วัดสโลปมุมความลาดเอียงเพื่อประเมินความน่าจะเป็นทางสถิติของแรงโน้มถ่วง ขณะที่จิ๊บร้องกรี๊ดคอหอยแทบแตกเพราะวิญญาณเจ้าที่โบราณสวมชฎาปรากฏตัวชี้นิ้วข่มขู่ เอกหงัดสัญญากรมธรรม์ข้อกฎหมายโต้เถียงกับผีเจ้าที่เรื่องขอบเขตภัยพิบัติอย่างหน้าตาย"
         },
-        8: {
-            "title": "เงื่อนงำในกาลเวลา",
-            "desc": "เมื่อกาลเวลาเริ่มถล่มรวดเร็วขึ้น ทีมต้องเตรียมพิธีเยียวยา บลูสร้างอุปกรณ์แปลงพลังงานช่วยพยุงจิตของโซล ในขณะที่ไอริสแกะรอยประวัติศาสตร์เพื่อถอดทำนองบทเพลง โซลได้เห็นเบาะแสของแก่นมรดกชิ้นอื่นๆ ในจักรวาลที่ส่งสัญญาณร้องขอความช่วยเหลือ"
+        3: {
+            "title": "จับโป๊ะผีจับขา",
+            "desc": "อาจารย์เดช วิศวกรอาคมประจำบริษัทมาร่วมตรวจสอบ นำเครื่องตรวจวัดแรงสั่นสะเทือนวิญญาณมาสแกน พบว่าแรงถีบที่แท้จริงไม่สอดคล้องกับพลังงานของผีเจ้าที่ แต่กลับไปเจอคราบน้ำมันมะพร้าวทาอยู่ตรงเหลี่ยมมุมของบันได แผนตบตาเพื่อเอาเงินเคลมประกันเริ่มแดงโร่"
         },
-        9: {
-            "title": "บทเพลงแห่งการเยียวยา",
-            "desc": "ฉากไคลแมกซ์ของการต่อสู้ปกป้องโซลระหว่างที่เขาทำพิธีปรับสมดุลมิติเวลา บลูและไอริสใช้ทุกเครื่องมือป้องกันเงาที่บ้าคลั่งเข้าขัดขวาง โซลสามารถขัดเกลาคลื่นพลังงานได้จนแก่นมรดกชิ้นแรกสงบนิ่งและเงาสลายตัวลงอย่างสันติ"
-        },
-        10: {
-            "title": "มรดกบทใหม่",
-            "desc": "สลัดคราบภัยพิบัติบนเซนธาเรีย มิติเวลากลับมาเสถียรชั่วคราว โซลเข้าใจพลังของตนเองและภัยคุกคามในสเกลที่ใหญ่กว่าเดิมอย่างถ่องแท้ ทีมตัดสินใจไม่กลับดาวหลัก แต่จะออกเดินทางเพื่อเดินทางไปกอบกู้แก่นมรดกชิ้นต่อๆ ไปในกาแล็กซีเพื่อปกป้องความสมดุลของทุกชีวิต"
+        4: {
+            "title": "ใบปฏิเสธสินไหมวิญญาณ",
+            "desc": "ฉากเคลียร์บิลกลางดึก เอกจัดประชุมร่วมระหว่างลูกค้าจอมโกง ผีเจ้าที่ และบริษัทประกัน ผีสารภาพว่าไม่ได้ผลักแต่แค่อยากเขกหัวเพราะลูกค้ามาฉี่ใส่ศาล เอกยื่นเอกสารปฏิเสธการเคลมสินไหม (Claim Denial Form) แสนรัก และช่วยไกล่เกลี่ยขอโทษเจ้าที่โดยการซื้อน้ำแดงถวายแทน"
         }
     }
 
@@ -192,7 +217,7 @@ def main():
     os.makedirs(chapters_dir, exist_ok=True)
     os.makedirs(audio_scripts_dir, exist_ok=True)
 
-    for ch_num in range(6, 11):
+    for ch_num in range(1, 5):
         title = chapter_details[ch_num]["title"]
         desc = chapter_details[ch_num]["desc"]
         
@@ -200,25 +225,25 @@ def main():
         
         # Step A: Beat breakdown
         print(f"[*] Step A: Planning 4 scenes for Chapter {ch_num}...")
-        beat_prompt = f"""คุณคือ "Screenwriter & Narrative Planner" ผู้เชี่ยวชาญการกำหนดฉากย่อย
-อ้างอิงจากแผนภาพรวม 10 ตอน:
+        beat_prompt = f"""คุณคือ "Screenwriter & Comedy Narrative Planner" ผู้เชี่ยวชาญการเขียนบทย่อยแนวเสียดสีระบบสำนักงานผสมมุกตลกกาว ๆ
+อ้างอิงจากแผนภาพรวมของนิยายตลกเรื่อง 'สมาคมประกันภัยลี้ลับ':
 {outline_content}
 
 ข้อมูลตัวละครหลัก:
 {characters_content}
 
-นี่คือเป้าหมายของตอนที่ {ch_num}: {title}
+นี่คือเป้าหมายของบทที่ {ch_num}: {title}
 {desc}
 
-จงแบ่งบทที่ {ch_num} ออกเป็น 4 ฉากย่อย (Beats) ที่ต่อเนื่องและชิงไหวชิงพริบ
+จงแบ่งบทที่ {ch_num} ออกเป็น 4 ฉากย่อย (Beats) ที่ต่อเนื่อง ชิงไหวชิงพริบ และแฝงความเสียดสีพนักงานออฟฟิศปะทะความกาวลี้ลับ
 ให้ผลลัพธ์การวิเคราะห์เป็นรูปแบบ JSON เท่านั้น โดยมีโครงสร้างคีย์ดังนี้:
 [
   {{
     "scene_number": "1",
     "setting": "สถานที่และบรรยากาศฉาก 1",
     "goal": "เป้าหมายตัวละครในฉากนี้",
-    "action": "สิ่งที่เกิดขึ้นอย่างละเอียดเพื่อแสดงความฉลาดของตัวเอกและการดำเนินเรื่อง",
-    "climax": "จุดสำคัญหรืออารมณ์ฉากย่อยนี้"
+    "action": "สิ่งที่เกิดขึ้นอย่างละเอียดเพื่อแสดงความฮา การจับผิด และความเค็มของผู้ประเมินภัย",
+    "climax": "จุดสำคัญหรือจุดตบมุกของฉากย่อยนี้"
   }},
   ... (รวมทั้งหมด 4 ฉาก)
 ]
@@ -241,8 +266,8 @@ def main():
             print(f"[*] Step B: Writing Chapter {ch_num} Scene {scene_num}/4...")
             
             write_prompt = f"""
-คุณคือ "Master Novelist" ผู้เชี่ยวชาญการแต่งนิยายพรรณนาภาษาไทยอ่านง่าย เข้าใจง่าย กระชับ และสนุกสนาน
-หน้าที่ของคุณคือแต่งเนื้อเรื่องฉากย่อยนี้เพื่อประกอบเป็นตอนที่ {ch_num}: {title} ของนิยายเรื่อง เงามิติผัน: รหัสบรรเลงกาล (Inspired by Ciphered Shadows)
+คุณคือ "Master Comedy Novelist" ผู้เชี่ยวชาญการแต่งนิยายแนวตลกขบขัน เสียดสีการทำงานออฟฟิศ ภาษาไทยอ่านง่าย ลื่นไหล ดำเนินเรื่องรวดเร็วและตบมุกตลกเป็นธรรมชาติ
+หน้าที่ของคุณคือแต่งเนื้อเรื่องฉากย่อยนี้เพื่อประกอบเป็นตอนที่ {ch_num}: {title} ของนิยายเรื่อง สมาคมประกันภัยลี้ลับ: แผนกเคลมกรรม
 
 ข้อมูลตัวละครหลัก:
 {characters_content}
@@ -255,13 +280,13 @@ def main():
 - สถานที่/บรรยากาศ: {scene_plan.get("setting")}
 - เป้าหมาย: {scene_plan.get("goal")}
 - ลำดับเหตุการณ์: {scene_plan.get("action")}
-- จุดสำคัญ/ความรู้สึกหลัก: {scene_plan.get("climax")}
+- จุดสำคัญ/จุดตบมุกหลัก: {scene_plan.get("climax")}
 
 คำแนะนำการแต่ง:
-1. เขียนบรรยายโดยใช้ภาษาที่เข้าใจง่าย ไม่ซับซ้อน อ่านง่ายลื่นไหล กระชับ ดำเนินเรื่องคึกคักรวดเร็ว
-2. โฟกัสไปที่ความฉลาดและเล่ห์เหลี่ยมชั้นเชิง (มีเหลี่ยม) ของตัวเอก (อคิน/โซล) และการประสานงานของทีม (ชล, อัญ)
-3. ใส่บทสนทนาโต้ตอบที่สมจริงสะท้อนอารมณ์ คาแรกเตอร์ตัวละคร และมีความฉลาดชิงไหวชิงพริบ
-4. แต่งให้มีความยาวและรายละเอียดที่สมจริงที่สุด (เป้าหมาย 600-800 คำสำหรับฉากนี้)
+1. เขียนบรรยายให้อ่านง่าย กระชับ ดำเนินเรื่องคึกคักรวดเร็ว
+2. โฟกัสความขัดแย้งของตัวละคร: คุณเอก (หัวหน้าเคลมประกันเค็มจัดสุดเหตุผล) ปะทะ จิ๊บ (เด็กฝึกงานผู้ช่วยที่กลัวผีจนสติแตก) และผี/คนโกงประกัน
+3. ใส่บทสนทนาโต้ตอบที่มีการตบมุกตลกขบขันเสียดสีงานบริการลูกค้า มีการชิงไหวชิงพริบ
+4. แต่งให้มีความยาวและรายละเอียดที่สมจริง (เป้าหมาย 600-800 คำสำหรับฉากนี้)
 """
             scene_content = generate_content_safe(write_prompt)
             chapter_scenes.append(scene_content)
@@ -273,43 +298,43 @@ def main():
         # Step C: Prose Polishing (Stage 5)
         print(f"[*] Step C: Polishing Chapter {ch_num} Prose...")
         polish_prompt = f"""
-คุณคือ "Chief Literary Editor" ผู้แต่งและบรรณาธิการภาษาไทยอ่านง่าย
+คุณคือ "Chief Literary Editor" ผู้แต่งและบรรณาธิการภาษาไทยตลกขบขันและอ่านง่าย
 นี่คือดราฟต์นิยายบทที่ {ch_num}: {title}
 {compiled_draft}
 
 กรุณาปรับแต่งขัดเกลาบทนี้ โดย:
-1. ใช้ภาษาที่เข้าใจง่าย ไม่ซับซ้อน อ่านง่ายลื่นไหล เป็นมิตรกับผู้อ่านทั่วไป หลีกเลี่ยงศัพท์ยากหรือวรรณศิลป์ที่ซับซ้อนเกินจำเป็น
-2. รักษาจังหวะการเล่าเรื่อง (Pacing) ให้ตื่นเต้น กระชับ ชิงไหวชิงพริบ
-3. ปรับจังหวะปิดท้ายบท (Cliffhanger) ให้น่าติดตาม ทิ้งปมให้ชวนอ่านบทถัดไปทันที
+1. ใช้ภาษาที่เข้าใจง่าย ไม่ซับซ้อน อ่านง่ายลื่นไหล เพิ่มจังหวะคอมเมดี้/ตบมุกให้คมและฮายิ่งขึ้น
+2. รักษาจังหวะการเล่าเรื่อง (Pacing) ให้ตื่นเต้น กระชับ
+3. ปรับจังหวะปิดท้ายบท (Cliffhanger) ให้น่าติดตาม ทิ้งปมให้ชวนฮาและชวนอ่านบทถัดไปทันที
 """
         final_chapter = generate_content_safe(polish_prompt)
         
         # Step D: Audio Script Adapter (Stage 6)
         print(f"[*] Step D: Generating Chapter {ch_num} Audio Script...")
         audio_prompt = f"""
-คุณคือ "Audio Production Director" ผู้กำกับนิยายเสียง
+คุณคือ "Audio Production Director" ผู้กำกับนิยายเสียงแนวคอมเมดี้สนุกสนาน
 จงแปลงนิยายตอนที่ {ch_num}: {title} ด้านล่างนี้ ให้กลายเป็นบทนิยายเสียงพากย์ (Audio Script):
 {final_chapter}
 
-ระบุผู้พูดและน้ำเสียงในวงเล็บเหลี่ยมให้ชัดเจน เช่น [อคิน, โทน: แฝงรอยยิ้มเจ้าเล่ห์] และระบุคิวเสียงเอฟเฟกต์ (SFX) เช่น [SFX: เสียงเข็มนาฬิกาเดินถี่ๆ]
+ระบุผู้พูดและน้ำเสียงในวงเล็บเหลี่ยมให้ชัดเจน เช่น [คุณเอก, โทน: ตรวจสอบแบบใจเย็นจอมเค็ม] และระบุคิวเสียงเอฟเฟกต์ (SFX) เช่น [SFX: เสียงกดเครื่องคิดเลขรัวๆ]
 """
         final_audio_script = generate_content_safe(audio_prompt)
         
         # Step E: Save locally
-        chapter_file_path = os.path.join(chapters_dir, f"รหสลบใตเงา_บทเพลงแหงกาลเวลา_Chapter_{ch_num:02d}.md")
+        chapter_file_path = os.path.join(chapters_dir, f"สมาคมประกันภัยลี้ลับ_Chapter_{ch_num:02d}.md")
         with open(chapter_file_path, "w", encoding="utf-8") as f:
             f.write(final_chapter)
         print(f"[+] Saved Chapter {ch_num} locally to: {chapter_file_path}")
         
-        audio_file_path = os.path.join(audio_scripts_dir, f"รหสลบใตเงา_บทเพลงแหงกาลเวลา_AudioScript_{ch_num:02d}.md")
+        audio_file_path = os.path.join(audio_scripts_dir, f"สมาคมประกันภัยลี้ลับ_AudioScript_{ch_num:02d}.md")
         with open(audio_file_path, "w", encoding="utf-8") as f:
             f.write(final_audio_script)
         print(f"[+] Saved Audio Script {ch_num} locally to: {audio_file_path}")
         
         # Step F: Publish to Notion
         print(f"[*] Step F: Syncing Chapter {ch_num} to Notion...")
-        notion_title = f"เงามิติผัน: รหัสบรรเลงกาล - บทที่ {ch_num}: {title}"
-        notion_url = publish_to_notion(notion_title, final_chapter)
+        notion_title = f"สมาคมประกันภัยลี้ลับ - บทที่ {ch_num}: {title}"
+        notion_url = publish_to_notion(notion_title, final_chapter, insurance_parent_page_id)
         if notion_url:
             print(f"[+] Sync successful! Page URL: {notion_url}")
             

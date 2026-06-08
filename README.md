@@ -58,13 +58,29 @@ LOCAL_LLM_BASE_URL=http://macmini.local:11434/v1
 ```
 **ติดตั้งบน Mac mini ด้วยคำสั่งเดียว:** `bash macmini_setup.sh` (ลง Ollama + โมเดล + service ให้หมด)
 จากนั้นบนเครื่อง ANSRE: `./ansre local` เพื่อตรวจการเชื่อมต่อ + เทียบคุณภาพไทยกับ Gemini
-ดูครบใน **[MACMINI_SETUP.md](MACMINI_SETUP.md)**
+ดูครบใน **[MACMINI_SETUP.md](docs/MACMINI_SETUP.md)**
 
 ---
 
 ## 📚 เอกสารเพิ่มเติม
-- **[MACMINI_SETUP.md](MACMINI_SETUP.md)** — ตั้ง LLM local บน Mac mini (ประหยัด token)
-- **[PUBLISHING.md](PUBLISHING.md)** — ตั้ง credential เผยแพร่ YouTube/TikTok/นิยาย
-- **[ROADMAP.md](ROADMAP.md)** — แผนพัฒนาระยะยาว + สถานะแต่ละ Phase
+- **[AGENT.md](AGENT.md)** — 🤖 สถาปัตยกรรม + กติกา + แผนที่ไฟล์ (อ่านก่อนแก้โค้ด)
+- **[docs/MACMINI_SETUP.md](docs/MACMINI_SETUP.md)** — ตั้ง LLM local บน Mac mini (ประหยัด token)
+- **[docs/PUBLISHING.md](docs/PUBLISHING.md)** — ตั้ง credential เผยแพร่ YouTube/TikTok/นิยาย
+- **[docs/ROADMAP.md](docs/ROADMAP.md)** — แผนพัฒนาระยะยาว + สถานะแต่ละ Phase
+- **[docs/DASHBOARD.md](docs/DASHBOARD.md)** — web dashboard
+
+## 🗂️ โครงสร้างโปรเจกต์
+```
+ansre, ansre.py        CLI ประตูเดียว
+llm_provider.py        หัวใจ routing LLM (Gemini↔local)
+orchestrator.py        ขับ pipeline ต่อเนื่อง
+scout/analyze/write/cover/audio/teaser/publish  ← stage ต่างๆ (root)
+ideation.py, chapter_continuer.py
+dashboard.py + web/    web UI
+docs/                  เอกสารละเอียด
+legacy/                สคริปต์เก่าที่ถูกแทนที่แล้ว
+SecondBrain/           ข้อมูล/ผลผลิต (gitignored)
+```
+> รายละเอียดเต็มใน [AGENT.md](AGENT.md)
 
 > ทุกอย่างเก็บใน `SecondBrain/` (Obsidian-compatible). ตั้งค่าทั้งหมดอยู่ใน `.env` (ดูตัวอย่าง `.env.example`)

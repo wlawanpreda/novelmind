@@ -21,6 +21,8 @@ SECOND_BRAIN = "./SecondBrain"
 # Import existing functions from our project modules
 from scout import fetch_syosetu_novels, fetch_royalroad_novels, write_to_obsidian, ensure_dirs
 from agent_analyzer import process_scouting_pool
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # allow imports from repo root
 from agent_writer import process_analyzed_novels
 from audio_engine import process_audio_scripts
 from teaser_generator import process_teasers

@@ -23,6 +23,8 @@ import sys
 import json
 import time
 import requests
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # allow imports from repo root
 from llm_provider import generate
 
 # ─── ENV & CREDENTIALS ────────────────────────────────────────────────────────
