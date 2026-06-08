@@ -303,18 +303,46 @@ def run_stage_6_audio_script(title: str, final_chapter: str) -> str:
 
 # ----------------- Main Orchestration Loop -----------------
 
-def process_analyzed_novels(second_brain_dir: str, only: str = None):
+def _priority(fm: Dict[str, Any]) -> float:
+    """ลำดับความสำคัญในการเขียน: market_fit_score เป็นหลัก, ใช้ popularity_score แต้มทศนิยมช่วย tie-break"""
+    def _f(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    return _f(fm.get("market_fit_score")) * 1000 + _f(fm.get("popularity_score"))
+
+
+def process_analyzed_novels(second_brain_dir: str, only: str = None, limit: int = 0):
     """Scan the pool for 'Analyzed' novels and execute the 6-stage writing pipeline.
 
     only: ถ้าระบุ จะเขียนเฉพาะเรื่องที่ชื่อ (title/thai_working_title) ตรงกับ substring นี้
+    limit: ถ้า >0 เขียนแค่ N เรื่องที่ 'คุ้มค่าสุด' ในรอบนี้ (market_fit สูงสุดก่อน)
     """
     scouting_pool_dir = os.path.join(second_brain_dir, "01_Scouting_Pool")
     md_files = glob.glob(os.path.join(scouting_pool_dir, "*.md"))
 
-    print(f"[*] Scanning {len(md_files)} files in Scouting Pool for recreation...")
+    # คัดเฉพาะ 'Analyzed' (+ตรง only) แล้วเรียงตามความคุ้มค่า — เรื่องดีที่สุดได้เขียนก่อน
+    queue = []
+    for fp in md_files:
+        try:
+            fm, _ = parse_markdown_file(fp)
+        except Exception:
+            continue
+        if fm.get("status") != "Analyzed":
+            continue
+        if only and only not in (fm.get("title") or "") and only not in (fm.get("thai_working_title") or ""):
+            continue
+        queue.append((_priority(fm), fp))
+    queue.sort(key=lambda x: x[0], reverse=True)
+    if limit and limit > 0:
+        queue = queue[:limit]
+
+    print(f"[*] Scouting Pool: {len(md_files)} ไฟล์ · รอเขียน {len(queue)} เรื่อง"
+          + (f" (จำกัด {limit} คุ้มสุด)" if limit else "") + " — เรียงตาม market_fit")
 
     processed_count = 0
-    for filepath in md_files:
+    for _prio, filepath in queue:
         try:
             frontmatter, body = parse_markdown_file(filepath)
 
@@ -323,8 +351,6 @@ def process_analyzed_novels(second_brain_dir: str, only: str = None):
 
             novel_title = frontmatter.get('title')
             thai_title = frontmatter.get('thai_working_title', 'Recreation')
-            if only and only not in (novel_title or "") and only not in (thai_title or ""):
-                continue
             print(f"\n[🚀] Starting Multi-Stage Writing pipeline for: '{thai_title}' (Inspired by '{novel_title}')...")
             
             # Stage 1: Detailed Outline Creation
@@ -415,9 +441,17 @@ def process_analyzed_novels(second_brain_dir: str, only: str = None):
 if __name__ == "__main__":
     args = sys.argv[1:]
     only = None
+    limit = 0
     if "--only" in args:
         i = args.index("--only")
         only = args[i + 1] if i + 1 < len(args) else None
         args = args[:i] + args[i + 2:]
+    if "--limit" in args:
+        i = args.index("--limit")
+        try:
+            limit = int(args[i + 1]) if i + 1 < len(args) else 0
+        except ValueError:
+            limit = 0
+        args = args[:i] + args[i + 2:]
     second_brain_path = args[0] if args else "./SecondBrain"
-    process_analyzed_novels(second_brain_path, only=only)
+    process_analyzed_novels(second_brain_path, only=only, limit=limit)

@@ -320,11 +320,11 @@ def main():
     if cmd == "scout":
         return run([py, "scout.py", "--source", "all", "--limit", "3", "--outdir", SB] + rest)
     if cmd == "analyze":
-        need_gem_or_exit(); return run([py, "agent_analyzer.py", SB])
+        need_gem_or_exit(); return run([py, "agent_analyzer.py", SB] + rest)
     if cmd == "trends":
         return run([py, "trends.py"] + rest)
     if cmd == "write":
-        need_gem_or_exit(); return run([py, "agent_writer.py", SB])
+        need_gem_or_exit(); return run([py, "agent_writer.py", SB] + rest)
     if cmd == "cover":
         need_gem_or_exit(); return run([py, "cover_generator.py", SB])
     if cmd == "audio":

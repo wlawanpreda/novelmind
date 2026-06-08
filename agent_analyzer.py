@@ -65,6 +65,25 @@ def update_markdown_file(filepath: str, frontmatter: Dict[str, Any], body: str):
     with open(filepath, "w", encoding="utf-8") as f:
         f.write(full_content)
 
+def _extract_json(raw: str) -> Dict[str, Any]:
+    """ดึง JSON ออกจากผลลัพธ์ LLM อย่างทนทาน — กัน ```json fence / ข้อความนำหน้า (local backend ชอบห่อ)"""
+    import re as _re
+    s = (raw or "").strip()
+    # ลอกรั้วโค้ด ```json ... ```
+    m = _re.search(r"```(?:json)?\s*(.+?)\s*```", s, _re.DOTALL)
+    if m:
+        s = m.group(1).strip()
+    try:
+        return json.loads(s)
+    except Exception:
+        pass
+    # fallback: เก็บตั้งแต่ { แรกถึง } ท้ายสุด
+    i, j = s.find("{"), s.rfind("}")
+    if i != -1 and j != -1 and j > i:
+        return json.loads(s[i:j + 1])
+    raise ValueError("ไม่พบ JSON ในผลลัพธ์")
+
+
 def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, Any]:
     """Send novel data to Gemini to perform translation, market fit analysis and localization suggestion in JSON format."""
     prompt = f"""
@@ -103,29 +122,48 @@ def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, A
     raw = generate(prompt, role="analyzer", is_json=True)
 
     try:
-        data = json.loads(raw)
-        return data
+        return _extract_json(raw)
     except Exception as e:
-        print(f"[!] Error parsing JSON response: {raw}")
+        print(f"[!] Error parsing JSON response: {raw[:500]}")
         raise e
 
-def process_scouting_pool(second_brain_dir: str):
-    """Scan the scouting pool for 'Scouted' novels and process them."""
+def process_scouting_pool(second_brain_dir: str, limit: int = 0):
+    """Scan the scouting pool for 'Scouted' novels and process them.
+
+    วิเคราะห์เรื่อง 'นิยมสูงสุดก่อน' (popularity_score) — เรื่องเด่นได้คิวก่อน
+    limit: ถ้า >0 วิเคราะห์แค่ N เรื่องเด่นสุดในรอบนี้ (คุมเวลา/ค่าใช้จ่าย)
+    """
     scouting_pool_dir = os.path.join(second_brain_dir, "01_Scouting_Pool")
     md_files = glob.glob(os.path.join(scouting_pool_dir, "*.md"))
-    
-    print(f"[*] Scanning {len(md_files)} files in Scouting Pool...")
-    
+
+    # คัดเฉพาะ 'Scouted' แล้วเรียงตามคะแนนความนิยม (มาก→น้อย) ให้เรื่องเด่นได้คิวก่อน
+    def _score(fp):
+        try:
+            fm, _ = parse_markdown_file(fp)
+            if fm.get("status") != "Scouted":
+                return None
+            return float(fm.get("popularity_score") or 0)
+        except Exception:
+            return None
+    queue = [(s, fp) for fp in md_files if (s := _score(fp)) is not None]
+    queue.sort(key=lambda x: x[0], reverse=True)
+    if limit and limit > 0:
+        queue = queue[:limit]
+
+    print(f"[*] Scouting Pool: {len(md_files)} ไฟล์ · รอวิเคราะห์ {len(queue)} เรื่อง"
+          + (f" (จำกัด {limit} เด่นสุด)" if limit else "") + " — เรียงตามความนิยม")
+
     processed_count = 0
-    for filepath in md_files:
+    for _score_val, filepath in queue:
         try:
             frontmatter, body = parse_markdown_file(filepath)
-            
-            # Only process if status is 'Scouted'
+
+            # Only process if status is 'Scouted' (re-check; อาจถูกแก้ระหว่างรอบ)
             if frontmatter.get("status") != "Scouted":
                 continue
-                
-            print(f"\n[*] Processing: {frontmatter.get('title')} ({frontmatter.get('source')})...")
+
+            print(f"\n[*] Processing: {frontmatter.get('title')} ({frontmatter.get('source')}) "
+                  f"· นิยม {frontmatter.get('popularity_score','?')}/100...")
             
             # Run AI Analysis (JSON)
             analysis = analyze_novel_with_ai(frontmatter, body)
@@ -208,10 +246,14 @@ def process_scouting_pool(second_brain_dir: str):
     print(f"\n[+] Analysis batch completed. Processed {processed_count} files.")
 
 if __name__ == "__main__":
-    second_brain_path = "./SecondBrain"
-    if len(sys.argv) > 1:
-        second_brain_path = sys.argv[1]
-        
+    import argparse
+    ap = argparse.ArgumentParser(description="ANSRE analyzer — วิเคราะห์เรื่องเด่นก่อน")
+    ap.add_argument("second_brain_path", nargs="?", default="./SecondBrain",
+                    help="โฟลเดอร์ Second Brain (default: ./SecondBrain)")
+    ap.add_argument("--limit", type=int, default=0,
+                    help="วิเคราะห์แค่ N เรื่องเด่นสุดในรอบนี้ (0=ทั้งหมด)")
+    a = ap.parse_args()
+
     # gemini key required only if the analyzer role actually routes to gemini
     if resolve_backend("analyzer") == "gemini" and not API_KEY:
         print("[!] ERROR: GEMINI_API_KEY is not set and analyzer routes to gemini.")
@@ -219,4 +261,4 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print(f"[*] Analyzer backend = {resolve_backend('analyzer')}")
-    process_scouting_pool(second_brain_path)
+    process_scouting_pool(a.second_brain_path, limit=a.limit)
