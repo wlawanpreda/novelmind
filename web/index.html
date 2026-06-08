@@ -58,7 +58,8 @@
     <!-- IDEAS -->
     <section class="view" id="view-ideas">
       <div class="card idea-capture">
-        <input id="ideaInput" placeholder="พิมพ์ไอเดียนิยายของคุณ… (เช่น ร้านสะดวกซื้อที่เปิดเฉพาะตอนตี 3)">
+        <input id="ideaInput" placeholder="พิมพ์ไอเดียนิยายของคุณ… แล้วกด Enter (เช่น ร้านสะดวกซื้อที่เปิดเฉพาะตอนตี 3)"
+               onkeydown="if(event.key==='Enter')addIdea()">
         <button class="btn primary" onclick="addIdea()">+ เก็บไอเดีย</button>
       </div>
       <div class="head-actions" style="margin:14px 0;flex-wrap:wrap">

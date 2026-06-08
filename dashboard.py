@@ -447,8 +447,11 @@ def start_argv(label, argv):
             lf.write(f"$ {label}\n")
             lf.flush()
             try:
-                p = subprocess.Popen([venv_py()] + argv, cwd=ROOT,
-                                     stdout=lf, stderr=subprocess.STDOUT)
+                # -u + PYTHONUNBUFFERED: log วิ่งสดทันที (ไม่งั้น stdout ถูก buffer จนจบ → ดูเหมือนค้าง)
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                p = subprocess.Popen([venv_py(), "-u"] + argv, cwd=ROOT, env=env,
+                                     stdout=lf, stderr=subprocess.STDOUT, bufsize=1)
                 with _task_lock:
                     TASKS[tid]["pid"] = p.pid
                 p.wait()

@@ -163,9 +163,9 @@ async function addIdea() {
   if (r.ok) { $("#ideaInput").value = ""; toast("เก็บไอเดียแล้ว 💡", "good"); loadIdeas(); }
 }
 async function ideaLoop(id) {
-  const r = await api("/api/studio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "idea-loop", id, rounds: 3 }) });
+  const r = await api("/api/studio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "idea-loop", id, rounds: 2 }) });
   if (r.error) return toast("error: " + r.error, "bad");
-  toast("เริ่ม AI loop เกลาไอเดีย 🔄");
+  toast("เริ่ม AI loop เกลาไอเดีย 🔄 (ดูความคืบหน้าในแผงด้านขวา)");
   openDrawer(r.task, "idea loop");
 }
 async function promoteIdea(id) {
@@ -322,19 +322,28 @@ function openDrawer(task, title) {
   $("#drawerTitle").textContent = title;
   $("#drawerLog").textContent = "กำลังเริ่ม…";
   clearInterval(pollTimer);
+  const t0 = Date.now();
   const poll = async () => {
     const t = await api("/api/task/" + task);
-    $("#drawerLog").textContent = t.output || "(no output)";
+    let out = (t.output || "").trim();
+    // ถ้ายังรันแต่ log สั้น → บอกผู้ใช้ว่า AI กำลังคิด (กันดูเหมือนค้าง)
+    if (t.status === "running" && out.split("\n").filter(Boolean).length <= 1) {
+      const sec = Math.round((Date.now() - t0) / 1000);
+      out = (out ? out + "\n\n" : "") + `🤔 AI กำลังประมวลผล… (${sec}s) — งานที่ใช้ local LLM อาจใช้เวลาสักครู่`;
+    }
+    $("#drawerLog").textContent = out || "กำลังเริ่ม…";
     $("#drawerLog").scrollTop = $("#drawerLog").scrollHeight;
     const st = $("#drawerStatus"); st.className = "st " + t.status;
-    st.innerHTML = t.status === "running" ? '<span class="spinner"></span> running' : t.status;
+    st.innerHTML = t.status === "running"
+      ? `<span class="spinner"></span> กำลังทำงาน ${Math.round((Date.now() - t0) / 1000)}s`
+      : (t.status === "done" ? "✓ เสร็จ" : t.status);
     if (t.status !== "running") {
       clearInterval(pollTimer);
       toast(t.status === "done" ? "เสร็จแล้ว: " + title : "ผิดพลาด: " + title, t.status === "done" ? "good" : "bad");
       refreshAll();
     }
   };
-  poll(); pollTimer = setInterval(poll, 1500);
+  poll(); pollTimer = setInterval(poll, 1200);
 }
 function closeDrawer() { $("#drawer").classList.remove("open"); clearInterval(pollTimer); }
 
