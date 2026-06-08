@@ -17,6 +17,7 @@
       <a data-view="overview" class="active"><span class="ic">🏠</span> ภาพรวม</a>
       <a data-view="ideas"><span class="ic">💡</span> ไอเดีย</a>
       <a data-view="novels"><span class="ic">📚</span> นิยาย</a>
+      <a data-view="studio"><span class="ic">🎨</span> Studio</a>
       <a data-view="outputs"><span class="ic">🎬</span> ผลผลิต</a>
       <a data-view="usage"><span class="ic">💰</span> ค่าใช้จ่าย</a>
       <a data-view="config"><span class="ic">⚙️</span> LLM Routing</a>
@@ -72,6 +73,33 @@
     <!-- NOVELS -->
     <section class="view" id="view-novels">
       <div class="nv" id="novelList"></div>
+    </section>
+
+    <!-- STUDIO -->
+    <section class="view" id="view-studio">
+      <div class="card studio-bar">
+        <label style="flex:1">เลือกเรื่อง
+          <select id="studioProject"></select></label>
+        <button class="btn ghost" onclick="loadProjects()">↻</button>
+      </div>
+      <div class="head-actions" style="margin:16px 0;flex-wrap:wrap">
+        <button class="btn" onclick="studio('visual')">🎨 Prompt ภาพตัวละคร/ฉาก</button>
+        <button class="btn" onclick="studio('video')">🎬 Video / Google Flow</button>
+        <button class="btn" onclick="studio('audio')">🎧 Script เสียง</button>
+        <button class="btn" onclick="studio('bible')">📖 Story Bible</button>
+        <button class="btn" onclick="studio('chapter-loop')">🔄 ลูปเกลาบท (×2)</button>
+      </div>
+      <div class="panel">
+        <h2>ผลลัพธ์ <span class="line"></span>
+          <span class="head-actions" style="gap:6px">
+            <button class="btn ghost sm" onclick="viewStudio('visual')">ภาพ</button>
+            <button class="btn ghost sm" onclick="viewStudio('video')">วิดีโอ</button>
+            <button class="btn ghost sm" onclick="viewStudio('audio')">เสียง</button>
+            <button class="btn ghost sm" onclick="viewStudio('bible')">bible</button>
+          </span>
+        </h2>
+        <pre id="studioOut" class="studio-out">เลือกเรื่อง แล้วกดปุ่มสร้าง หรือดูผลที่เคยสร้างไว้</pre>
+      </div>
     </section>
 
     <!-- OUTPUTS -->

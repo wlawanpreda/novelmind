@@ -6,6 +6,7 @@ const VIEW_META = {
   overview: ["ภาพรวม", "สถานะระบบและการผลิตคอนเทนต์"],
   ideas: ["ไอเดีย", "คลังไอเดีย — คิด ให้คะแนน แล้ว promote ไปเขียน"],
   novels: ["นิยาย", "คลังนิยายที่หามาและดัดแปลง"],
+  studio: ["Studio", "สร้าง prompt ภาพ/วิดีโอ, script เสียง, ลูปเกลาบท"],
   outputs: ["ผลผลิต", "ปก หนังสือเสียง และวิดีโอ teaser"],
   usage: ["ค่าใช้จ่าย", "ติดตามการใช้ token และต้นทุน"],
   config: ["LLM Routing", "งานไหนวิ่งไป Gemini หรือ Mac mini"],
@@ -77,7 +78,9 @@ async function loadIdeas() {
         <div class="meta">${esc(i.logline || i.genre || "ยังไม่ได้ให้คะแนน")}</div></div>
       ${i.score ? `<div class="score">${esc(i.score)}<small style="color:var(--muted);font-size:11px">/10</small></div>` : "<div></div>"}
       ${i.status === "Scored"
-        ? `<button class="btn" onclick="promoteIdea('${esc(i.id)}')">→ เขียนเลย</button>`
+        ? `<span class="head-actions" style="gap:6px">
+             <button class="btn sm" onclick="ideaLoop('${esc(i.id)}')">🔄 loop</button>
+             <button class="btn sm" onclick="promoteIdea('${esc(i.id)}')">→ เขียน</button></span>`
         : `<div class="tag ${i.status === "Promoted" ? "Processed" : "Analyzed"}">${esc(i.status)}</div>`}
     </div>`).join("") : `<div class="empty">ยังไม่มีไอเดีย — พิมพ์ด้านบน หรือกด “ให้ AI คิดไอเดีย”</div>`;
 }
@@ -87,9 +90,45 @@ async function addIdea() {
   const r = await api("/api/idea/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: t }) });
   if (r.ok) { $("#ideaInput").value = ""; toast("เก็บไอเดียแล้ว 💡", "good"); loadIdeas(); }
 }
+async function ideaLoop(id) {
+  const r = await api("/api/studio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "idea-loop", id, rounds: 3 }) });
+  if (r.error) return toast("error: " + r.error, "bad");
+  toast("เริ่ม AI loop เกลาไอเดีย 🔄");
+  openDrawer(r.task, "idea loop");
+}
 async function promoteIdea(id) {
   const r = await api("/api/idea/promote", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
   if (r.ok) { toast("ส่งเข้าคิวเขียนแล้ว ✍️", "good"); loadIdeas(); refreshAll(); }
+}
+
+// ---- studio ----
+async function loadProjects() {
+  const { projects } = await api("/api/projects");
+  const sel = $("#studioProject");
+  sel.innerHTML = projects.length
+    ? projects.map(p => `<option value="${esc(p)}">${esc(p.length > 50 ? p.slice(0, 50) + "…" : p)}</option>`).join("")
+    : `<option value="">(ยังไม่มีเรื่อง — เขียนนิยายก่อน)</option>`;
+}
+const loadStudio = loadProjects;
+
+async function studio(action) {
+  const title = $("#studioProject").value;
+  if (!title) return toast("เลือกเรื่องก่อน", "bad");
+  const body = { action, title, rounds: 2 };
+  const r = await api("/api/studio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.error) return toast("error: " + r.error, "bad");
+  toast("เริ่ม: " + action);
+  openDrawer(r.task, "studio: " + action);
+  // หลังเสร็จ ลองโหลดผลให้ดู
+  const kind = { visual: "visual", video: "video", audio: "audio", bible: "bible" }[action];
+  if (kind) setTimeout(() => viewStudio(kind), 1500);
+}
+
+async function viewStudio(kind) {
+  const title = $("#studioProject").value;
+  if (!title) return;
+  const r = await api(`/api/studio/output?kind=${encodeURIComponent(kind)}&title=${encodeURIComponent(title)}`);
+  $("#studioOut").textContent = (r.content && r.content.trim()) ? r.content : `(ยังไม่มีผล ${kind} — กดปุ่มสร้างด้านบน)`;
 }
 
 // ---- novels ----
@@ -224,8 +263,8 @@ function closeDrawer() { $("#drawer").classList.remove("open"); clearInterval(po
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 function loadView(v) {
-  ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, outputs: loadOutputs,
-     usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
+  ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
+     outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
 }
 function refreshAll() {
   const active = $(".nav a.active").dataset.view;

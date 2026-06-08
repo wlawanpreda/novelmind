@@ -113,6 +113,13 @@ body{
 .toast{background:var(--bg2);border:1px solid var(--card-brd);border-left:3px solid var(--acc);padding:12px 18px;border-radius:11px;font-size:13.5px;box-shadow:0 10px 30px rgba(0,0,0,.4);animation:fade .25s}
 .toast.good{border-left-color:var(--good)}.toast.bad{border-left-color:var(--bad)}
 .empty{text-align:center;color:var(--muted);padding:34px;font-size:13.5px}
+/* studio */
+.studio-bar{display:flex;gap:12px;align-items:flex-end}
+.studio-bar label{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--muted)}
+.studio-bar select{background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);padding:11px 13px;border-radius:10px;font-family:inherit;font-size:13.5px;outline:none;width:100%}
+.studio-bar select:focus{border-color:var(--acc)}
+.studio-out{background:var(--bg);border:1px solid var(--card-brd);border-radius:12px;padding:16px;max-height:60vh;overflow:auto;font-family:ui-monospace,Menlo,monospace;font-size:12px;line-height:1.6;white-space:pre-wrap;color:#cbd5e1}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:9px}
 /* idea capture */
 .idea-capture{display:flex;gap:12px;align-items:center}
 .idea-capture input{flex:1;background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);

@@ -12,6 +12,7 @@ ANSRE — single entry point. ใช้ผ่านตัวห่อ ./ansre <c
 
 คำสั่งย่อย (รันทีละขั้นได้):
   idea (คลังไอเดีย: add/brainstorm/score/promote/list/auto)
+  studio (visual/video/audio-script/bible/idea-loop/chapter-loop)
   scout · analyze · write · continue (เขียนตอนต่อ) · cover · audio · teaser · pipeline · publish
   usage (ดูค่า token) · selftest (เช็ค LLM backend) · local (เช็ค+เบนช์มาร์ก Mac mini)
 """
@@ -257,6 +258,8 @@ def main():
     # map คำสั่ง -> สคริปต์
     if cmd == "idea":
         return run([py, "ideation.py"] + rest)
+    if cmd == "studio":
+        return run([py, "studio.py"] + rest)
     if cmd == "continue":
         need_gem_or_exit()
         return run([py, "chapter_continuer.py", SB] + rest)

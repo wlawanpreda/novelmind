@@ -47,6 +47,8 @@
 | `./ansre publish` | เผยแพร่ teaser ออกแพลตฟอร์ม (ดู PUBLISHING.md) |
 | `./ansre scout\|analyze\|write\|cover\|audio\|teaser` | รันทีละขั้นเอง |
 
+> 💡 ใช้ **`make`** แทนก็ได้ (`make help` ดูทั้งหมด) เช่น `make doctor`, `make run`, `make idea ARGS="brainstorm 3"`
+
 ---
 
 ## 💸 ประหยัดค่า token ด้วย Mac mini ที่บ้าน

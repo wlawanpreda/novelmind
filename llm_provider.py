@@ -86,6 +86,8 @@ _HYBRID_DEFAULT = {
     "evaluator": "local",
     "brainstorm": "local",
     "ideation": "local",
+    "visual": "local",
+    "video": "local",
     "default": "local",
 }
 

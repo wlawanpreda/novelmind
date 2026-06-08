@@ -62,6 +62,7 @@ Scouted → Analyzed → Processed          (นิยายจาก trend)
 | `agent_writer.py` | เครื่องเขียน 6 stage (outline→chars→beats→scenes→polish→audio) |
 | `chapter_continuer.py` | เขียนตอนถัดไป (ch2+) จาก outline+บทก่อน |
 | `ideation.py` | คลังไอเดีย + engine (capture/brainstorm/score/promote) |
+| `studio.py` | งานสร้างสรรค์: AI loop (idea/chapter), prompt ภาพ/วิดีโอ(Flow), story bible |
 | `cover_generator.py` | สร้างปก (Imagen) — prompt ผ่าน provider |
 | `audio_engine.py` | TTS → MP3 + SRT (edge-tts/macOS/gTTS/ElevenLabs) |
 | `teaser_generator.py` | ตัดวิดีโอ 9:16 (FFmpeg) |
@@ -98,6 +99,9 @@ SecondBrain/
 │   ├── Audio_Output/      {title}_Audiobook_NN.mp3 / .srt
 │   ├── Covers/            {title}_Cover.jpg
 │   ├── Teaser_Output/     {title}_Teaser_NN.mp4
+│   ├── Visual_Prompts/    {title}_Visual.md     (prompt ภาพ — studio)
+│   ├── Video_Prompts/     {title}_Video.md      (shot list/Flow — studio)
+│   ├── Story_Bible/       {title}_Bible.md
 │   └── Publish_Queue/     {title}_PUBLISH.md
 ├── llm_usage.jsonl        (cost ledger)
 └── orchestrator.log

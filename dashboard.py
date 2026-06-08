@@ -255,6 +255,56 @@ def idea_promote(idea_id):
     return {"ok": bool(fp)}
 
 
+# ---- Studio (visual/video/loops) ----
+_STUDIO_OUT = {
+    "visual": ("Visual_Prompts", "_Visual.md"),
+    "video": ("Video_Prompts", "_Video.md"),
+    "bible": ("Story_Bible", "_Bible.md"),
+    "audio": ("Audio_Scripts", "_AudioScript_01.md"),
+}
+
+
+def api_projects():
+    try:
+        import studio
+        return {"projects": studio.list_projects()}
+    except Exception as e:  # noqa: BLE001
+        return {"projects": [], "error": str(e)}
+
+
+def api_studio_output(kind, title):
+    try:
+        import studio
+        base = studio._match_base(title) or studio._slug(title)
+        folder, suffix = _STUDIO_OUT.get(kind, (None, None))
+        if not folder:
+            return {"ok": False, "error": "bad kind"}
+        fp = os.path.join(SB, "05_Active_Projects", folder, f"{base}{suffix}")
+        if os.path.exists(fp):
+            return {"ok": True, "content": _read_head(fp, 60000), "file": os.path.basename(fp)}
+        return {"ok": True, "content": "", "file": ""}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def studio_launch(payload):
+    action = payload.get("action", "")
+    title = payload.get("title", "")
+    rounds = str(payload.get("rounds", 2))
+    argv_map = {
+        "visual": ["studio.py", "visual", title],
+        "video": ["studio.py", "video", title],
+        "bible": ["studio.py", "bible", title],
+        "audio": ["studio.py", "audio-script", title],
+        "idea-loop": ["studio.py", "idea-loop", payload.get("id", ""), rounds],
+        "chapter-loop": ["studio.py", "chapter-loop", title, "1", rounds],
+    }
+    argv = argv_map.get(action)
+    if not argv:
+        return {"error": "bad action"}
+    return {"task": start_argv(f"studio-{action}", argv)}
+
+
 def api_outputs():
     def listing(parts, kind):
         out = []
@@ -350,19 +400,19 @@ STAGE_CMDS = {
 }
 
 
-def start_task(stage):
-    if stage not in STAGE_CMDS:
-        return None
+def start_argv(label, argv):
+    """รัน [venv python] + argv เป็น background task ที่ track ได้ (label = ชื่อแสดง)"""
     os.makedirs(TASK_DIR, exist_ok=True)
-    tid = f"{stage}-{int(time.time())}"
+    safe = re.sub(r"[^\w]+", "-", label)[:40]
+    tid = f"{safe}-{int(time.time())}"
     logpath = os.path.join(TASK_DIR, tid + ".log")
 
     def runner():
         with open(logpath, "w", encoding="utf-8") as lf:
-            lf.write(f"$ {stage}\n")
+            lf.write(f"$ {label}\n")
             lf.flush()
             try:
-                p = subprocess.Popen([venv_py()] + STAGE_CMDS[stage], cwd=ROOT,
+                p = subprocess.Popen([venv_py()] + argv, cwd=ROOT,
                                      stdout=lf, stderr=subprocess.STDOUT)
                 with _task_lock:
                     TASKS[tid]["pid"] = p.pid
@@ -376,9 +426,15 @@ def start_task(stage):
                     TASKS[tid]["status"] = "error"
 
     with _task_lock:
-        TASKS[tid] = {"id": tid, "stage": stage, "status": "running", "log": logpath}
+        TASKS[tid] = {"id": tid, "stage": label, "status": "running", "log": logpath}
     threading.Thread(target=runner, daemon=True).start()
     return tid
+
+
+def start_task(stage):
+    if stage not in STAGE_CMDS:
+        return None
+    return start_argv(stage, STAGE_CMDS[stage])
 
 
 def task_info(tid):
@@ -461,6 +517,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_outputs())
             if p == "/api/ideas":
                 return self._send(200, api_ideas())
+            if p == "/api/projects":
+                return self._send(200, api_projects())
+            if p == "/api/studio/output":
+                qs = parse_qs(u.query)
+                return self._send(200, api_studio_output(qs.get("kind", [""])[0], qs.get("title", [""])[0]))
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
@@ -496,6 +557,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_add(payload.get("text", "")))
             if u.path == "/api/idea/promote":
                 return self._send(200, idea_promote(payload.get("id", "")))
+            if u.path == "/api/studio":
+                return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
         except Exception as e:  # noqa: BLE001
             return self._send(500, {"error": str(e)})
