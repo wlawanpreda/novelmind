@@ -135,6 +135,19 @@ body{
 .grp{font-size:10.5px;background:var(--card);border:1px solid var(--card-brd);padding:2px 8px;border-radius:20px;color:var(--acc2);margin-left:8px}
 .grp-head{font-weight:700;font-size:13px;color:var(--muted);margin:16px 0 8px;display:flex;gap:8px;align-items:center}
 .grp-head span{background:var(--card);border-radius:20px;padding:1px 9px;font-size:11px}
+/* usage cap bar */
+.caprow{display:flex;justify-content:space-between;align-items:center;font-size:13px;margin-bottom:8px}
+.caprow b{font-size:15px}
+.capbar{height:10px;background:var(--bg);border-radius:6px;overflow:hidden;border:1px solid var(--card-brd)}
+.capfill{height:100%;background:var(--grad);border-radius:6px;transition:.4s}
+.capfill.danger{background:linear-gradient(135deg,#fbbf24,#f87171)}
+/* overview extras */
+.card.stat.clickable{cursor:pointer;transition:.16s}
+.card.stat.clickable:hover{border-color:var(--acc);transform:translateY(-2px)}
+.latest-teaser{display:flex;gap:16px;align-items:center}
+.latest-teaser video{width:120px;border-radius:10px;background:#000;flex-shrink:0}
+.latest-teaser .ti{font-weight:700;font-size:14px;margin-bottom:4px}
+.latest-teaser .btn{margin-top:8px}
 /* outputs grouped by story */
 .story-out{display:flex;gap:16px;background:var(--card);border:1px solid var(--card-brd);border-radius:16px;padding:16px;margin-bottom:14px}
 .story-cover{width:150px;height:150px;border-radius:12px;object-fit:cover;background:#000;flex-shrink:0}

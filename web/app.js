@@ -45,11 +45,25 @@ const STAGES = [
   ["publish", "📤 Publish", "publish_queue", "outputs"],
 ];
 
+function go(view) { const a = document.querySelector('.nav a[data-view="' + view + '"]'); if (a) a.click(); }
+
 async function loadOverview() {
   const s = await api("/api/status");
+  const goView = grp => grp === "pool" ? "novels" : "outputs";
   $("#statCards").innerHTML = STAT_DEFS.map(([k, lbl, grp]) =>
-    `<div class="card stat"><div class="k">${lbl}</div><div class="v">${s[grp][k] ?? 0}</div></div>`).join("")
-    + `<div class="card stat flat"><div class="k">💰 ค่า LLM วันนี้</div><div class="v">$${s.spend_today.toFixed(4)}</div></div>`;
+    `<div class="card stat clickable" onclick="go('${goView(grp)}')"><div class="k">${lbl}</div><div class="v">${s[grp][k] ?? 0}</div></div>`).join("")
+    + `<div class="card stat flat clickable" onclick="go('usage')"><div class="k">💰 ค่า LLM วันนี้</div><div class="v">$${s.spend_today.toFixed(4)}</div></div>`;
+  // teaser ล่าสุด
+  api("/api/outputs").then(o => {
+    const withT = (o.stories || []).filter(x => x.teasers.length);
+    const box = $("#latestTeaser");
+    if (box) box.innerHTML = withT.length
+      ? `<video controls preload="metadata" poster="${withT[0].cover || ""}" src="${withT[0].teasers[0].url}"></video>
+         <div><div class="ti">${esc(withT[0].title.slice(0, 50))}</div>
+         <div class="meta">teaser ล่าสุด · มีทั้งหมด ${withT.length} เรื่อง</div>
+         <button class="btn sm" onclick="go('outputs')">ดูผลผลิตทั้งหมด →</button></div>`
+      : `<div class="empty">ยังไม่มี teaser — กด “เดิน Pipeline”</div>`;
+  });
   $("#flow").innerHTML = STAGES.map((st, i) => {
     const cnt = s[st[3]][st[2]] ?? 0;
     return `<div class="step"><span class="run" onclick="runStage('${st[0]}')">▶ run</span>
@@ -329,13 +343,29 @@ async function loadOutputs() {
 
 // ---- usage ----
 async function loadUsage() {
-  const u = await api("/api/usage");
+  const [u, cfg] = await Promise.all([api("/api/usage"), api("/api/config")]);
+  const cap = parseFloat(cfg.daily_cap) || 0;
   const total = u.by_date.reduce((a, [, v]) => a + v, 0);
+  const localN = u.by_backend.local || 0, gemN = u.by_backend.gemini || 0;
+  const savedPct = (localN + gemN) ? Math.round(localN / (localN + gemN) * 100) : 0;
   $("#usageCards").innerHTML = `
     <div class="card stat"><div class="k">💰 วันนี้</div><div class="v">$${u.today.toFixed(4)}</div></div>
     <div class="card stat flat"><div class="k">📅 รวม 14 วัน</div><div class="v">$${total.toFixed(3)}</div></div>
-    <div class="card stat flat"><div class="k">🟢 เรียก local (ฟรี)</div><div class="v">${u.by_backend.local || 0}</div></div>
-    <div class="card stat flat"><div class="k">🟣 เรียก gemini</div><div class="v">${u.by_backend.gemini || 0}</div></div>`;
+    <div class="card stat flat"><div class="k">🟢 local (ฟรี)</div><div class="v">${localN}</div></div>
+    <div class="card stat flat"><div class="k">💚 ประหยัด</div><div class="v">${savedPct}%</div></div>`;
+  // แถบเพดานต่อวัน
+  const capBox = $("#usageCap");
+  if (capBox) {
+    if (cap > 0) {
+      const pct = Math.min(100, u.today / cap * 100);
+      const danger = pct >= 85;
+      capBox.innerHTML = `<div class="caprow"><span>เพดานวันนี้</span><b>$${u.today.toFixed(2)} / $${cap.toFixed(2)}</b></div>
+        <div class="capbar"><div class="capfill${danger ? " danger" : ""}" style="width:${pct}%"></div></div>
+        ${danger ? '<div class="meta" style="color:var(--warn);margin-top:6px">⚠️ ใกล้ชนเพดาน — เกินแล้วจะเด้งไป local อัตโนมัติ</div>' : ""}`;
+    } else {
+      capBox.innerHTML = `<div class="meta">ยังไม่ตั้งเพดาน (ANSRE_DAILY_USD_CAP=0) — ตั้งได้ที่หน้า LLM Routing</div>`;
+    }
+  }
   const max = Math.max(0.0001, ...u.by_date.map(([, v]) => v));
   $("#usageChart").innerHTML = u.by_date.length ? u.by_date.map(([d, v]) =>
     `<div class="bar" style="height:${Math.max(3, v / max * 100)}%" title="${d}: $${v}">
@@ -349,9 +379,11 @@ async function loadUsage() {
 async function loadConfig() {
   const c = await api("/api/config");
   $("#configCards").innerHTML = `
-    <div class="card stat flat"><div class="k">🔀 Backend</div><div class="v" style="font-size:22px">${c.backend}</div></div>
-    <div class="card stat flat"><div class="k">✍️ Writing mode</div><div class="v" style="font-size:22px">${c.writing_mode}</div></div>
-    <div class="card stat flat"><div class="k">🖥️ Local model</div><div class="v" style="font-size:16px">${esc(c.local_model || "—")}</div></div>
+    <div class="card stat flat"><div class="k">🔀 LLM Backend</div><div class="v" style="font-size:22px">${c.backend}</div></div>
+    <div class="card stat flat"><div class="k">🎨 Image Backend</div><div class="v" style="font-size:22px">${esc(c.image_backend || "—")}</div></div>
+    <div class="card stat flat"><div class="k">🖥️ Local model</div><div class="v" style="font-size:15px">${esc(c.local_model || "—")}</div></div>
+    <div class="card stat flat"><div class="k">🎧 TTS</div><div class="v" style="font-size:16px">${esc(c.tts_engine || "—")}</div></div>
+    <div class="card stat flat"><div class="k">✍️ Writing mode</div><div class="v" style="font-size:20px">${c.writing_mode}</div></div>
     <div class="card stat flat"><div class="k">🧱 เพดาน/วัน</div><div class="v" style="font-size:20px">$${c.daily_cap}</div></div>`;
   $("#routingChips").innerHTML = c.routing.map(r =>
     `<div class="route"><b>${r.role}</b><span class="be ${r.backend}">${r.backend}</span></div>`).join("");

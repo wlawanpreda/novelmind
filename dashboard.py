@@ -234,6 +234,11 @@ def api_config():
             "local_model": os.environ.get("LOCAL_LLM_MODEL", ""),
             "writing_mode": os.environ.get("WRITING_MODE", "premium"),
             "daily_cap": os.environ.get("ANSRE_DAILY_USD_CAP", "0"),
+            "image_backend": os.environ.get("IMAGE_BACKEND", "gemini"),
+            "image_url": os.environ.get("LOCAL_IMAGE_BASE_URL", ""),
+            "image_model": os.environ.get("LOCAL_IMAGE_MODEL", ""),
+            "tts_engine": os.environ.get("TTS_ENGINE", "edge-tts"),
+            "call_gap": os.environ.get("ANSRE_CALL_GAP", "0"),
             "routing": routing}
 
 
