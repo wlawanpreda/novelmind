@@ -140,6 +140,11 @@ body{
 .idea-detail{background:var(--bg);border:1px solid var(--acc);border-top:none;border-radius:0 0 12px 12px;padding:14px 16px;margin:-2px 0 8px}
 .dev-bar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .dev-body{background:var(--card);border:1px solid var(--card-brd);border-radius:10px;padding:14px;max-height:50vh;overflow:auto;white-space:pre-wrap;font-size:12.5px;line-height:1.65;color:#cbd5e1;font-family:'Sarabun',sans-serif}
+textarea.dev-body.editing{width:100%;min-height:280px;resize:vertical;outline:none}
+textarea.dev-body.editing:focus{border-color:var(--acc)}
+.char-form{display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;padding:12px;background:var(--card);border:1px solid var(--card-brd);border-radius:10px}
+.char-form input{background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);padding:8px 11px;border-radius:8px;font-family:inherit;font-size:12.5px;outline:none;flex:1;min-width:120px}
+.char-form input:focus{border-color:var(--acc)}
 /* idea capture */
 .idea-capture{display:flex;gap:12px;align-items:center}
 .idea-capture input{flex:1;background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);

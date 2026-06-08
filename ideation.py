@@ -341,6 +341,43 @@ def _upsert_section(body, header, content):
     return body.rstrip() + "\n\n" + block
 
 
+def set_body(idea_id, new_body):
+    """บันทึกเนื้อหาไอเดียทั้งก้อน (สำหรับแก้ section ใน UI)"""
+    hit = _find_idea(idea_id)
+    if hit and new_body.strip():
+        fp, fm, _ = hit
+        write_md(fp, fm, "\n" + new_body.strip() + "\n")
+        return True
+    return False
+
+
+def add_character(idea_id, fields):
+    """เพิ่มตัวละคร 1 ตัวจากฟอร์มที่กรอก (ผสมกับ AI) → ต่อท้าย section ตัวละคร"""
+    hit = _find_idea(idea_id)
+    if not hit:
+        return False
+    fp, fm, body = hit
+    tmpl = " | ".join(f"{k}: {v}" for k, v in fields.items() if str(v).strip())
+    if not tmpl:
+        return False
+    print(f"[character] ขยายตัวละครจาก: {tmpl}", flush=True)
+    out = generate(
+        f"""ขยายตัวละครนิยายไทย 1 ตัวจากข้อมูลที่ผู้ใช้กรอก ให้สมบูรณ์ขึ้น (เพิ่มภูมิหลัง/บุคลิก/ปม/น้ำเสียง) แต่คงข้อมูลเดิมไว้
+เรื่อง: {fm.get('title')} — {fm.get('logline','')}
+ข้อมูลที่กรอก: {tmpl}
+ตอบเป็นโปรไฟล์ตัวละคร 1 ตัว กระชับ ขึ้นต้นชื่อด้วย '###' ตามด้วย bullet [สำคัญ: ห้ามคำนำ/คำลงท้าย ห้ามใช้ '##']""",
+        role="characters", temperature=0.85)
+    out = _clean_develop(out)
+    header = DEVELOP["characters"][0]
+    existing = _section(body, "ตัวละคร")
+    combined = (existing.rstrip() + "\n\n" + out).strip() if existing else out
+    _, fm, body = _find_idea(idea_id)
+    body = _upsert_section(body, header, combined)
+    write_md(fp, fm, body)
+    print("[character] ✅ เพิ่มแล้ว", flush=True)
+    return True
+
+
 def develop_idea(idea_id, kind):
     """แตกเนื้อหาไอเดีย: kind ∈ concept|characters|names|plot|all"""
     hit = _find_idea(idea_id)
@@ -587,6 +624,9 @@ if __name__ == "__main__":
         edit_idea(a[1], " ".join(a[2:]))
     elif cmd == "develop" and len(a) > 1:
         develop_idea(a[1], a[2] if len(a) > 2 else "all")
+    elif cmd == "character" and len(a) > 2:
+        add_character(a[1], {"ชื่อ": a[2], "อายุ": a[3] if len(a) > 3 else "",
+                             "บทบาท": a[4] if len(a) > 4 else "", "ปม": a[5] if len(a) > 5 else ""})
     elif cmd == "auto":
         auto()
     elif cmd == "list":

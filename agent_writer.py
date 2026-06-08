@@ -303,23 +303,28 @@ def run_stage_6_audio_script(title: str, final_chapter: str) -> str:
 
 # ----------------- Main Orchestration Loop -----------------
 
-def process_analyzed_novels(second_brain_dir: str):
-    """Scan the pool for 'Analyzed' novels and execute the 6-stage writing pipeline."""
+def process_analyzed_novels(second_brain_dir: str, only: str = None):
+    """Scan the pool for 'Analyzed' novels and execute the 6-stage writing pipeline.
+
+    only: ถ้าระบุ จะเขียนเฉพาะเรื่องที่ชื่อ (title/thai_working_title) ตรงกับ substring นี้
+    """
     scouting_pool_dir = os.path.join(second_brain_dir, "01_Scouting_Pool")
     md_files = glob.glob(os.path.join(scouting_pool_dir, "*.md"))
-    
+
     print(f"[*] Scanning {len(md_files)} files in Scouting Pool for recreation...")
-    
+
     processed_count = 0
     for filepath in md_files:
         try:
             frontmatter, body = parse_markdown_file(filepath)
-            
+
             if frontmatter.get("status") != "Analyzed":
                 continue
-                
+
             novel_title = frontmatter.get('title')
             thai_title = frontmatter.get('thai_working_title', 'Recreation')
+            if only and only not in (novel_title or "") and only not in (thai_title or ""):
+                continue
             print(f"\n[🚀] Starting Multi-Stage Writing pipeline for: '{thai_title}' (Inspired by '{novel_title}')...")
             
             # Stage 1: Detailed Outline Creation
@@ -408,8 +413,11 @@ def process_analyzed_novels(second_brain_dir: str):
     print(f"\n[+] Multi-Stage writing batch completed. Processed {processed_count} files.")
 
 if __name__ == "__main__":
-    second_brain_path = "./SecondBrain"
-    if len(sys.argv) > 1:
-        second_brain_path = sys.argv[1]
-        
-    process_analyzed_novels(second_brain_path)
+    args = sys.argv[1:]
+    only = None
+    if "--only" in args:
+        i = args.index("--only")
+        only = args[i + 1] if i + 1 < len(args) else None
+        args = args[:i] + args[i + 2:]
+    second_brain_path = args[0] if args else "./SecondBrain"
+    process_analyzed_novels(second_brain_path, only=only)

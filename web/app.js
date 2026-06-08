@@ -97,14 +97,25 @@ function ideaCard(i) {
       <span class="head-actions" style="gap:6px">${act}
         <button class="btn sm ghost" onclick="event.stopPropagation();delIdea('${esc(i.id)}')" title="ลบ">🗑️</button></span>
     </div>`;
-  const detail = exp ? `<div class="idea-detail" id="detail-${esc(i.id)}">
+  const id = esc(i.id);
+  const detail = exp ? `<div class="idea-detail" id="detail-${id}">
       <div class="dev-bar">
-        <span style="color:var(--muted);font-size:12px">พัฒนาเนื้อหา:</span>
-        <button class="btn sm" onclick="developIdea('${esc(i.id)}','concept')">🌍 คอนเซ็ป</button>
-        <button class="btn sm" onclick="developIdea('${esc(i.id)}','characters')">👥 ตัวละคร</button>
-        <button class="btn sm" onclick="developIdea('${esc(i.id)}','names')">📛 ชื่อ</button>
-        <button class="btn sm" onclick="developIdea('${esc(i.id)}','plot')">🎬 ปม</button>
-        <button class="btn sm primary" onclick="developIdea('${esc(i.id)}','all')">✨ แตกทั้งหมด</button>
+        <span style="color:var(--muted);font-size:12px">พัฒนา:</span>
+        <button class="btn sm" onclick="developIdea('${id}','concept')">🌍 คอนเซ็ป</button>
+        <button class="btn sm" onclick="developIdea('${id}','characters')">👥 ตัวละคร</button>
+        <button class="btn sm" onclick="developIdea('${id}','names')">📛 ชื่อ</button>
+        <button class="btn sm" onclick="developIdea('${id}','plot')">🎬 ปม</button>
+        <button class="btn sm" onclick="developIdea('${id}','all')">✨ ทั้งหมด</button>
+        <button class="btn sm" onclick="charForm('${id}')">➕ ตัวละครเอง</button>
+        <button class="btn sm" onclick="editBody('${id}')">✏️ แก้</button>
+        <button class="btn sm primary" onclick="devWrite('${id}')">✍️ พัฒนาแล้วเขียนเลย</button>
+      </div>
+      <div class="char-form" id="charform-${id}">
+        <input name="name" placeholder="ชื่อตัวละคร *">
+        <input name="age" placeholder="อายุ">
+        <input name="role" placeholder="บทบาท (พระเอก/นางร้าย/…)">
+        <input name="plot" placeholder="ปม/ความลับ/จุดเด่น">
+        <button class="btn sm primary" onclick="submitChar('${id}')">✚ สร้าง (AI ขยายให้)</button>
       </div>
       <pre class="dev-body">กำลังโหลด…</pre></div>` : "";
   return row + detail;
@@ -144,6 +155,47 @@ async function developIdea(id, kind) {
   if (r.error) return toast(r.error, "bad");
   toast("กำลังแตกเนื้อหา " + kind + " ✨ (ดูแผงขวา)");
   openDrawer(r.task, "develop: " + kind);
+}
+// Feature 1: พัฒนา→promote→เขียน คลิกเดียว
+async function devWrite(id) {
+  if (!confirm("จะ: แตกคอนเซ็ป/ตัวละคร/ชื่อ/ปม → promote → เขียนนิยายเลย\n(ใช้เวลาสักครู่) ตกลงไหม?")) return;
+  const r = await api("/api/idea/devwrite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("เริ่ม: พัฒนา → promote → เขียน ✍️");
+  openDrawer(r.task, "พัฒนาแล้วเขียน");
+}
+// Feature 2: แก้เนื้อหาใน UI
+function editBody(id) {
+  const sel = "#detail-" + CSS.escape(id);
+  const pre = document.querySelector(sel + " .dev-body");
+  if (!pre || pre.tagName === "TEXTAREA") return;
+  const ta = document.createElement("textarea");
+  ta.className = "dev-body editing"; ta.value = pre.textContent;
+  pre.replaceWith(ta); ta.focus();
+  const bar = document.querySelector(sel + " .dev-bar");
+  const save = document.createElement("button");
+  save.className = "btn sm primary"; save.textContent = "💾 บันทึก";
+  save.onclick = async () => {
+    await api("/api/idea/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_body", id, body: ta.value }) });
+    toast("บันทึกแล้ว ✏️", "good");
+    renderIdeas();
+  };
+  bar.appendChild(save);
+}
+// Feature 3: ฟอร์มตัวละคร
+function charForm(id) {
+  const box = document.querySelector("#charform-" + CSS.escape(id));
+  if (box) box.style.display = box.style.display === "flex" ? "none" : "flex";
+}
+async function submitChar(id) {
+  const sel = "#charform-" + CSS.escape(id);
+  const g = k => document.querySelector(sel + " [name=" + k + "]").value.trim();
+  const name = g("name");
+  if (!name) return toast("ใส่ชื่อตัวละครก่อน", "bad");
+  const r = await api("/api/idea/character", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, name, age: g("age"), role: g("role"), plot: g("plot") }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("กำลังสร้างตัวละคร 👥 (AI ขยายให้)");
+  openDrawer(r.task, "เพิ่มตัวละคร"); charForm(id);
 }
 
 // selection

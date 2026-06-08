@@ -279,7 +279,26 @@ def idea_action(payload):
         return {"ok": ideation.set_group(iid, payload.get("group", ""))}
     if act == "edit":
         return {"ok": ideation.edit_idea(iid, payload.get("text", ""))}
+    if act == "set_body":
+        return {"ok": ideation.set_body(iid, payload.get("body", ""))}
     return {"ok": False, "error": "bad action"}
+
+
+def idea_devwrite(idea_id):
+    """พัฒนา→promote→เขียน ในคลิกเดียว (background, ยาว)"""
+    if not idea_id:
+        return {"error": "no id"}
+    return {"task": start_argv("dev-promote-write", ["studio.py", "devwrite", idea_id])}
+
+
+def idea_character(payload):
+    """เพิ่มตัวละครจากฟอร์ม (template + AI) — background"""
+    iid = payload.get("id", "")
+    if not iid:
+        return {"error": "no id"}
+    argv = ["ideation.py", "character", iid, payload.get("name", "ตัวละคร"),
+            payload.get("age", ""), payload.get("role", ""), payload.get("plot", "")]
+    return {"task": start_argv("add-character", argv)}
 
 
 def idea_merge(ids):
@@ -622,6 +641,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_merge(payload.get("ids", [])))
             if u.path == "/api/idea/develop":
                 return self._send(200, idea_develop(payload))
+            if u.path == "/api/idea/devwrite":
+                return self._send(200, idea_devwrite(payload.get("id", "")))
+            if u.path == "/api/idea/character":
+                return self._send(200, idea_character(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
