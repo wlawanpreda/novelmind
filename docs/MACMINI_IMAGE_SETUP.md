@@ -72,8 +72,34 @@ cover_generator.py ─→ image_provider.generate_image(prompt, out, ratio)
 
 ---
 
+## ⚠️ RAM ตึง — รัน LLM + image-gen พร้อมกันบนเครื่องเดียว
+SDXL ใช้ ~8-10GB, Ollama `qwen2.5:14b` ใช้ ~9.5GB → บน **24GB** สองตัวพร้อมกันเบียดกัน
+จน macOS swap → เรนเดอร์ช้ามาก (อาการ: `--probe` ค้างจน timeout ทั้งที่ ComfyUI ไม่ error)
+
+เช็คว่าใช่อาการนี้ไหม:
+```bash
+curl -s http://<mac-mini>:8188/system_stats | python3 -c "import sys,json;d=json.load(sys.stdin);print('vram_free %.1fGB'%(d['devices'][0]['vram_free']/1e9))"
+curl -s http://<mac-mini>:11434/api/ps     # Ollama ถือโมเดลอะไรอยู่
+```
+ถ้า `vram_free` < 5GB = ตึงแน่ — เลือกทางใดทางหนึ่ง:
+
+**ก) ลด setting (ง่ายสุด — ตั้งใน `.env`):**
+```bash
+LOCAL_IMAGE_DIM_SCALE=0.75    # 768px แทน 1024 → กิน RAM น้อยลง/เร็วขึ้น
+LOCAL_IMAGE_STEPS=22
+LOCAL_IMAGE_TIMEOUT=600        # เผื่อเวลา ถ้ายัง swap บ้าง
+```
+**ข) ปลด LLM ก่อนทำปก** (cover ทำเป็นชุด ไม่ชนงานเขียน): unload Ollama ก่อนรัน
+```bash
+curl http://<mac-mini>:11434/api/generate -d '{"model":"qwen2.5:14b","keep_alive":0,"prompt":""}'
+```
+**ค) ใช้โมเดลเบา** (SDXL-Turbo/SD1.5 ~4GB, 4-8 steps) อยู่ร่วมกับ LLM ได้สบาย — โหลด `.safetensors`
+วางที่ `~/ComfyUI/models/checkpoints/` แล้วตั้ง `LOCAL_IMAGE_MODEL` + ลด `LOCAL_IMAGE_STEPS`/`LOCAL_IMAGE_CFG`
+
 ## แก้ปัญหา
 - ดู log service: `tail -f /tmp/comfyui.err` (บน Mac mini)
+- งานค้างในคิว/อยากเริ่มใหม่: `curl -X POST http://<mac-mini>:8188/interrupt` แล้ว
+  `curl -X POST http://<mac-mini>:8188/queue -H 'Content-Type: application/json' -d '{"clear":true}'`
 - โหลดโมเดลเองได้: วาง `.safetensors` ที่ `~/ComfyUI/models/checkpoints/` แล้วตั้ง `LOCAL_IMAGE_MODEL`
 - อยากได้คุณภาพ/สไตล์เฉพาะทาง: โหลด checkpoint ชุมชน (เช่น SDXL fine-tune) วางที่โฟลเดอร์เดียวกัน
 - restart service: `launchctl unload ~/Library/LaunchAgents/com.ansre.comfyui.plist && launchctl load -w ~/Library/LaunchAgents/com.ansre.comfyui.plist`
