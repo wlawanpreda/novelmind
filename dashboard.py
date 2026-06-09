@@ -989,6 +989,7 @@ MEDIA_DIRS = {
     "covers": os.path.join(SB, "05_Active_Projects", "Covers"),
     "audio": os.path.join(SB, "05_Active_Projects", "Audio_Output"),
     "teasers": os.path.join(SB, "05_Active_Projects", "Teaser_Output"),
+    "trailers": os.path.join(SB, "05_Active_Projects", "Trailers"),
 }
 
 
@@ -1151,6 +1152,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, notify_test())
             if u.path == "/api/backup":
                 return self._send(200, backup_run())
+            if u.path == "/api/trailer":
+                return self._send(200, {"task": start_argv("Channel Trailer", ["trailer.py", "--clip", "5", "--limit", "6"])})
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})

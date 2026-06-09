@@ -830,8 +830,23 @@ async function loadScheduler() {
         <button class="btn sm primary" onclick="runBackup(this)">สำรองตอนนี้</button>
         <span class="meta">งานทั้งหมดอยู่ใน SecondBrain — สำรองไว้กันหาย</span></div>
       <div id="backupList" class="backup-list"></div>
+    </div>
+    <div class="card sched" style="margin-top:14px">
+      <div class="sched-row"><b>🎞️ Channel Trailer</b>
+        <button class="btn sm primary" onclick="runTrailer(this)">สร้างคลิปแนะนำช่อง</button>
+        <span class="meta">รวม teaser เด่น 6 คลิป (คลิปละ 5s) → montage ดึง subscriber</span></div>
+      <div id="trailerOut" class="meta"></div>
     </div>`;
   loadBackupList();
+}
+async function runTrailer(btn) {
+  const out = $("#trailerOut");
+  if (out) out.textContent = "⏳ กำลังรวม teaser (re-encode ~20s)…";
+  const r = await api("/api/trailer", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  if (r && r.task) {
+    openDrawer(r.task, "🎞️ Channel Trailer");
+    if (out) out.innerHTML = `กำลังตัดต่อ… <a href="/media/trailers/_CHANNEL_TRAILER.mp4" target="_blank">▶ เปิดคลิปเมื่อเสร็จ</a>`;
+  } else toast((r && r.error) || "เริ่มงานไม่ได้", "bad");
 }
 async function loadBackupList() {
   const el = $("#backupList");
