@@ -45,7 +45,10 @@
 | `./ansre usage` | 💰 ดูค่า token ที่ใช้ |
 | `./ansre selftest` | เช็คว่า LLM backend (Gemini/local) ต่อได้ |
 | `./ansre publish` | เผยแพร่ teaser ออกแพลตฟอร์ม (ดู PUBLISHING.md) |
+| `./ansre feedback` | 🏆 เรียนรู้จากผลงานจริง (Phase 5): `record "เรื่อง" --views N --likes N` → `learn` |
 | `./ansre scout\|analyze\|write\|cover\|audio\|teaser` | รันทีละขั้นเอง |
+
+> **🔁 วงจรเรียนรู้ (Phase 5):** หลังปล่อยคลิป บันทึกยอดจริงด้วย `./ansre feedback record "ชื่อเรื่อง" --views 88000 --likes 7100 --platform tiktok` แล้ว `./ansre feedback learn` — ระบบจะถอดสูตรว่า genre/ธีมไหนปัง แล้วป้อนกลับเข้า scout/analyze/ideation ให้เลือกเรื่องถัดไปฉลาดขึ้นเอง
 
 > 💡 ใช้ **`make`** แทนก็ได้ (`make help` ดูทั้งหมด) เช่น `make doctor`, `make run`, `make idea ARGS="brainstorm 3"`
 
