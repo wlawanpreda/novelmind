@@ -113,7 +113,7 @@ body{
 .nd-assets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
 .nd-body{max-height:55vh;overflow:auto;padding-top:6px;border-top:1px solid var(--card-brd)}
 /* studio detail panel */
-.studio-detail{margin:6px 0 4px}
+.studio-detail{margin:6px 0 4px;position:relative;z-index:1}
 .sd-panel{background:var(--card);border:1px solid var(--card-brd);border-radius:12px;padding:16px}
 .sd-panel .nd-stats{margin-bottom:8px}
 .sd-section-title{font-weight:700;font-size:13px;color:var(--acc);margin:14px 0 8px}
@@ -149,7 +149,7 @@ body{
 .sp-wrap{position:relative}
 .sp-input{width:100%;background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);padding:11px 13px;border-radius:10px;font-family:inherit;font-size:13.5px;outline:none}
 .sp-input:focus{border-color:var(--acc)}
-.sp-list{display:none;position:absolute;z-index:30;top:calc(100% + 6px);left:0;right:0;max-height:340px;overflow:auto;background:var(--bg2);border:1px solid var(--acc);border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.55)}
+.sp-list{display:none;position:absolute;z-index:120;top:calc(100% + 6px);left:0;right:0;max-height:320px;overflow:auto;background:#0d1119;border:1px solid var(--acc);border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,.7)}
 .sp-list.open{display:block}
 .sp-item{padding:10px 14px;font-size:13px;cursor:pointer;border-bottom:1px solid rgba(255,255,255,.04);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sp-item:hover{background:rgba(34,211,238,.10)}
@@ -224,7 +224,7 @@ body{
 .toast.good{border-left-color:var(--good)}.toast.bad{border-left-color:var(--bad)}
 .empty{text-align:center;color:var(--muted);padding:34px;font-size:13.5px}
 /* studio */
-.studio-bar{display:flex;gap:12px;align-items:flex-end}
+.studio-bar{display:flex;gap:12px;align-items:flex-end;position:relative;z-index:100}
 .studio-bar label{display:flex;flex-direction:column;gap:7px;font-size:12.5px;color:var(--muted)}
 .studio-bar select{background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);padding:11px 13px;border-radius:10px;font-family:inherit;font-size:13.5px;outline:none;width:100%}
 .studio-bar select:focus{border-color:var(--acc)}

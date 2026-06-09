@@ -342,6 +342,7 @@ function renderStoryList(q) {
     : `<div class="sp-empty">ไม่พบเรื่องที่ตรงกับ “${esc(q)}”</div>`;
 }
 function filterStories() { renderStoryList($("#studioSearch")?.value || ""); openStoryList(); }
+function focusStoryList(inp) { try { inp.select(); } catch { } renderStoryList(""); openStoryList(); }
 function openStoryList() { $("#studioPickList")?.classList.add("open"); }
 function closeStoryList() { $("#studioPickList")?.classList.remove("open"); }
 function selectStory(v, silent) {

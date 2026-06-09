@@ -110,7 +110,7 @@
           <label>เลือกเรื่อง <span class="sp-count" id="studioCount"></span></label>
           <div class="sp-wrap">
             <input id="studioSearch" class="sp-input" placeholder="🔍 พิมพ์ค้นหาเรื่อง แล้วคลิกเลือก…"
-                   autocomplete="off" oninput="filterStories()" onfocus="openStoryList()">
+                   autocomplete="off" oninput="filterStories()" onfocus="focusStoryList(this)">
             <div class="sp-list" id="studioPickList"></div>
           </div>
           <input type="hidden" id="studioProject">
