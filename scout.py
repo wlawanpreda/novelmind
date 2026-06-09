@@ -1,7 +1,10 @@
 import argparse
 import os
+import re
+import glob
 import json
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 from scraper.syosetu import fetch_syosetu_novels
 from scraper.royalroad import fetch_royalroad_novels
 
@@ -124,12 +127,38 @@ tags:
         f.write(content)
     return filepath
 
+def _safe_fetch(name, fn):
+    """เรียก scraper อย่างปลอดภัย — แหล่งใดล่ม ไม่ล้มทั้ง scout"""
+    try:
+        return fn() or []
+    except Exception as e:
+        print(f"[!] {name} ดึงไม่ได้: {e}")
+        return []
+
+
+def existing_status(novel: dict, second_brain_dir: str):
+    """ถ้าเรื่องนี้ (source+id) มีในคลังแล้ว คืน (status, path) — กัน re-scout ทับงานที่ทำไปแล้ว"""
+    pool = os.path.join(second_brain_dir, "01_Scouting_Pool")
+    pat = os.path.join(pool, f"{novel.get('source')}_{novel.get('id')}_*.md")
+    for fp in glob.glob(pat):
+        try:
+            head = open(fp, "r", encoding="utf-8").read(800)
+            m = re.search(r'status:\s*"?(\w+)"?', head)
+            return (m.group(1) if m else "Scouted"), fp
+        except Exception:
+            return "Scouted", fp
+    return None, None
+
+
 def main():
     parser = argparse.ArgumentParser(description="ANSRE scouting engine")
-    parser.add_argument("--source", type=str, default="all", choices=["syosetu", "royalroad", "all"],
+    parser.add_argument("--source", type=str, default="all",
+                        choices=["syosetu", "royalroad", "scribblehub", "all"],
                         help="Novel sources to scrape (default: all)")
     parser.add_argument("--limit", type=int, default=10,
                         help="Number of novels to fetch per source (default: 10)")
+    parser.add_argument("--min-score", type=int, default=0,
+                        help="ข้ามเรื่องที่ popularity_score ต่ำกว่านี้ (0=ไม่กรอง)")
     parser.add_argument("--outdir", type=str, default="./SecondBrain",
                         help="Path to Second Brain directory (default: ./SecondBrain)")
     parser.add_argument("--json-out", type=str, default=None,
@@ -139,39 +168,51 @@ def main():
     
     ensure_dirs(args.outdir)
     
-    all_novels = []
-    
-    # 1. Fetch Syosetu
+    # 1. ดึงทุกแหล่งพร้อมกัน (concurrent — เร็วกว่าทีละแหล่ง)
+    jobs = []
     if args.source in ["syosetu", "all"]:
-        print(f"[*] Fetching top {args.limit} novels from Syosetu...")
-        syosetu_novels = fetch_syosetu_novels(limit=args.limit, order="weekly_point")
-        print(f"[+] Found {len(syosetu_novels)} novels from Syosetu.")
-        all_novels.extend(syosetu_novels)
-        
-    # 2. Fetch Royal Road
+        jobs.append(("Syosetu", lambda: fetch_syosetu_novels(limit=args.limit, order="weekly_point")))
     if args.source in ["royalroad", "all"]:
-        print(f"[*] Fetching top {args.limit} novels from Royal Road...")
-        rr_novels = fetch_royalroad_novels(limit=args.limit)
-        print(f"[+] Found {len(rr_novels)} novels from Royal Road.")
-        all_novels.extend(rr_novels)
-        
-    # 2.5 คำนวณคะแนนความนิยม + จัดอันดับ (เรียงเด่นสุดขึ้นก่อน)
+        jobs.append(("Royal Road", lambda: fetch_royalroad_novels(limit=args.limit)))
+    try:
+        from scraper.scribblehub import fetch_scribblehub_novels
+        if args.source in ["scribblehub", "all"]:
+            jobs.append(("ScribbleHub", lambda: fetch_scribblehub_novels(limit=args.limit)))
+    except Exception:
+        pass
+
+    print(f"[*] ดึง {len(jobs)} แหล่งพร้อมกัน (limit {args.limit}/แหล่ง)...")
+    all_novels = []
+    with ThreadPoolExecutor(max_workers=max(1, len(jobs))) as ex:
+        for (name, _), result in zip(jobs, ex.map(lambda j: _safe_fetch(j[0], j[1]), jobs)):
+            print(f"[+] {name}: {len(result)} เรื่อง")
+            all_novels.extend(result)
+
+    # 2. คำนวณคะแนนความนิยม + จัดอันดับ
     all_novels = compute_popularity(all_novels)
     if all_novels:
         print(f"[*] จัดอันดับ {len(all_novels)} เรื่อง — เด่นสุด: '{all_novels[0].get('title')}' "
               f"(score {all_novels[0].get('popularity_score')}/100)")
 
-    # 3. Write to Obsidian
-    print(f"[*] Exporting novels to Second Brain ({args.outdir})...")
-    written_count = 0
+    # 3. Write — ข้ามเรื่องที่ analyze/เขียนแล้ว (กันทับงาน) + กรองคะแนนต่ำ (ถ้าตั้ง)
+    print(f"[*] Exporting to Second Brain ({args.outdir})...")
+    written = skipped_done = skipped_low = 0
     for novel in all_novels:
+        if args.min_score and novel.get("popularity_score", 0) < args.min_score:
+            skipped_low += 1
+            continue
+        status, _ = existing_status(novel, args.outdir)
+        if status and status != "Scouted":
+            skipped_done += 1   # มีและทำไปแล้ว → ไม่ทับ
+            continue
         try:
-            filepath = write_to_obsidian(novel, args.outdir)
-            written_count += 1
+            write_to_obsidian(novel, args.outdir)
+            written += 1
         except Exception as e:
-            print(f"[!] Error writing novel {novel.get('title')}: {e}")
-            
-    print(f"[+] Successfully exported {written_count} novels to the Second Brain.")
+            print(f"[!] Error writing {novel.get('title')}: {e}")
+    print(f"[+] เขียนใหม่/อัปเดต {written} · ข้าม(ทำแล้ว) {skipped_done}"
+          + (f" · ข้าม(คะแนนต่ำ) {skipped_low}" if skipped_low else ""))
+    written_count = written
     
     # 4. Save JSON if requested
     if args.json_out:

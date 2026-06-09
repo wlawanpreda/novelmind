@@ -45,11 +45,25 @@ const STAGES = [
   ["publish", "📤 Publish", "publish_queue", "outputs"],
 ];
 
+function go(view) { const a = document.querySelector('.nav a[data-view="' + view + '"]'); if (a) a.click(); }
+
 async function loadOverview() {
   const s = await api("/api/status");
+  const goView = grp => grp === "pool" ? "novels" : "outputs";
   $("#statCards").innerHTML = STAT_DEFS.map(([k, lbl, grp]) =>
-    `<div class="card stat"><div class="k">${lbl}</div><div class="v">${s[grp][k] ?? 0}</div></div>`).join("")
-    + `<div class="card stat flat"><div class="k">💰 ค่า LLM วันนี้</div><div class="v">$${s.spend_today.toFixed(4)}</div></div>`;
+    `<div class="card stat clickable" onclick="go('${goView(grp)}')"><div class="k">${lbl}</div><div class="v">${s[grp][k] ?? 0}</div></div>`).join("")
+    + `<div class="card stat flat clickable" onclick="go('usage')"><div class="k">💰 ค่า LLM วันนี้</div><div class="v">$${s.spend_today.toFixed(4)}</div></div>`;
+  // teaser ล่าสุด
+  api("/api/outputs").then(o => {
+    const withT = (o.stories || []).filter(x => x.teasers.length);
+    const box = $("#latestTeaser");
+    if (box) box.innerHTML = withT.length
+      ? `<video controls preload="metadata" poster="${withT[0].cover || ""}" src="${withT[0].teasers[0].url}"></video>
+         <div><div class="ti">${esc(withT[0].title.slice(0, 50))}</div>
+         <div class="meta">teaser ล่าสุด · มีทั้งหมด ${withT.length} เรื่อง</div>
+         <button class="btn sm" onclick="go('outputs')">ดูผลผลิตทั้งหมด →</button></div>`
+      : `<div class="empty">ยังไม่มี teaser — กด “เดิน Pipeline”</div>`;
+  });
   $("#flow").innerHTML = STAGES.map((st, i) => {
     const cnt = s[st[3]][st[2]] ?? 0;
     return `<div class="step"><span class="run" onclick="runStage('${st[0]}')">▶ run</span>
@@ -68,6 +82,52 @@ function updateWorker(on) {
   $("#workerTxt").textContent = "worker: " + (on ? "ทำงาน" : "หยุด");
 }
 
+// ---- Auto Loop (scout → analyze → write วนเอง) ----
+let LOOP3_ON = false;
+function setLoop3(msg) { const e = $("#loop3Status"); if (e) e.textContent = msg; }
+function updateLoop3Btn() {
+  const b = $("#loop3Btn");
+  if (!b) return;
+  b.textContent = LOOP3_ON ? "■ หยุด Loop" : "🔁 Auto Loop";
+  b.classList.toggle("primary", LOOP3_ON);
+}
+// รัน stage แล้วรอจนเสร็จ (resolve = สำเร็จไหม)
+function runStageAwait(stage, label) {
+  return new Promise(async (resolve) => {
+    const r = await api("/api/stage", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ stage }) });
+    if (!r.task) return resolve(false);
+    const poll = async () => {
+      if (!LOOP3_ON) return resolve(false);
+      const t = await api("/api/task/" + r.task);
+      const tail = (t.output || "").trim().split("\n").slice(-1)[0] || "";
+      setLoop3(`${label} … ${tail.slice(0, 70)}`);
+      if (t.status !== "running") return resolve(t.status === "done");
+      setTimeout(poll, 1500);
+    };
+    poll();
+  });
+}
+async function toggleLoop3() {
+  LOOP3_ON = !LOOP3_ON;
+  updateLoop3Btn();
+  if (!LOOP3_ON) { setLoop3("หยุดแล้ว (จะจบ stage ปัจจุบันก่อน)"); return; }
+  toast("เริ่ม Auto Loop 🔁 (scout→analyze→write วนเอง)");
+  let round = 0;
+  while (LOOP3_ON) {
+    round++;
+    await runStageAwait("scout", `รอบ ${round} · 🔍 scout`);
+    if (!LOOP3_ON) break;
+    await runStageAwait("analyze", `รอบ ${round} · 🧠 analyze`);
+    if (!LOOP3_ON) break;
+    setLoop3(`รอบ ${round}: ✍️ write…`); await runStageAwait("write", `รอบ ${round} · ✍️ write`);
+    if (!LOOP3_ON) break;
+    refreshAll();
+    setLoop3(`✅ จบรอบ ${round} — พัก 3 วิ แล้วเริ่มรอบใหม่`);
+    await new Promise(r => setTimeout(r, 3000));
+  }
+  setLoop3(""); updateLoop3Btn();
+}
+
 // ---- ideas ----
 const SRC_ICON = { manual: "✍️", brainstorm: "🤖", trend: "🔥", fusion: "🧬", merge: "🧬" };
 let IDEAS = [], SEL = new Set();
@@ -81,21 +141,44 @@ async function loadIdeas() {
 
 function ideaCard(i) {
   const sel = SEL.has(i.id) ? " selected" : "";
+  const exp = EXPANDED === i.id;
   const score = i.score ? `<div class="score">${esc(i.score)}<small style="color:var(--muted);font-size:11px">/10</small></div>` : "<div></div>";
   const act = i.status === "Scored"
     ? `<button class="btn sm" onclick="event.stopPropagation();ideaLoop('${esc(i.id)}')">🔄</button>
        <button class="btn sm" onclick="event.stopPropagation();promoteIdea('${esc(i.id)}')">→ เขียน</button>`
     : `<div class="tag ${i.status === "Promoted" ? "Processed" : "Analyzed"}">${esc(i.status)}</div>`;
-  return `<div class="nv-row idea-card${sel}" draggable="true" data-id="${esc(i.id)}"
-       ondragstart="dragIdea(event)" ondragover="event.preventDefault()" ondrop="dropIdea(event)">
+  const row = `<div class="nv-row idea-card${sel}${exp ? " expanded" : ""}" draggable="true" data-id="${esc(i.id)}"
+       onclick="toggleExpand('${esc(i.id)}')" ondragstart="dragIdea(event)" ondragover="event.preventDefault()" ondrop="dropIdea(event)">
       <input type="checkbox" class="idea-chk" ${sel ? "checked" : ""} onclick="event.stopPropagation();toggleSel('${esc(i.id)}')">
-      <div><div class="ti">${SRC_ICON[i.source] || "💡"} ${esc(i.title)}
+      <div><div class="ti">${exp ? "▾ " : "▸ "}${SRC_ICON[i.source] || "💡"} ${esc(i.title)}
         ${i.group ? `<span class="grp">🗂️ ${esc(i.group)}</span>` : ""}</div>
         <div class="meta">${esc(i.logline || i.genre || "ยังไม่ได้ให้คะแนน")}</div></div>
       ${score}
       <span class="head-actions" style="gap:6px">${act}
         <button class="btn sm ghost" onclick="event.stopPropagation();delIdea('${esc(i.id)}')" title="ลบ">🗑️</button></span>
     </div>`;
+  const id = esc(i.id);
+  const detail = exp ? `<div class="idea-detail" id="detail-${id}">
+      <div class="dev-bar">
+        <span style="color:var(--muted);font-size:12px">พัฒนา:</span>
+        <button class="btn sm" onclick="developIdea('${id}','concept')">🌍 คอนเซ็ป</button>
+        <button class="btn sm" onclick="developIdea('${id}','characters')">👥 ตัวละคร</button>
+        <button class="btn sm" onclick="developIdea('${id}','names')">📛 ชื่อ</button>
+        <button class="btn sm" onclick="developIdea('${id}','plot')">🎬 ปม</button>
+        <button class="btn sm" onclick="developIdea('${id}','all')">✨ ทั้งหมด</button>
+        <button class="btn sm" onclick="charForm('${id}')">➕ ตัวละครเอง</button>
+        <button class="btn sm" onclick="editBody('${id}')">✏️ แก้</button>
+        <button class="btn sm primary" onclick="devWrite('${id}')">✍️ พัฒนาแล้วเขียนเลย</button>
+      </div>
+      <div class="char-form" id="charform-${id}">
+        <input name="name" placeholder="ชื่อตัวละคร *">
+        <input name="age" placeholder="อายุ">
+        <input name="role" placeholder="บทบาท (พระเอก/นางร้าย/…)">
+        <input name="plot" placeholder="ปม/ความลับ/จุดเด่น">
+        <button class="btn sm primary" onclick="submitChar('${id}')">✚ สร้าง (AI ขยายให้)</button>
+      </div>
+      <pre class="dev-body">กำลังโหลด…</pre></div>` : "";
+  return row + detail;
 }
 
 function renderIdeas() {
@@ -116,6 +199,63 @@ function renderIdeas() {
       `<div class="grp-head">${esc(k)} <span>${items.length}</span></div>` + items.map(ideaCard).join("")).join("");
   }
   updateBulk();
+  if (EXPANDED) loadDetail(EXPANDED);
+}
+
+// expand + develop
+let EXPANDED = null;
+function toggleExpand(id) { EXPANDED = EXPANDED === id ? null : id; renderIdeas(); }
+async function loadDetail(id) {
+  const r = await api("/api/idea/detail?id=" + encodeURIComponent(id));
+  const el = document.querySelector("#detail-" + CSS.escape(id) + " .dev-body");
+  if (el) el.textContent = (r.body || "").trim() || "(ยังไม่มีเนื้อหาพัฒนา — กดปุ่มด้านบนเพื่อแตกคอนเซ็ป/ตัวละคร/ชื่อ/ปม)";
+}
+async function developIdea(id, kind) {
+  const r = await api("/api/idea/develop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, kind }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("กำลังแตกเนื้อหา " + kind + " ✨ (ดูแผงขวา)");
+  openDrawer(r.task, "develop: " + kind);
+}
+// Feature 1: พัฒนา→promote→เขียน คลิกเดียว
+async function devWrite(id) {
+  if (!confirm("จะ: แตกคอนเซ็ป/ตัวละคร/ชื่อ/ปม → promote → เขียนนิยายเลย\n(ใช้เวลาสักครู่) ตกลงไหม?")) return;
+  const r = await api("/api/idea/devwrite", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("เริ่ม: พัฒนา → promote → เขียน ✍️");
+  openDrawer(r.task, "พัฒนาแล้วเขียน");
+}
+// Feature 2: แก้เนื้อหาใน UI
+function editBody(id) {
+  const sel = "#detail-" + CSS.escape(id);
+  const pre = document.querySelector(sel + " .dev-body");
+  if (!pre || pre.tagName === "TEXTAREA") return;
+  const ta = document.createElement("textarea");
+  ta.className = "dev-body editing"; ta.value = pre.textContent;
+  pre.replaceWith(ta); ta.focus();
+  const bar = document.querySelector(sel + " .dev-bar");
+  const save = document.createElement("button");
+  save.className = "btn sm primary"; save.textContent = "💾 บันทึก";
+  save.onclick = async () => {
+    await api("/api/idea/action", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "set_body", id, body: ta.value }) });
+    toast("บันทึกแล้ว ✏️", "good");
+    renderIdeas();
+  };
+  bar.appendChild(save);
+}
+// Feature 3: ฟอร์มตัวละคร
+function charForm(id) {
+  const box = document.querySelector("#charform-" + CSS.escape(id));
+  if (box) box.style.display = box.style.display === "flex" ? "none" : "flex";
+}
+async function submitChar(id) {
+  const sel = "#charform-" + CSS.escape(id);
+  const g = k => document.querySelector(sel + " [name=" + k + "]").value.trim();
+  const name = g("name");
+  if (!name) return toast("ใส่ชื่อตัวละครก่อน", "bad");
+  const r = await api("/api/idea/character", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, name, age: g("age"), role: g("role"), plot: g("plot") }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("กำลังสร้างตัวละคร 👥 (AI ขยายให้)");
+  openDrawer(r.task, "เพิ่มตัวละคร"); charForm(id);
 }
 
 // selection
@@ -163,9 +303,9 @@ async function addIdea() {
   if (r.ok) { $("#ideaInput").value = ""; toast("เก็บไอเดียแล้ว 💡", "good"); loadIdeas(); }
 }
 async function ideaLoop(id) {
-  const r = await api("/api/studio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "idea-loop", id, rounds: 3 }) });
+  const r = await api("/api/studio", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "idea-loop", id, rounds: 2 }) });
   if (r.error) return toast("error: " + r.error, "bad");
-  toast("เริ่ม AI loop เกลาไอเดีย 🔄");
+  toast("เริ่ม AI loop เกลาไอเดีย 🔄 (ดูความคืบหน้าในแผงด้านขวา)");
   openDrawer(r.task, "idea loop");
 }
 async function promoteIdea(id) {
@@ -181,7 +321,19 @@ async function loadProjects() {
     ? projects.map(p => `<option value="${esc(p)}">${esc(p.length > 50 ? p.slice(0, 50) + "…" : p)}</option>`).join("")
     : `<option value="">(ยังไม่มีเรื่อง — เขียนนิยายก่อน)</option>`;
 }
-const loadStudio = loadProjects;
+const loadStudio = () => loadProjects().then(studioStatus);
+
+async function studioStatus() {
+  const title = $("#studioProject")?.value;
+  const box = $("#studioStatus");
+  if (!box || !title) { if (box) box.innerHTML = ""; return; }
+  const r = await api("/api/studio/status?title=" + encodeURIComponent(title));
+  if (!r.ok) { box.innerHTML = ""; return; }
+  const chip = (ok, label) => `<span class="schip ${ok ? "on" : ""}">${ok ? "✅" : "⚪"} ${label}</span>`;
+  box.innerHTML = `<span class="schip ${r.chapters ? "on" : ""}">📖 ${r.chapters} ตอน</span>`
+    + chip(r.status.visual, "ภาพ") + chip(r.status.video, "วิดีโอ")
+    + chip(r.status.audio, "เสียง") + chip(r.status.bible, "bible");
+}
 
 async function studio(action) {
   const title = $("#studioProject").value;
@@ -222,30 +374,56 @@ async function loadNovels() {
     </div>`).join("") : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`);
 }
 
-// ---- outputs ----
+// ---- outputs (จัดกลุ่มตามเรื่อง) ----
 async function loadOutputs() {
-  const o = await api("/api/outputs");
-  $("#galCovers").innerHTML = o.covers.length ? o.covers.map(c =>
-    `<div class="item"><img loading="lazy" src="${c.url}"><div class="cap">${esc(c.name)}</div></div>`).join("")
-    : emptyGal("ยังไม่มีปก");
-  $("#galAudio").innerHTML = o.audio.length ? o.audio.map(a =>
-    `<div class="item" style="padding:12px"><div class="cap" style="padding:0 0 8px">${esc(a.name)}</div><audio controls preload="none" src="${a.url}"></audio></div>`).join("")
-    : emptyGal("ยังไม่มีหนังสือเสียง");
-  $("#galTeasers").innerHTML = o.teasers.length ? o.teasers.map(t =>
-    `<div class="item"><video controls preload="metadata" src="${t.url}"></video><div class="cap">${esc(t.name)}</div></div>`).join("")
-    : emptyGal("ยังไม่มี teaser");
+  const { stories } = await api("/api/outputs");
+  const el = $("#storyOutputs");
+  if (!stories || !stories.length) { el.innerHTML = `<div class="empty">ยังไม่มีผลผลิต — กด “เดิน Pipeline” หรือผลิตจากหน้านิยาย</div>`; return; }
+  el.innerHTML = stories.map(s => {
+    const done = [s.cover ? "🖼️" : "", s.audio.length ? "🔊" : "", s.teasers.length ? "🎬" : ""].filter(Boolean).join(" ");
+    return `<div class="story-out">
+      <div class="story-media">
+        ${s.cover ? `<a href="${s.cover}" target="_blank"><img class="story-cover" loading="lazy" src="${s.cover}"></a>`
+                  : `<div class="story-cover noimg">ยังไม่มีปก</div>`}
+      </div>
+      <div class="story-body">
+        <div class="story-title">${esc(s.title.length > 55 ? s.title.slice(0, 55) + "…" : s.title)} <span class="story-badge">${done || "—"}</span></div>
+        ${s.teasers.map(t => `<div class="story-row"><span>🎬 teaser</span><video controls preload="metadata" src="${t.url}"></video>
+            <a class="btn sm ghost" href="${t.url}" download>⬇</a></div>`).join("")}
+        ${s.audio.map(a => `<div class="story-row"><span>🔊 ${esc(a.name.match(/_(\d+)\.mp3/) ? "ตอน " + a.name.match(/_(\d+)\.mp3/)[1] : "เสียง")}</span>
+            <audio controls preload="none" src="${a.url}"></audio>
+            <a class="btn sm ghost" href="${a.url}" download>⬇</a></div>`).join("")}
+        ${!s.teasers.length && !s.audio.length ? `<div class="meta">ยังไม่มีเสียง/teaser</div>` : ""}
+      </div>
+    </div>`;
+  }).join("");
 }
-const emptyGal = m => `<div class="empty">${m}</div>`;
 
 // ---- usage ----
 async function loadUsage() {
-  const u = await api("/api/usage");
+  const [u, cfg] = await Promise.all([api("/api/usage"), api("/api/config")]);
+  const cap = parseFloat(cfg.daily_cap) || 0;
   const total = u.by_date.reduce((a, [, v]) => a + v, 0);
+  const localN = u.by_backend.local || 0, gemN = u.by_backend.gemini || 0;
+  const savedPct = (localN + gemN) ? Math.round(localN / (localN + gemN) * 100) : 0;
   $("#usageCards").innerHTML = `
     <div class="card stat"><div class="k">💰 วันนี้</div><div class="v">$${u.today.toFixed(4)}</div></div>
     <div class="card stat flat"><div class="k">📅 รวม 14 วัน</div><div class="v">$${total.toFixed(3)}</div></div>
-    <div class="card stat flat"><div class="k">🟢 เรียก local (ฟรี)</div><div class="v">${u.by_backend.local || 0}</div></div>
-    <div class="card stat flat"><div class="k">🟣 เรียก gemini</div><div class="v">${u.by_backend.gemini || 0}</div></div>`;
+    <div class="card stat flat"><div class="k">🟢 local (ฟรี)</div><div class="v">${localN}</div></div>
+    <div class="card stat flat"><div class="k">💚 ประหยัด</div><div class="v">${savedPct}%</div></div>`;
+  // แถบเพดานต่อวัน
+  const capBox = $("#usageCap");
+  if (capBox) {
+    if (cap > 0) {
+      const pct = Math.min(100, u.today / cap * 100);
+      const danger = pct >= 85;
+      capBox.innerHTML = `<div class="caprow"><span>เพดานวันนี้</span><b>$${u.today.toFixed(2)} / $${cap.toFixed(2)}</b></div>
+        <div class="capbar"><div class="capfill${danger ? " danger" : ""}" style="width:${pct}%"></div></div>
+        ${danger ? '<div class="meta" style="color:var(--warn);margin-top:6px">⚠️ ใกล้ชนเพดาน — เกินแล้วจะเด้งไป local อัตโนมัติ</div>' : ""}`;
+    } else {
+      capBox.innerHTML = `<div class="meta">ยังไม่ตั้งเพดาน (ANSRE_DAILY_USD_CAP=0) — ตั้งได้ที่หน้า LLM Routing</div>`;
+    }
+  }
   const max = Math.max(0.0001, ...u.by_date.map(([, v]) => v));
   $("#usageChart").innerHTML = u.by_date.length ? u.by_date.map(([d, v]) =>
     `<div class="bar" style="height:${Math.max(3, v / max * 100)}%" title="${d}: $${v}">
@@ -259,9 +437,11 @@ async function loadUsage() {
 async function loadConfig() {
   const c = await api("/api/config");
   $("#configCards").innerHTML = `
-    <div class="card stat flat"><div class="k">🔀 Backend</div><div class="v" style="font-size:22px">${c.backend}</div></div>
-    <div class="card stat flat"><div class="k">✍️ Writing mode</div><div class="v" style="font-size:22px">${c.writing_mode}</div></div>
-    <div class="card stat flat"><div class="k">🖥️ Local model</div><div class="v" style="font-size:16px">${esc(c.local_model || "—")}</div></div>
+    <div class="card stat flat"><div class="k">🔀 LLM Backend</div><div class="v" style="font-size:22px">${c.backend}</div></div>
+    <div class="card stat flat"><div class="k">🎨 Image Backend</div><div class="v" style="font-size:22px">${esc(c.image_backend || "—")}</div></div>
+    <div class="card stat flat"><div class="k">🖥️ Local model</div><div class="v" style="font-size:15px">${esc(c.local_model || "—")}</div></div>
+    <div class="card stat flat"><div class="k">🎧 TTS</div><div class="v" style="font-size:16px">${esc(c.tts_engine || "—")}</div></div>
+    <div class="card stat flat"><div class="k">✍️ Writing mode</div><div class="v" style="font-size:20px">${c.writing_mode}</div></div>
     <div class="card stat flat"><div class="k">🧱 เพดาน/วัน</div><div class="v" style="font-size:20px">$${c.daily_cap}</div></div>`;
   $("#routingChips").innerHTML = c.routing.map(r =>
     `<div class="route"><b>${r.role}</b><span class="be ${r.backend}">${r.backend}</span></div>`).join("");
@@ -322,19 +502,28 @@ function openDrawer(task, title) {
   $("#drawerTitle").textContent = title;
   $("#drawerLog").textContent = "กำลังเริ่ม…";
   clearInterval(pollTimer);
+  const t0 = Date.now();
   const poll = async () => {
     const t = await api("/api/task/" + task);
-    $("#drawerLog").textContent = t.output || "(no output)";
+    let out = (t.output || "").trim();
+    // ถ้ายังรันแต่ log สั้น → บอกผู้ใช้ว่า AI กำลังคิด (กันดูเหมือนค้าง)
+    if (t.status === "running" && out.split("\n").filter(Boolean).length <= 1) {
+      const sec = Math.round((Date.now() - t0) / 1000);
+      out = (out ? out + "\n\n" : "") + `🤔 AI กำลังประมวลผล… (${sec}s) — งานที่ใช้ local LLM อาจใช้เวลาสักครู่`;
+    }
+    $("#drawerLog").textContent = out || "กำลังเริ่ม…";
     $("#drawerLog").scrollTop = $("#drawerLog").scrollHeight;
     const st = $("#drawerStatus"); st.className = "st " + t.status;
-    st.innerHTML = t.status === "running" ? '<span class="spinner"></span> running' : t.status;
+    st.innerHTML = t.status === "running"
+      ? `<span class="spinner"></span> กำลังทำงาน ${Math.round((Date.now() - t0) / 1000)}s`
+      : (t.status === "done" ? "✓ เสร็จ" : t.status);
     if (t.status !== "running") {
       clearInterval(pollTimer);
       toast(t.status === "done" ? "เสร็จแล้ว: " + title : "ผิดพลาด: " + title, t.status === "done" ? "good" : "bad");
       refreshAll();
     }
   };
-  poll(); pollTimer = setInterval(poll, 1500);
+  poll(); pollTimer = setInterval(poll, 1200);
 }
 function closeDrawer() { $("#drawer").classList.remove("open"); clearInterval(pollTimer); }
 

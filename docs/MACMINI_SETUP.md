@@ -128,6 +128,47 @@ sudo pmset -a sleep 0 disksleep 0   # ไม่หลับเมื่อเส
 
 ---
 
+## ⚡ 3.5 จูนความเร็ว Ollama (สำคัญบนเครื่อง RAM จำกัด เช่น 24GB)
+
+อาการ "LLM ตอบช้ามาก/ค้าง" บน 24GB มักมาจาก **โมเดลใหญ่เกิน + RAM เบียดจน swap/หลุดไป CPU**
+
+**1) เลือกขนาดโมเดลให้พอดี RAM** — บน 24GB ที่แชร์กับงานอื่น (ComfyUI/ระบบ) แนะนำ **7–8B** ไม่ใช่ 14B:
+
+| RAM | โมเดล local ที่ "ตอบไว" | หมายเหตุ |
+|-----|------------------------|---------|
+| 16–24GB | **`scb10x/llama3.1-typhoon2-8b-instruct`** (ไทยลื่น) หรือ `qwen2.5:7b` | เร็ว ~2× ของ 14B, เหลือ RAM ให้รูป |
+| 32GB+ | `qwen2.5:14b` | ใช้ 14B ได้สบายขึ้น |
+
+เปลี่ยนใน `.env` ฝั่ง client (ไม่ต้องแตะ Mac mini ถ้าโหลดโมเดลไว้แล้ว):
+```bash
+LOCAL_LLM_MODEL=scb10x/llama3.1-typhoon2-8b-instruct:latest
+LOCAL_LLM_MODEL_HEAVY=scb10x/llama3.1-typhoon2-8b-instruct:latest
+```
+
+**2) env จูนความเร็ว** (`macmini_setup.sh` ใส่ให้แล้วในเวอร์ชันใหม่):
+```
+OLLAMA_FLASH_ATTENTION=1      # เร็วขึ้น + RAM attention น้อยลง
+OLLAMA_KV_CACHE_TYPE=q8_0     # quantize KV cache → context ยาว/swap น้อย
+OLLAMA_MAX_LOADED_MODELS=1    # 24GB อย่าโหลด 2 โมเดลใหญ่พร้อมกัน
+```
+
+**อัปเดตทันทีโดยไม่ต้องรัน setup ใหม่** (รันบน Mac mini):
+```bash
+launchctl setenv OLLAMA_FLASH_ATTENTION 1
+P=~/Library/LaunchAgents/com.ansre.ollama.plist
+launchctl unload "$P" && launchctl load -w "$P"   # โหลด plist ใหม่ที่อัปแล้ว
+```
+
+**3) วัดผล** จากเครื่อง client:
+```bash
+curl http://<mac-mini>:11434/api/generate \
+  -d '{"model":"<model>","prompt":"เขียน 2 ประโยค","stream":false,"options":{"num_predict":48}}' \
+  | python3 -c "import sys,json;d=json.load(sys.stdin);print('%.1f tok/s'%(d['eval_count']/(d['eval_duration']/1e9)))"
+# เป้าหมาย: 8B ควรได้ >10 tok/s · ถ้า <3 tok/s = ยัง swap/CPU → ลดขนาดโมเดลอีก หรือเช็คงานอื่นกิน RAM
+```
+
+---
+
 ## 4. เชื่อมเครื่อง ANSRE → Mac mini
 
 ### ทางเลือก A: อยู่บ้านเดียวกัน (LAN) — ง่ายสุด

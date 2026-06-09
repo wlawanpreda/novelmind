@@ -46,7 +46,9 @@ cat > "$PLIST" <<EOF
   <key>EnvironmentVariables</key><dict>
     <key>OLLAMA_HOST</key><string>0.0.0.0:11434</string>
     <key>OLLAMA_KEEP_ALIVE</key><string>30m</string>
-    <key>OLLAMA_MAX_LOADED_MODELS</key><string>2</string>
+    <key>OLLAMA_MAX_LOADED_MODELS</key><string>1</string>   <!-- 24GB: กันโหลด 2 โมเดลใหญ่พร้อมกัน=swap -->
+    <key>OLLAMA_FLASH_ATTENTION</key><string>1</string>     <!-- เร็วขึ้น + ใช้ RAM attention น้อยลง -->
+    <key>OLLAMA_KV_CACHE_TYPE</key><string>q8_0</string>    <!-- quantize KV cache → context ยาวขึ้น/swap น้อยลง -->
   </dict>
   <key>RunAtLoad</key><true/><key>KeepAlive</key><true/>
   <key>StandardOutPath</key><string>/tmp/ollama.log</string>

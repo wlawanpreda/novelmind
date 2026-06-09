@@ -303,21 +303,67 @@ def run_stage_6_audio_script(title: str, final_chapter: str) -> str:
 
 # ----------------- Main Orchestration Loop -----------------
 
-def process_analyzed_novels(second_brain_dir: str):
-    """Scan the pool for 'Analyzed' novels and execute the 6-stage writing pipeline."""
+def _priority(fm: Dict[str, Any]) -> float:
+    """ลำดับความสำคัญในการเขียน: market_fit_score เป็นหลัก, ใช้ popularity_score แต้มทศนิยมช่วย tie-break"""
+    def _f(v):
+        try:
+            return float(v or 0)
+        except (TypeError, ValueError):
+            return 0.0
+    return _f(fm.get("market_fit_score")) * 1000 + _f(fm.get("popularity_score"))
+
+
+def _fit_of(fm: Dict[str, Any]) -> float:
+    try:
+        return float(fm.get("market_fit_score") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def process_analyzed_novels(second_brain_dir: str, only: str = None, limit: int = 0, min_fit: float = 0.0):
+    """Scan the pool for 'Analyzed' novels and execute the 6-stage writing pipeline.
+
+    only:    ถ้าระบุ จะเขียนเฉพาะเรื่องที่ชื่อ (title/thai_working_title) ตรงกับ substring นี้
+    limit:   ถ้า >0 เขียนแค่ N เรื่องที่ 'คุ้มค่าสุด' ในรอบนี้ (market_fit สูงสุดก่อน)
+    min_fit: ❗ Quality gate — ข้ามเรื่องที่ market_fit_score < ค่านี้ (กันเขียนเรื่องไม่คุ้ม)
+             ถ้า only ถูกระบุ จะข้าม gate (ผู้ใช้เจาะจงเรื่องนั้นเอง)
+    """
     scouting_pool_dir = os.path.join(second_brain_dir, "01_Scouting_Pool")
     md_files = glob.glob(os.path.join(scouting_pool_dir, "*.md"))
-    
-    print(f"[*] Scanning {len(md_files)} files in Scouting Pool for recreation...")
-    
+
+    # คัดเฉพาะ 'Analyzed' (+ตรง only) แล้วเรียงตามความคุ้มค่า — เรื่องดีที่สุดได้เขียนก่อน
+    queue, gated = [], 0
+    for fp in md_files:
+        try:
+            fm, _ = parse_markdown_file(fp)
+        except Exception:
+            continue
+        if fm.get("status") != "Analyzed":
+            continue
+        if only and only not in (fm.get("title") or "") and only not in (fm.get("thai_working_title") or ""):
+            continue
+        # quality gate (ข้ามเมื่อ user เจาะจง only)
+        if not only and min_fit and _fit_of(fm) < min_fit:
+            gated += 1
+            continue
+        queue.append((_priority(fm), fp))
+    queue.sort(key=lambda x: x[0], reverse=True)
+    if limit and limit > 0:
+        queue = queue[:limit]
+
+    print(f"[*] Scouting Pool: {len(md_files)} ไฟล์ · รอเขียน {len(queue)} เรื่อง"
+          + (f" (จำกัด {limit} คุ้มสุด)" if limit else "")
+          + (f" · ข้าม {gated} เรื่อง market_fit<{min_fit}" if gated else "")
+          + " — เรียงตาม market_fit")
+
     processed_count = 0
-    for filepath in md_files:
+    for _prio, filepath in queue:
         try:
             frontmatter, body = parse_markdown_file(filepath)
-            
+
             if frontmatter.get("status") != "Analyzed":
                 continue
-                
+
             novel_title = frontmatter.get('title')
             thai_title = frontmatter.get('thai_working_title', 'Recreation')
             print(f"\n[🚀] Starting Multi-Stage Writing pipeline for: '{thai_title}' (Inspired by '{novel_title}')...")
@@ -408,8 +454,41 @@ def process_analyzed_novels(second_brain_dir: str):
     print(f"\n[+] Multi-Stage writing batch completed. Processed {processed_count} files.")
 
 if __name__ == "__main__":
-    second_brain_path = "./SecondBrain"
-    if len(sys.argv) > 1:
-        second_brain_path = sys.argv[1]
-        
-    process_analyzed_novels(second_brain_path)
+    args = sys.argv[1:]
+    only = None
+    # ค่าเริ่มต้นจาก env — ใช้กับ auto-worker ด้วย (กันเขียนรวดทุกเรื่อง/เรื่องไม่คุ้ม)
+    #   ANSRE_WRITE_MIN_FIT (default 7.0) = quality gate · ANSRE_WRITE_LIMIT (default 1) = เขียนกี่เรื่อง/รอบ
+    try:
+        limit = int(os.environ.get("ANSRE_WRITE_LIMIT", "1"))
+    except ValueError:
+        limit = 1
+    try:
+        min_fit = float(os.environ.get("ANSRE_WRITE_MIN_FIT", "7.0"))
+    except ValueError:
+        min_fit = 7.0
+    if "--only" in args:
+        i = args.index("--only")
+        only = args[i + 1] if i + 1 < len(args) else None
+        args = args[:i] + args[i + 2:]
+    if "--limit" in args:
+        i = args.index("--limit")
+        try:
+            limit = int(args[i + 1]) if i + 1 < len(args) else limit
+        except ValueError:
+            pass
+        args = args[:i] + args[i + 2:]
+    if "--min-fit" in args:
+        i = args.index("--min-fit")
+        try:
+            min_fit = float(args[i + 1]) if i + 1 < len(args) else min_fit
+        except ValueError:
+            pass
+        args = args[:i] + args[i + 2:]
+    # --all: ปลด limit (เขียนทุกเรื่องที่ผ่าน gate) เผื่อสั่ง batch เอง
+    if "--all" in args:
+        limit = 0
+        args = [a for a in args if a != "--all"]
+    second_brain_path = args[0] if args else "./SecondBrain"
+    print(f"[*] Write config: limit={limit or 'ทั้งหมด'} · quality gate market_fit≥{min_fit}"
+          + (f" · only='{only}'" if only else ""))
+    process_analyzed_novels(second_brain_path, only=only, limit=limit, min_fit=min_fit)

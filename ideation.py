@@ -165,6 +165,14 @@ def brainstorm(n=BRAINSTORM_BATCH):
                 trend_ctx = f"\n\n📈 เทรนด์ตลาดล่าสุด (ใช้ชี้นำให้ไอเดียตรงกระแสแต่ยังสดใหม่):\n{brief[:1000]}\n"
         except Exception:
             pass
+        # Phase 5: ป้อน "สูตรที่ปังจริง" จากผลงานที่ปล่อยไปแล้ว → ลำเอียงไอเดียเข้าหาของที่ work
+        try:
+            import feedback
+            fb = feedback.read_brief()
+            if fb:
+                trend_ctx += f"\n\n🏆 สูตรที่พิสูจน์แล้วว่าปังจากผลงานจริงของเรา (ให้น้ำหนักแนวเหล่านี้):\n{fb[:800]}\n"
+        except Exception:
+            pass
     prompt = f"""คุณคือนักคิดพล็อตนิยายไทยที่สร้างสรรค์และไม่ซ้ำใคร
 คิดไอเดียนิยาย {n} เรื่องที่สดใหม่ น่าสนใจ มีจุดขายชัด เหมาะกับคนอ่านไทยและไวรัลบนโซเชียล
 หลากหลายแนว (ลึกลับ/แฟนตาซี/ระบบ/ย้อนเวลา/สืบสวน/โรแมนซ์-คอเมดี){trend_ctx}
@@ -299,6 +307,114 @@ def edit_idea(idea_id, text):
 
 
 # ---------------------------------------------------------------------------
+# develop — แตกเนื้อหาไอเดีย (คอนเซ็ป/ตัวละคร/ชื่อ/ปม) เก็บในไฟล์ไอเดียเอง
+# ---------------------------------------------------------------------------
+DEVELOP = {
+    "concept": ("## 🌍 คอนเซ็ป & โลกของเรื่อง", "ideation",
+                "แตกขยาย 'คอนเซ็ปและโลกของเรื่อง' ให้ชัด: ฉาก/ยุคสมัย, กฎของโลก/ระบบ (ถ้ามี), บรรยากาศ, จุดขายที่ทำให้แตกต่าง"),
+    "characters": ("## 👥 ตัวละคร", "characters",
+                   "ออกแบบตัวละครหลัก 3-4 ตัว: ชื่อไทยเท่ๆ, บทบาท, นิสัย, ปม/ความลับเฉพาะตัว, และความสัมพันธ์/ความขัดแย้งระหว่างกัน"),
+    "names": ("## 📛 ชื่อเรื่อง & ชื่อที่น่าสนใจ (ตัวเลือก)", "ideation",
+              "เสนอชื่อเรื่องภาษาไทยที่ติดหู 5 แบบ (พร้อมเหตุผลสั้นๆ) + ชื่อตัวละคร/สถานที่/ของวิเศษที่เท่ๆ ให้เลือกใช้"),
+    "plot": ("## 🎬 ปม / พล็อต / จุดหักมุม", "brainstorm",
+             "คิด 'ปมและพล็อต': ปมหลักของเรื่อง, จุดหักมุม (twist) 2-3 จุด, conflict, และ hook ปิดท้ายตอนแรกที่ชวนอ่านต่อ"),
+}
+
+
+_META = ("แน่นอน", "นี่คือ", "ได้เลย", "ในฐานะ", "ผมขอ", "ยินดี", "หวังว่า", "ครับ! ", "ค่ะ! ")
+
+
+def _clean_develop(text):
+    """ตัดคำนำ meta + ลดหัวข้อ ## เป็น ### (กัน section parser เพี้ยน)"""
+    if not text:
+        return text
+    lines = text.split("\n")
+    while lines and (not lines[0].strip() or lines[0].strip() == "---"
+                     or any(m in lines[0] for m in _META)):
+        lines.pop(0)
+    out = []
+    for ln in lines:
+        if ln.startswith("## ") and not ln.startswith("### "):
+            ln = "#" + ln  # ## -> ###
+        out.append(ln)
+    return "\n".join(out).strip()
+
+
+def _upsert_section(body, header, content):
+    """แทนที่ section เดิม (ถ้ามี) หรือเพิ่มใหม่ — ทำให้ develop ซ้ำได้ (regenerate)"""
+    pat = re.escape(header) + r".*?(?=\n## |\Z)"
+    block = f"{header}\n{content.strip()}\n"
+    if re.search(pat, body, re.DOTALL):
+        return re.sub(pat, block.rstrip(), body, flags=re.DOTALL)
+    return body.rstrip() + "\n\n" + block
+
+
+def set_body(idea_id, new_body):
+    """บันทึกเนื้อหาไอเดียทั้งก้อน (สำหรับแก้ section ใน UI)"""
+    hit = _find_idea(idea_id)
+    if hit and new_body.strip():
+        fp, fm, _ = hit
+        write_md(fp, fm, "\n" + new_body.strip() + "\n")
+        return True
+    return False
+
+
+def add_character(idea_id, fields):
+    """เพิ่มตัวละคร 1 ตัวจากฟอร์มที่กรอก (ผสมกับ AI) → ต่อท้าย section ตัวละคร"""
+    hit = _find_idea(idea_id)
+    if not hit:
+        return False
+    fp, fm, body = hit
+    tmpl = " | ".join(f"{k}: {v}" for k, v in fields.items() if str(v).strip())
+    if not tmpl:
+        return False
+    print(f"[character] ขยายตัวละครจาก: {tmpl}", flush=True)
+    out = generate(
+        f"""ขยายตัวละครนิยายไทย 1 ตัวจากข้อมูลที่ผู้ใช้กรอก ให้สมบูรณ์ขึ้น (เพิ่มภูมิหลัง/บุคลิก/ปม/น้ำเสียง) แต่คงข้อมูลเดิมไว้
+เรื่อง: {fm.get('title')} — {fm.get('logline','')}
+ข้อมูลที่กรอก: {tmpl}
+ตอบเป็นโปรไฟล์ตัวละคร 1 ตัว กระชับ ขึ้นต้นชื่อด้วย '###' ตามด้วย bullet [สำคัญ: ห้ามคำนำ/คำลงท้าย ห้ามใช้ '##']""",
+        role="characters", temperature=0.85)
+    out = _clean_develop(out)
+    header = DEVELOP["characters"][0]
+    existing = _section(body, "ตัวละคร")
+    combined = (existing.rstrip() + "\n\n" + out).strip() if existing else out
+    _, fm, body = _find_idea(idea_id)
+    body = _upsert_section(body, header, combined)
+    write_md(fp, fm, body)
+    print("[character] ✅ เพิ่มแล้ว", flush=True)
+    return True
+
+
+def develop_idea(idea_id, kind):
+    """แตกเนื้อหาไอเดีย: kind ∈ concept|characters|names|plot|all"""
+    hit = _find_idea(idea_id)
+    if not hit:
+        print(f"[develop] ไม่พบไอเดีย {idea_id}")
+        return False
+    kinds = list(DEVELOP) if kind == "all" else [kind]
+    fp, fm, body = hit
+    seed = f"เรื่อง: {fm.get('title')}\nLogline: {fm.get('logline','')}\nไอเดีย: {body[:1200]}"
+    for k in kinds:
+        if k not in DEVELOP:
+            continue
+        header, role, task = DEVELOP[k]
+        print(f"[develop] {k} ...", flush=True)
+        out = generate(
+            f"คุณคือนักพัฒนาเนื้อหานิยายไทย จาก:\n{seed}\n\nงาน: {task}\n"
+            "ตอบกระชับเป็น bullet/หัวข้อ '###' อ่านง่าย "
+            "[สำคัญ] ส่งคืนเฉพาะเนื้อหา ห้ามมีคำนำ/คำทักทาย/คำลงท้าย และห้ามใช้หัวข้อระดับ '##' (ใช้ '###' หรือ '-')",
+            role=role, temperature=0.9)
+        out = _clean_develop(out)
+        # re-read body แต่ละรอบ (กันทับกันเมื่อทำหลาย kind)
+        _, fm, body = _find_idea(idea_id)
+        body = _upsert_section(body, header, out)
+        write_md(fp, fm, body)
+        print(f"[develop] ✅ {k}", flush=True)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # expand + score
 # ---------------------------------------------------------------------------
 def score_one(fp, fm, body):
@@ -419,6 +535,17 @@ def promote(idea_id):
 {fm.get('logline','')}
 {_section(body, 'ทำไมต้องตอนนี้')}
 """
+    # ส่ง dev content (ถ้าผู้ใช้พัฒนาไว้) ไป seed ให้ writer ต่อ
+    dev_map = [("คอนเซ็ป", "🌍 คอนเซ็ป & โลก"), ("ตัวละคร", "👥 ตัวละคร (ออกแบบไว้)"),
+               ("ปม", "🎬 ปม / พล็อต"), ("ชื่อเรื่อง", "📛 ชื่อที่เสนอ")]
+    dev_blocks = []
+    for keyword, label in dev_map:
+        sec = _section(body, keyword)
+        if sec and len(sec) > 20:
+            dev_blocks.append(f"### {label}\n{sec}")
+    if dev_blocks:
+        pbody += "\n## 🧩 เนื้อหาที่พัฒนาไว้ (ใช้เป็นแนวทางเขียน)\n" + "\n\n".join(dev_blocks) + "\n"
+
     write_md(pool_fp, pfm, pbody)
 
     fm["status"] = "Promoted"
@@ -503,6 +630,11 @@ if __name__ == "__main__":
         set_group(a[1], a[2])
     elif cmd == "edit" and len(a) > 2:
         edit_idea(a[1], " ".join(a[2:]))
+    elif cmd == "develop" and len(a) > 1:
+        develop_idea(a[1], a[2] if len(a) > 2 else "all")
+    elif cmd == "character" and len(a) > 2:
+        add_character(a[1], {"ชื่อ": a[2], "อายุ": a[3] if len(a) > 3 else "",
+                             "บทบาท": a[4] if len(a) > 4 else "", "ปม": a[5] if len(a) > 5 else ""})
     elif cmd == "auto":
         auto()
     elif cmd == "list":

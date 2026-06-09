@@ -68,10 +68,19 @@ LOCAL_NEGATIVE = os.environ.get(
     "LOCAL_IMAGE_NEGATIVE",
     "text, words, letters, watermark, signature, blurry, lowres, deformed, ugly, extra limbs",
 )
-LOCAL_TIMEOUT = int(os.environ.get("LOCAL_IMAGE_TIMEOUT", "300"))
+LOCAL_TIMEOUT = int(os.environ.get("LOCAL_IMAGE_TIMEOUT", "600"))
+# สเกลขนาดภาพ (0.5–1.0) — ลดบนเครื่อง RAM ตึงเพื่อให้เร็ว/ไม่ swap เช่น 0.75 = 768px
+LOCAL_DIM_SCALE = float(os.environ.get("LOCAL_IMAGE_DIM_SCALE", "1.0"))
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
+
+# --- Phase 2: ถ้าตั้ง ANSRE_GATEWAY_URL จะ route ผ่าน gateway (มี fallback ทำเองในเครื่อง) ---
+# ANSRE_GATEWAY_INTERNAL=1 = กระบวนการ gateway เอง → ต้องทำเองตรง ไม่วนกลับ (กัน recursion)
+GATEWAY_URL = os.environ.get("ANSRE_GATEWAY_URL", "").rstrip("/")
+GATEWAY_TOKEN = os.environ.get("ANSRE_GATEWAY_TOKEN", "")
+_INTERNAL = os.environ.get("ANSRE_GATEWAY_INTERNAL") == "1"
+_USE_GATEWAY = bool(GATEWAY_URL) and not _INTERNAL
 
 
 # แปลง aspect ratio -> ขนาดที่ SDXL ถนัด (รวมพิกเซลใกล้ 1024^2)
@@ -150,9 +159,43 @@ def _comfy_ping() -> bool:
         return False
 
 
+def _extract_comfy_error(status: dict) -> str:
+    """ดึงข้อความ error ที่อ่านรู้เรื่องจาก status.messages ของ ComfyUI."""
+    for m in status.get("messages", []):
+        # รูปแบบ: ["execution_error", {...}] หรือ ["execution_interrupted", {...}]
+        if isinstance(m, list) and len(m) >= 2 and "error" in str(m[0]).lower():
+            info = m[1] if isinstance(m[1], dict) else {}
+            etype = info.get("exception_type", "")
+            emsg = info.get("exception_message", "")
+            node = info.get("node_type", "")
+            detail = " · ".join(x for x in (node, etype, emsg) if x)
+            if detail:
+                return detail[:300]
+    return "ไม่ทราบรายละเอียด (ดู log บน Mac mini: tail -f /tmp/comfyui.err)"
+
+
+def _comfy_queue_position(prompt_id: str):
+    """คืนตำแหน่งในคิว (0=กำลังรัน, >0=รออยู่, None=ไม่ทราบ/ไม่อยู่ในคิว)."""
+    try:
+        q = _http_json(f"{LOCAL_BASE_URL}/queue", timeout=8)
+    except Exception:
+        return None
+    for item in q.get("queue_running", []):
+        if prompt_id in str(item):
+            return 0
+    for idx, item in enumerate(q.get("queue_pending", []), start=1):
+        if prompt_id in str(item):
+            return idx
+    return None
+
+
 def _comfy_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
     """ส่งงานเข้า ComfyUI, รอเรนเดอร์เสร็จ, ดึงรูปมาเซฟ. คืน True ถ้าสำเร็จ."""
     width, height = _SDXL_DIMS.get(aspect_ratio, _SDXL_DIMS["1:1"])
+    if LOCAL_DIM_SCALE != 1.0:
+        # ปัดเป็นพหุคูณของ 64 (SDXL ต้องการ)
+        width = max(512, int(width * LOCAL_DIM_SCALE) // 64 * 64)
+        height = max(512, int(height * LOCAL_DIM_SCALE) // 64 * 64)
     seed = random.randint(0, 2**32 - 1)
     workflow = _comfy_workflow(prompt, width, height, seed)
 
@@ -171,11 +214,13 @@ def _comfy_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
     if not prompt_id:
         print(f"    [!] ComfyUI ไม่คืน prompt_id: {res}")
         return False
-    print(f"    [*] ComfyUI กำลังเรนเดอร์ ({width}x{height}, seed={seed})...")
+    print(f"    [*] ComfyUI กำลังเรนเดอร์ ({width}x{height}, {LOCAL_STEPS} steps, seed={seed})...")
 
-    # 2) poll /history จนกว่าจะเสร็จ
-    deadline = time.monotonic() + LOCAL_TIMEOUT
+    # 2) poll /history จนกว่าจะเสร็จ — จับ error จริง + รายงานความคืบหน้า
+    start = time.monotonic()
+    deadline = start + LOCAL_TIMEOUT
     image_info = None
+    last_note = start
     while time.monotonic() < deadline:
         try:
             hist = _http_json(f"{LOCAL_BASE_URL}/history/{prompt_id}", timeout=15)
@@ -183,18 +228,33 @@ def _comfy_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
             time.sleep(2)
             continue
         entry = hist.get(prompt_id)
-        if entry and entry.get("outputs"):
-            for node_out in entry["outputs"].values():
-                imgs = node_out.get("images")
-                if imgs:
-                    image_info = imgs[0]
+        if entry:
+            status = entry.get("status", {})
+            # ComfyUI รัน node พัง→ status_str == 'error' (ไม่ต้องรอจนหมดเวลา)
+            if status.get("status_str") == "error":
+                msg = _extract_comfy_error(status)
+                print(f"    [!] ComfyUI execution error: {msg}")
+                return False
+            if entry.get("outputs"):
+                for node_out in entry["outputs"].values():
+                    imgs = node_out.get("images")
+                    if imgs:
+                        image_info = imgs[0]
+                        break
+                if image_info:
                     break
-            if image_info:
-                break
+        # แจ้งความคืบหน้าทุก ~30s (รวมตำแหน่งในคิว) — กันเข้าใจผิดว่าค้าง
+        now = time.monotonic()
+        if now - last_note >= 30:
+            last_note = now
+            qpos = _comfy_queue_position(prompt_id)
+            where = f"คิวที่ {qpos}" if qpos is not None and qpos > 0 else "กำลังเรนเดอร์"
+            print(f"    [.] ผ่านไป {int(now - start)}s — {where} (timeout {LOCAL_TIMEOUT}s)")
         time.sleep(2)
 
     if not image_info:
-        print(f"    [!] ComfyUI เรนเดอร์ไม่เสร็จใน {LOCAL_TIMEOUT}s")
+        print(f"    [!] ComfyUI เรนเดอร์ไม่เสร็จใน {LOCAL_TIMEOUT}s "
+              f"(เครื่องช้า/RAM ตึง? ลอง LOCAL_IMAGE_TIMEOUT สูงขึ้น หรือลด LOCAL_IMAGE_STEPS/ขนาด)")
         return False
 
     # 3) ดึงไฟล์รูปผ่าน /view
@@ -274,7 +334,31 @@ def generate_image(prompt: str, output_path: str, aspect_ratio: str = "1:1",
       local  -> ComfyUI เท่านั้น
       gemini -> Imagen เท่านั้น
       hybrid -> ลอง ComfyUI ก่อน, ดับ/พัง -> fallback Imagen
+
+    ถ้าตั้ง ANSRE_GATEWAY_URL: ส่งงานผ่าน gateway ก่อน, ล่ม -> fallback ทำเองในเครื่อง
     """
+    if _USE_GATEWAY:
+        try:
+            return _via_gateway_image(prompt, output_path, aspect_ratio, backend)
+        except Exception as e:  # noqa: BLE001
+            print(f"    [~] gateway สร้างรูปล้มเหลว ({e}) — fallback ทำเองในเครื่อง")
+    return _generate_image_direct(prompt, output_path, aspect_ratio, backend)
+
+
+def _via_gateway_image(prompt, output_path, aspect_ratio, backend) -> bool:
+    """ส่งงานสร้างรูปไป ANSRE Gateway แล้วรอผล (ใช้ SDK บางๆ)."""
+    from ansre_client import Ansre
+    print(f"    [*] สร้างรูปผ่าน gateway: {GATEWAY_URL}")
+    Ansre(GATEWAY_URL, GATEWAY_TOKEN).image(
+        prompt, save_to=output_path, aspect_ratio=aspect_ratio,
+        backend=backend, wait=True, poll_timeout=LOCAL_TIMEOUT)
+    print(f"    [+] บันทึกรูป (gateway) -> {output_path}")
+    return True
+
+
+def _generate_image_direct(prompt: str, output_path: str, aspect_ratio: str = "1:1",
+                           backend: str | None = None) -> bool:
+    """สร้างรูปเองในเครื่องนี้ (ComfyUI/Imagen) — ตรรกะเดิมก่อนมี gateway."""
     be = (backend or IMAGE_BACKEND).lower()
 
     if be == "local":

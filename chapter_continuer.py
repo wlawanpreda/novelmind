@@ -121,6 +121,17 @@ def write_next_chapter(sb, title, n):
 **ห้ามขยายความยาว** คงความยาวใกล้เคียงเดิม"""
     final = strip_meta(generate_content_safe("enhancer", polish + NO_META))
 
+    # ป้องกัน silent-fail: ถ้าบทสั้นผิดปกติ (LLM ล่ม/หลุดกลางคัน) อย่าบันทึกทับเป็น garbage
+    # ใช้ draft (ก่อนเกลา) แทนถ้ายาวกว่า แล้วถ้ายังสั้นมากก็ข้ามไป (กันไฟล์ 300 ตัวอักษร)
+    min_chars = int(os.environ.get("ANSRE_MIN_CHAPTER_CHARS", "1500"))
+    if len(final) < min_chars and len(draft) > len(final):
+        print(f"    [!] บทเกลาสั้นผิดปกติ ({len(final)}) — ใช้ draft ก่อนเกลา ({len(draft)}) แทน")
+        final = draft
+    if len(final) < min_chars:
+        print(f"[!] ข้าม {title} ตอน {n}: ผลลัพธ์สั้นเกินไป ({len(final)}<{min_chars}) "
+              "— อาจเพราะ LLM ล่ม/หลุดกลางคัน ลองใหม่ภายหลัง")
+        return False
+
     # D) audio script (ใช้ฟังก์ชันเดียวกับ stage 6 ที่แบ่ง chunk กัน token limit)
     audio_script = run_stage_6_audio_script(f"{title} ตอนที่ {n}", final)
 

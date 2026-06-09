@@ -211,6 +211,27 @@ def audio_script(title, ch=1):
 
 
 # ---------------------------------------------------------------------------
+# 0. develop → promote → write (คลิกเดียวจบ)
+# ---------------------------------------------------------------------------
+def develop_promote_write(idea_id):
+    import ideation
+    print("[1/3] 🧩 พัฒนาเนื้อหา (คอนเซ็ป/ตัวละคร/ชื่อ/ปม)...", flush=True)
+    ideation.develop_idea(idea_id, "all")
+    print("[2/3] 📤 promote เข้าคิวเขียน...", flush=True)
+    pool_fp = ideation.promote(idea_id)
+    if not pool_fp:
+        print("[!] promote ล้มเหลว")
+        return False
+    hit = ideation._find_idea(idea_id)
+    title = hit[1].get("title") if hit else None
+    print(f"[3/3] ✍️ เขียนนิยาย: {title} ...", flush=True)
+    from agent_writer import process_analyzed_novels
+    process_analyzed_novels(SB, only=title)
+    print("✅ เสร็จครบ — พัฒนา → promote → เขียน", flush=True)
+    return True
+
+
+# ---------------------------------------------------------------------------
 # 1. Idea loop — คอมเมนต์ + ขัดเกลาไอเดียทีละรอบ
 # ---------------------------------------------------------------------------
 def idea_loop(idea_id, rounds=3):
@@ -288,6 +309,8 @@ if __name__ == "__main__":
         video_prompts(a[1])
     elif cmd == "bible" and len(a) > 1:
         story_bible(a[1])
+    elif cmd == "devwrite" and len(a) > 1:
+        develop_promote_write(a[1])
     elif cmd == "audio-script" and len(a) > 1:
         audio_script(a[1], int(a[2]) if len(a) > 2 else 1)
     elif cmd == "idea-loop" and len(a) > 1:

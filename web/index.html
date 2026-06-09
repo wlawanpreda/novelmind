@@ -46,19 +46,27 @@
     <section class="view active" id="view-overview">
       <div class="grid cards" id="statCards"></div>
       <div class="panel">
-        <h2>🔄 สายการผลิต <span class="line"></span></h2>
+        <h2>🔄 สายการผลิต <span class="line"></span>
+          <button class="btn sm" id="loop3Btn" onclick="toggleLoop3()">🔁 Auto Loop</button>
+        </h2>
+        <div class="loop3-status" id="loop3Status"></div>
         <div class="flow" id="flow"></div>
       </div>
       <div class="panel">
         <h2>⚡ ลัดสั่งงาน <span class="line"></span></h2>
         <div class="head-actions" id="quickActions"></div>
       </div>
+      <div class="panel">
+        <h2>🎬 ผลงานล่าสุด <span class="line"></span></h2>
+        <div class="card latest-teaser" id="latestTeaser"></div>
+      </div>
     </section>
 
     <!-- IDEAS -->
     <section class="view" id="view-ideas">
       <div class="card idea-capture">
-        <input id="ideaInput" placeholder="พิมพ์ไอเดียนิยายของคุณ… (เช่น ร้านสะดวกซื้อที่เปิดเฉพาะตอนตี 3)">
+        <input id="ideaInput" placeholder="พิมพ์ไอเดียนิยายของคุณ… แล้วกด Enter (เช่น ร้านสะดวกซื้อที่เปิดเฉพาะตอนตี 3)"
+               onkeydown="if(event.key==='Enter')addIdea()">
         <button class="btn primary" onclick="addIdea()">+ เก็บไอเดีย</button>
       </div>
       <div class="head-actions" style="margin:14px 0;flex-wrap:wrap">
@@ -99,9 +107,10 @@
     <section class="view" id="view-studio">
       <div class="card studio-bar">
         <label style="flex:1">เลือกเรื่อง
-          <select id="studioProject"></select></label>
+          <select id="studioProject" onchange="studioStatus()"></select></label>
         <button class="btn ghost" onclick="loadProjects()">↻</button>
       </div>
+      <div class="studio-status" id="studioStatus"></div>
       <div class="head-actions" style="margin:16px 0;flex-wrap:wrap">
         <button class="btn" onclick="studio('visual')">🎨 Prompt ภาพตัวละคร/ฉาก</button>
         <button class="btn" onclick="studio('video')">🎬 Video / Google Flow</button>
@@ -124,14 +133,13 @@
 
     <!-- OUTPUTS -->
     <section class="view" id="view-outputs">
-      <div class="panel"><h2>🖼️ ปกนิยาย <span class="line"></span></h2><div class="gal" id="galCovers"></div></div>
-      <div class="panel"><h2>🎧 หนังสือเสียง <span class="line"></span></h2><div class="gal" id="galAudio"></div></div>
-      <div class="panel"><h2>🎬 Teaser <span class="line"></span></h2><div class="gal" id="galTeasers"></div></div>
+      <div id="storyOutputs"></div>
     </section>
 
     <!-- USAGE -->
     <section class="view" id="view-usage">
       <div class="grid cards" id="usageCards"></div>
+      <div class="card" id="usageCap" style="margin-top:16px"></div>
       <div class="panel"><h2>📈 ค่าใช้จ่าย LLM 14 วันล่าสุด (USD) <span class="line"></span></h2>
         <div class="card"><div class="chart" id="usageChart"></div></div></div>
       <div class="panel"><h2>🧮 จำนวนเรียกแยกตาม backend <span class="line"></span></h2><div class="routes" id="backendBreak"></div></div>

@@ -31,7 +31,7 @@ import time
 import threading
 import subprocess
 from datetime import datetime
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -176,15 +176,32 @@ def api_doctor():
     add(bool(os.environ.get("NOTION_TOKEN")), "NOTION_TOKEN",
         "set" if os.environ.get("NOTION_TOKEN") else "ขาด (sync Notion)", level="warn")
 
-    if backend in ("local", "hybrid"):
-        import socket
-        u = urlparse(os.environ.get("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1"))
-        host, port = u.hostname or "localhost", u.port or 11434
+    import socket
+
+    def probe(env_url, default, label, fallback_note):
+        u = urlparse(os.environ.get(env_url, default))
+        host, port = u.hostname or "localhost", u.port or (u.scheme == "https" and 443 or 80)
         try:
             with socket.create_connection((host, port), timeout=2):
-                add(True, "Local LLM (Mac mini)", f"{host}:{port} ต่อได้")
+                add(True, label, f"{host}:{port} ต่อได้")
         except Exception:
-            add(False, "Local LLM (Mac mini)", f"{host}:{port} ต่อไม่ได้ (fallback Gemini)", level="warn")
+            add(False, label, f"{host}:{port} ต่อไม่ได้ ({fallback_note})", level="warn")
+
+    if backend in ("local", "hybrid"):
+        probe("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1", "Local LLM (Mac mini)", "fallback Gemini")
+    # Image backend (ComfyUI)
+    img_backend = os.environ.get("IMAGE_BACKEND", "gemini")
+    if img_backend in ("local", "hybrid"):
+        probe("LOCAL_IMAGE_BASE_URL", "http://localhost:8188", "Image gen (ComfyUI)", "fallback Imagen")
+    # Gateway (ถ้าตั้ง)
+    if os.environ.get("ANSRE_GATEWAY_URL"):
+        probe("ANSRE_GATEWAY_URL", "", "ANSRE Gateway", "ใช้ตรงแทน")
+    # ffmpeg + libass (สำหรับ teaser)
+    has_ff = subprocess.run(["which", "ffmpeg"], capture_output=True).returncode == 0
+    libass = has_ff and b"subtitles" in subprocess.run(["ffmpeg", "-hide_banner", "-filters"],
+                                                        capture_output=True).stdout
+    add(has_ff, "ffmpeg (teaser)", "พร้อม" + (" + libass" if libass else " (ไม่มี libass — caption ผ่าน PIL)"),
+        level="bad")
 
     add(_worker_running(), "Auto worker", "กำลังทำงาน" if _worker_running() else "หยุดอยู่", level="warn")
     return {"backend": backend, "checks": checks,
@@ -234,6 +251,11 @@ def api_config():
             "local_model": os.environ.get("LOCAL_LLM_MODEL", ""),
             "writing_mode": os.environ.get("WRITING_MODE", "premium"),
             "daily_cap": os.environ.get("ANSRE_DAILY_USD_CAP", "0"),
+            "image_backend": os.environ.get("IMAGE_BACKEND", "gemini"),
+            "image_url": os.environ.get("LOCAL_IMAGE_BASE_URL", ""),
+            "image_model": os.environ.get("LOCAL_IMAGE_MODEL", ""),
+            "tts_engine": os.environ.get("TTS_ENGINE", "edge-tts"),
+            "call_gap": os.environ.get("ANSRE_CALL_GAP", "0"),
             "routing": routing}
 
 
@@ -279,7 +301,26 @@ def idea_action(payload):
         return {"ok": ideation.set_group(iid, payload.get("group", ""))}
     if act == "edit":
         return {"ok": ideation.edit_idea(iid, payload.get("text", ""))}
+    if act == "set_body":
+        return {"ok": ideation.set_body(iid, payload.get("body", ""))}
     return {"ok": False, "error": "bad action"}
+
+
+def idea_devwrite(idea_id):
+    """พัฒนา→promote→เขียน ในคลิกเดียว (background, ยาว)"""
+    if not idea_id:
+        return {"error": "no id"}
+    return {"task": start_argv("dev-promote-write", ["studio.py", "devwrite", idea_id])}
+
+
+def idea_character(payload):
+    """เพิ่มตัวละครจากฟอร์ม (template + AI) — background"""
+    iid = payload.get("id", "")
+    if not iid:
+        return {"error": "no id"}
+    argv = ["ideation.py", "character", iid, payload.get("name", "ตัวละคร"),
+            payload.get("age", ""), payload.get("role", ""), payload.get("plot", "")]
+    return {"task": start_argv("add-character", argv)}
 
 
 def idea_merge(ids):
@@ -287,6 +328,23 @@ def idea_merge(ids):
     if not ids or len(ids) < 2:
         return {"error": "ต้องเลือกอย่างน้อย 2 ไอเดีย"}
     return {"task": start_argv("idea-merge", ["ideation.py", "merge"] + list(ids))}
+
+
+def idea_detail(idea_id):
+    """เนื้อหาเต็มของไอเดีย (โชว์ในแผงกาง)"""
+    import ideation
+    hit = ideation._find_idea(idea_id)
+    if not hit:
+        return {"ok": False, "body": ""}
+    return {"ok": True, "body": hit[2]}
+
+
+def idea_develop(payload):
+    """แตกเนื้อหาไอเดีย (concept/characters/names/plot/all) — background LLM"""
+    iid, kind = payload.get("id", ""), payload.get("kind", "all")
+    if not iid:
+        return {"error": "no id"}
+    return {"task": start_argv(f"idea-develop-{kind}", ["ideation.py", "develop", iid, kind])}
 
 
 # ---- Studio (visual/video/loops) ----
@@ -321,6 +379,21 @@ def api_studio_output(kind, title):
         return {"ok": False, "error": str(e)}
 
 
+def api_studio_status(title):
+    """เช็คว่าเรื่องนี้มี studio output อะไรแล้วบ้าง (visual/video/audio/bible)"""
+    try:
+        import studio
+        base = studio._match_base(title) or studio._slug(title)
+        st = {}
+        for kind, (folder, suffix) in _STUDIO_OUT.items():
+            st[kind] = os.path.exists(os.path.join(SB, "05_Active_Projects", folder, f"{base}{suffix}"))
+        # นับบทด้วย
+        ch = len(glob.glob(os.path.join(SB, "05_Active_Projects", "Chapters", f"{base}_Chapter_*.md")))
+        return {"ok": True, "status": st, "chapters": ch}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
 def studio_launch(payload):
     action = payload.get("action", "")
     title = payload.get("title", "")
@@ -340,17 +413,40 @@ def studio_launch(payload):
 
 
 def api_outputs():
-    def listing(parts, kind):
-        out = []
-        for fp in sorted(glob.glob(os.path.join(SB, *parts))):
-            out.append({"name": os.path.basename(fp), "kind": kind,
-                        "url": f"/media/{kind}/{os.path.basename(fp)}"})
-        return out
-    return {
-        "covers": listing(("05_Active_Projects", "Covers", "*"), "covers"),
-        "audio": listing(("05_Active_Projects", "Audio_Output", "*.mp3"), "audio"),
-        "teasers": listing(("05_Active_Projects", "Teaser_Output", "*.mp4"), "teasers"),
-    }
+    """จัดกลุ่มสื่อตามเรื่อง (ปก+เสียง+teaser ของเรื่องเดียวกันอยู่ด้วยกัน)"""
+    ap = os.path.join(SB, "05_Active_Projects")
+    stories = {}
+
+    def story(base):
+        return stories.setdefault(base, {"base": base, "title": base.replace("_", " "),
+                                         "cover": "", "audio": [], "teasers": []})
+    # ปก (ใช้ตัวที่มี caption ก่อน)
+    for fp in sorted(glob.glob(os.path.join(ap, "Covers", "*.jpg"))):
+        n = os.path.basename(fp)
+        if n.endswith("_Cover_captioned.jpg"):
+            s = story(n[:-len("_Cover_captioned.jpg")])
+            s["cover"] = f"/media/covers/{n}"
+        elif n.endswith("_Cover.jpg"):
+            s = story(n[:-len("_Cover.jpg")])
+            s.setdefault("_raw", f"/media/covers/{n}")
+    for s in stories.values():
+        if not s["cover"] and s.get("_raw"):
+            s["cover"] = s["_raw"]
+    # เสียง
+    for fp in sorted(glob.glob(os.path.join(ap, "Audio_Output", "*.mp3"))):
+        n = os.path.basename(fp)
+        b = re.sub(r"_Audiobook_\d+\.mp3$", "", n)
+        story(b)["audio"].append({"name": n, "url": f"/media/audio/{n}"})
+    # teaser
+    for fp in sorted(glob.glob(os.path.join(ap, "Teaser_Output", "*.mp4"))):
+        n = os.path.basename(fp)
+        b = re.sub(r"_Teaser_\d+\.mp4$", "", n)
+        story(b)["teasers"].append({"name": n, "url": f"/media/teasers/{n}"})
+    # เรียง: เรื่องที่มี teaser ก่อน
+    rows = sorted(stories.values(), key=lambda s: (-len(s["teasers"]), -len(s["audio"]), s["base"]))
+    for s in rows:
+        s.pop("_raw", None)
+    return {"stories": rows}
 
 
 # ---------------------------------------------------------------------------
@@ -447,8 +543,11 @@ def start_argv(label, argv):
             lf.write(f"$ {label}\n")
             lf.flush()
             try:
-                p = subprocess.Popen([venv_py()] + argv, cwd=ROOT,
-                                     stdout=lf, stderr=subprocess.STDOUT)
+                # -u + PYTHONUNBUFFERED: log วิ่งสดทันที (ไม่งั้น stdout ถูก buffer จนจบ → ดูเหมือนค้าง)
+                env = os.environ.copy()
+                env["PYTHONUNBUFFERED"] = "1"
+                p = subprocess.Popen([venv_py(), "-u"] + argv, cwd=ROOT, env=env,
+                                     stdout=lf, stderr=subprocess.STDOUT, bufsize=1)
                 with _task_lock:
                     TASKS[tid]["pid"] = p.pid
                 p.wait()
@@ -554,19 +653,26 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_outputs())
             if p == "/api/ideas":
                 return self._send(200, api_ideas())
+            if p == "/api/idea/detail":
+                return self._send(200, idea_detail(parse_qs(u.query).get("id", [""])[0]))
             if p == "/api/projects":
                 return self._send(200, api_projects())
             if p == "/api/studio/output":
                 qs = parse_qs(u.query)
                 return self._send(200, api_studio_output(qs.get("kind", [""])[0], qs.get("title", [""])[0]))
+            if p == "/api/studio/status":
+                return self._send(200, api_studio_status(parse_qs(u.query).get("title", [""])[0]))
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
             if p.startswith("/media/"):
                 _, _, cat, fname = p.split("/", 3)
+                fname = unquote(fname)   # ชื่อไฟล์ไทยถูก URL-encode ต้อง decode ก่อนหา
                 d = MEDIA_DIRS.get(cat)
                 if d:
-                    return self._serve_file(os.path.join(d, fname))
+                    # กัน path traversal: อนุญาตเฉพาะ basename
+                    safe = os.path.join(d, os.path.basename(fname))
+                    return self._serve_file(safe)
                 return self._send(404, {"error": "bad media"})
             return self._send(404, {"error": "not found"})
         except Exception as e:  # noqa: BLE001
@@ -598,6 +704,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_action(payload))
             if u.path == "/api/idea/merge":
                 return self._send(200, idea_merge(payload.get("ids", [])))
+            if u.path == "/api/idea/develop":
+                return self._send(200, idea_develop(payload))
+            if u.path == "/api/idea/devwrite":
+                return self._send(200, idea_devwrite(payload.get("id", "")))
+            if u.path == "/api/idea/character":
+                return self._send(200, idea_character(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
