@@ -329,13 +329,44 @@ const loadStudio = () => loadProjects().then(studioStatus);
 async function studioStatus() {
   const title = $("#studioProject")?.value;
   const box = $("#studioStatus");
-  if (!box || !title) { if (box) box.innerHTML = ""; return; }
+  if (!box || !title) { if (box) box.innerHTML = ""; loadStudioDetail(); return; }
   const r = await api("/api/studio/status?title=" + encodeURIComponent(title));
-  if (!r.ok) { box.innerHTML = ""; return; }
-  const chip = (ok, label) => `<span class="schip ${ok ? "on" : ""}">${ok ? "✅" : "⚪"} ${label}</span>`;
-  box.innerHTML = `<span class="schip ${r.chapters ? "on" : ""}">📖 ${r.chapters} ตอน</span>`
-    + chip(r.status.visual, "ภาพ") + chip(r.status.video, "วิดีโอ")
-    + chip(r.status.audio, "เสียง") + chip(r.status.bible, "bible");
+  if (r.ok) {
+    const chip = (ok, label) => `<span class="schip ${ok ? "on" : ""}">${ok ? "✅" : "⚪"} ${label}</span>`;
+    box.innerHTML = `<span class="schip ${r.chapters ? "on" : ""}">📖 ${r.chapters} ตอน</span>`
+      + chip(r.status.visual, "ภาพ") + chip(r.status.video, "วิดีโอ")
+      + chip(r.status.audio, "เสียง") + chip(r.status.bible, "bible");
+  } else box.innerHTML = "";
+  loadStudioDetail();
+}
+
+async function loadStudioDetail() {
+  const title = $("#studioProject")?.value;
+  const el = $("#studioDetail");
+  if (!el) return;
+  if (!title) { el.innerHTML = ""; return; }
+  const r = await api("/api/studio/detail?title=" + encodeURIComponent(title));
+  if (!r.ok) { el.innerHTML = ""; return; }
+  const m = r.meta || {}, a = r.assets || {};
+  const chip = (ok, l) => `<span class="schip ${ok ? "on" : ""}">${ok ? "✅" : "⚪"} ${l}</span>`;
+  const metaRow = `<div class="nd-stats">
+      ${m.market_fit ? `<span>🎯 fit ${esc(m.market_fit)}/10</span>` : ""}
+      ${m.popularity ? `<span>🔥 ${esc(m.popularity)}/100</span>` : ""}
+      ${m.genre ? `<span>🏷️ ${esc(m.genre)}</span>` : ""}
+      ${m.source ? `<span>📡 ${esc(m.source)}</span>` : ""}
+      ${m.status ? `<span class="tag ${esc(m.status)}">${esc(m.status)}</span>` : ""}</div>`;
+  const assetRow = `<div class="nd-assets"><span class="schip ${a.chapters ? "on" : ""}">📖 ${a.chapters || 0} ตอน</span>${chip(a.cover, "ปก")}${chip(a.audio, "เสียง")}${chip(a.teaser, "teaser")}${chip(r.studio?.bible, "bible")}${chip(r.studio?.visual, "ภาพprompt")}</div>`;
+  const chapters = (r.chapters && r.chapters.length)
+    ? `<div class="sd-chapters">${r.chapters.map(c => `<span class="chbadge">📄 ${esc(c.name.replace(/^.*_Chapter_/, "ตอน ").replace(".md", ""))} · ${c.kb}KB</span>`).join("")}</div>`
+    : `<div class="muted" style="padding:6px 0">ยังไม่มีตอน — เขียนนิยายก่อน (หน้านิยาย)</div>`;
+  const concept = r.outline ? `<details class="card sd-doc" open><summary>📋 คอนเซ็ป / โครงเรื่อง</summary><div class="md" style="max-height:55vh;overflow:auto;margin-top:10px">${mdToHtml(r.outline)}</div></details>` : "";
+  const chars = r.characters ? `<details class="card sd-doc"><summary>👥 ตัวละคร</summary><div class="md" style="max-height:55vh;overflow:auto;margin-top:10px">${mdToHtml(r.characters)}</div></details>` : "";
+  el.innerHTML = `<div class="sd-panel">
+      ${metaRow}${assetRow}
+      <div class="sd-section-title">📖 ตอนที่เขียนแล้ว (${(r.chapters || []).length})</div>
+      ${chapters}
+      <div class="sd-docs">${concept}${chars}</div>
+    </div>`;
 }
 
 async function studio(action) {
@@ -361,22 +392,90 @@ async function viewStudio(kind) {
 }
 
 // ---- novels ----
+const fmtViews = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v;
+let NOVELS = [], NOVEL_TREND = "", NOVEL_EXP = null;
+
 async function loadNovels() {
   const [{ novels }, trend] = await Promise.all([api("/api/novels"), api("/api/trends")]);
-  const fmtViews = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v;
-  $("#novelList").innerHTML = `
-    <div class="head-actions" style="margin-bottom:14px">
+  NOVELS = novels || [];
+  NOVEL_TREND = trend.content || "";
+  renderNovelList();
+}
+
+function novelRow(n) {
+  const exp = NOVEL_EXP === n.title;
+  const meta = `${esc(n.source)} · ${esc(n.genre || "—")}${n.rating ? ` · ⭐${esc(n.rating)}` : ""}${n.views ? ` · 👁 ${fmtViews(n.views)}` : ""}`;
+  const score = n.popularity ? `<div class="score">${n.popularity}<small style="color:var(--muted);font-size:11px">/100</small></div>` : "<div></div>";
+  const fit = n.score ? `<span class="fitbadge" title="market fit">fit ${esc(n.score)}</span>` : "";
+  const row = `<div class="nv-row nv-click${exp ? " expanded" : ""}" data-title="${esc(n.title)}" onclick="toggleNovel(this)">
+      <div><div class="ti">${exp ? "▾ " : "▸ "}${n.rank ? `<span class="rankbadge">#${n.rank}</span> ` : ""}${esc(n.title)}</div>
+        <div class="meta">${meta}</div></div>
+      ${score}
+      <div style="display:flex;gap:8px;align-items:center">${fit}<div class="tag ${n.status}">${esc(n.status)}</div></div>
+    </div>`;
+  const detail = exp ? `<div class="novel-detail" id="novelDetail"><div class="muted" style="padding:18px">กำลังโหลดบทวิเคราะห์…</div></div>` : "";
+  return row + detail;
+}
+
+function renderNovelList() {
+  const head = `<div class="head-actions" style="margin-bottom:14px">
       <button class="btn" onclick="runStage('scout')">🔍 Scout เรื่องใหม่</button>
-      <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์</button>
+      <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์ทั้งหมด</button>
       <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
-    </div>` + (trend.content ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(trend.content)}</div></details>` : "")
-    + (novels.length ? novels.map(n => `
-    <div class="nv-row">
-      <div><div class="ti">${n.rank ? `<span class="rankbadge">#${n.rank}</span> ` : ""}${esc(n.title)}</div>
-        <div class="meta">${esc(n.source)} · ${esc(n.genre || "—")}${n.rating ? ` · ⭐${esc(n.rating)}` : ""}${n.views ? ` · 👁 ${fmtViews(n.views)}` : ""}</div></div>
-      ${n.popularity ? `<div class="score">${n.popularity}<small style="color:var(--muted);font-size:11px">/100</small></div>` : "<div></div>"}
-      <div class="tag ${n.status}">${esc(n.status)}</div>
-    </div>`).join("") : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`);
+    </div>`
+    + (NOVEL_TREND ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(NOVEL_TREND)}</div></details>` : "");
+  const list = NOVELS.length ? NOVELS.map(novelRow).join("")
+    : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`;
+  $("#novelList").innerHTML = head + `<div class="nv-hint">💡 คลิกแต่ละเรื่องเพื่อดูบทวิเคราะห์ จุดเด่น และสั่งงาน</div>` + list;
+  if (NOVEL_EXP) loadNovelDetail(NOVEL_EXP);
+}
+
+function toggleNovel(el) {
+  const t = el.dataset.title;
+  NOVEL_EXP = NOVEL_EXP === t ? null : t;
+  renderNovelList();
+}
+
+async function loadNovelDetail(title) {
+  const r = await api("/api/novel/detail?title=" + encodeURIComponent(title));
+  const el = $("#novelDetail");
+  if (!el) return;
+  if (!r.ok) { el.innerHTML = `<div class="empty">${esc(r.error || "โหลดไม่ได้")}</div>`; return; }
+  const fm = r.fm || {}, a = r.assets || {};
+  const chip = (ok, l) => `<span class="schip ${ok ? "on" : ""}">${ok ? "✅" : "⚪"} ${l}</span>`;
+  const stats = `<div class="nd-stats">
+      ${fm.market_fit_score ? `<span>🎯 market fit ${esc(fm.market_fit_score)}/10</span>` : ""}
+      ${fm.popularity_score ? `<span>🔥 นิยม ${esc(fm.popularity_score)}/100</span>` : ""}
+      ${fm.rating ? `<span>⭐ ${esc(fm.rating)}</span>` : ""}
+      ${fm.views ? `<span>👁 ${fmtViews(+fm.views || 0)}</span>` : ""}
+      ${fm.author ? `<span>✍️ ${esc(fm.author)}</span>` : ""}
+      ${fm.url ? `<a href="${esc(fm.url)}" target="_blank" rel="noopener">🔗 ต้นฉบับ</a>` : ""}</div>`;
+  const assets = `<div class="nd-assets"><span class="schip ${a.chapters ? "on" : ""}">📖 ${a.chapters || 0} ตอน</span>${chip(a.cover, "ปก")}${chip(a.audio, "เสียง")}${chip(a.teaser, "teaser")}</div>`;
+  const actions = `<div class="dev-bar">
+      <button class="btn sm primary" data-t="${esc(title)}" onclick="writeNovel(this.dataset.t)">✍️ เขียนเรื่องนี้</button>
+      <button class="btn sm" data-t="${esc(title)}" onclick="gotoStudio(this.dataset.t)">🎨 ไป Studio</button>
+      ${a.teaser ? `<button class="btn sm" onclick="loadView('outputs')">🎬 ดูผลผลิต</button>` : ""}</div>`;
+  el.innerHTML = stats + assets + actions
+    + `<div class="md nd-body">${mdToHtml(r.body || "(ยังไม่มีบทวิเคราะห์ — กด “🧠 วิเคราะห์ทั้งหมด” ด้านบน)")}</div>`;
+}
+
+async function writeNovel(title) {
+  if (!confirm(`เขียนนิยาย “${title}” แบบ 6-stage?\n(ใช้เวลาสักครู่ · ข้าม quality gate เพราะคุณเลือกเอง)`)) return;
+  const r = await api("/api/novel/write", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("เริ่มเขียน ✍️"); openDrawer(r.task, "เขียน: " + title);
+}
+
+function gotoStudio(title) {
+  loadView("studio");
+  setTimeout(() => {
+    const sel = $("#studioProject");
+    if (sel) {
+      const opt = [...sel.options].find(o => o.value === title || o.value.includes(title) || title.includes(o.value));
+      if (opt) sel.value = opt.value;
+      studioStatus();
+    }
+  }, 500);
 }
 
 // ---- outputs (จัดกลุ่มตามเรื่อง) ----

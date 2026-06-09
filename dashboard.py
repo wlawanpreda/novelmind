@@ -394,6 +394,85 @@ def api_studio_status(title):
         return {"ok": False, "error": str(e)}
 
 
+def _find_novel(title):
+    """หาไฟล์นิยายใน pool จากชื่อ (thai_working_title/recreation_title/title) — exact ก่อน แล้ว substring"""
+    files = glob.glob(os.path.join(SB, "01_Scouting_Pool", "*.md"))
+    t = (title or "").strip()
+    if not t:
+        return None, {}
+    for fp in files:
+        fm = _frontmatter(fp)
+        if t in (fm.get("thai_working_title"), fm.get("recreation_title"), fm.get("title")):
+            return fp, fm
+    for fp in files:
+        fm = _frontmatter(fp)
+        if any(t in (fm.get(k) or "") for k in ("thai_working_title", "recreation_title", "title")):
+            return fp, fm
+    return None, {}
+
+
+def _assets_for(base):
+    """สถานะสินทรัพย์ของเรื่อง (จาก slug base): ตอน/ปก/เสียง/teaser"""
+    if not base:
+        return {"chapters": 0, "cover": False, "audio": 0, "teaser": 0}
+    g = lambda *p: glob.glob(os.path.join(SB, "05_Active_Projects", *p))
+    return {
+        "chapters": len(g("Chapters", f"{base}_Chapter_*.md")),
+        "cover": bool(g("Covers", f"{base}_Cover*")),
+        "audio": len(g("Audio_Output", f"{base}_Audiobook_*.mp3")),
+        "teaser": len(g("Teasers", f"{base}_Teaser*")) + len(g("Teaser_Output", f"{base}*.mp4")),
+    }
+
+
+def _base_for(fm, title=""):
+    try:
+        import studio
+        return studio._match_base(fm.get("recreation_title") or fm.get("thai_working_title")
+                                  or title) or studio._slug(title)
+    except Exception:
+        return ""
+
+
+def api_novel_detail(title):
+    """เนื้อหาเต็ม + บทวิเคราะห์ AI + สถานะสินทรัพย์ ของนิยายหนึ่งเรื่อง"""
+    fp, fm = _find_novel(title)
+    if not fp:
+        return {"ok": False, "error": "ไม่พบเรื่อง"}
+    txt = _read_head(fp, 80000)
+    body = txt.split("\n---", 1)[-1].split("---\n", 1)[-1] if txt.startswith("---") else txt
+    return {"ok": True, "fm": fm, "body": body, "assets": _assets_for(_base_for(fm, title))}
+
+
+def api_studio_detail(title):
+    """รายละเอียดเรื่องสำหรับหน้า Studio: คอนเซ็ป/ตัวละคร/รายการตอน/สินทรัพย์/เมตา"""
+    fp, fm = _find_novel(title)
+    base = _base_for(fm, title)
+    rd = lambda folder, name, n=40000: (_read_head(os.path.join(SB, folder, name), n)
+                                        if os.path.exists(os.path.join(SB, folder, name)) else "")
+    outline = rd("02_Concept_Extraction", f"{base}_Outline.md") if base else ""
+    chars = rd("04_Character_Database", f"{base}_Characters.md", 25000) if base else ""
+    chapters = [{"name": os.path.basename(c), "kb": os.path.getsize(c) // 1024}
+                for c in sorted(glob.glob(os.path.join(SB, "05_Active_Projects", "Chapters",
+                                                        f"{base}_Chapter_*.md")))] if base else []
+    studio_st = {}
+    for kind, (folder, suffix) in _STUDIO_OUT.items():
+        studio_st[kind] = bool(base) and os.path.exists(
+            os.path.join(SB, "05_Active_Projects", folder, f"{base}{suffix}"))
+    return {"ok": True, "base": base, "outline": outline, "characters": chars,
+            "chapters": chapters, "studio": studio_st, "assets": _assets_for(base),
+            "meta": {"market_fit": fm.get("market_fit_score", ""), "popularity": fm.get("popularity_score", ""),
+                     "genre": fm.get("genre", ""), "source": fm.get("source", ""),
+                     "original": fm.get("title", ""), "status": fm.get("status", "")}}
+
+
+def novel_write(payload):
+    """เขียนนิยายเรื่องที่เจาะจง (ข้าม quality gate เพราะผู้ใช้เลือกเอง)"""
+    title = (payload.get("title") or "").strip()
+    if not title:
+        return {"error": "no title"}
+    return {"task": start_argv(f"write:{title[:18]}", ["agent_writer.py", SB, "--only", title])}
+
+
 def studio_launch(payload):
     action = payload.get("action", "")
     title = payload.get("title", "")
@@ -662,6 +741,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_studio_output(qs.get("kind", [""])[0], qs.get("title", [""])[0]))
             if p == "/api/studio/status":
                 return self._send(200, api_studio_status(parse_qs(u.query).get("title", [""])[0]))
+            if p == "/api/studio/detail":
+                return self._send(200, api_studio_detail(parse_qs(u.query).get("title", [""])[0]))
+            if p == "/api/novel/detail":
+                return self._send(200, api_novel_detail(parse_qs(u.query).get("title", [""])[0]))
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
@@ -710,6 +793,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_devwrite(payload.get("id", "")))
             if u.path == "/api/idea/character":
                 return self._send(200, idea_character(payload))
+            if u.path == "/api/novel/write":
+                return self._send(200, novel_write(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
