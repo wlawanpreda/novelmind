@@ -213,6 +213,21 @@
   </main>
 </div>
 
+<!-- Chapter reader -->
+<div class="reader-overlay" id="readerOverlay" onclick="if(event.target===this)closeReader()">
+  <div class="reader">
+    <div class="reader-head">
+      <div><b id="readerTitle">บท</b> <span class="meta" id="readerNav"></span></div>
+      <div class="head-actions">
+        <button class="btn ghost sm" id="readerPrev" onclick="readerStep(-1)">‹ ก่อน</button>
+        <button class="btn ghost sm" id="readerNext" onclick="readerStep(1)">ถัด ›</button>
+        <button class="btn ghost" onclick="closeReader()">✕</button>
+      </div>
+    </div>
+    <div class="reader-body md" id="readerBody"></div>
+  </div>
+</div>
+
 <!-- Log drawer -->
 <div class="drawer" id="drawer">
   <div class="dh">

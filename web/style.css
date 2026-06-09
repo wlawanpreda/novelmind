@@ -101,6 +101,16 @@ body{
 .nd-orig{font-size:12.5px;color:#cbd5e1;background:var(--bg);border:1px solid var(--card-brd);border-radius:9px;padding:9px 13px;margin-bottom:10px}
 .sd-orig{font-size:13px;color:#cbd5e1;margin-top:10px;display:flex;flex-direction:column;gap:6px}
 .sd-orig .om-k{color:var(--muted)}
+.chbadge.clickable{cursor:pointer;transition:border-color .15s,color .15s}
+.chbadge.clickable:hover{border-color:var(--acc);color:var(--acc)}
+/* Chapter Reader modal */
+.reader-overlay{position:fixed;inset:0;background:rgba(0,0,0,.66);backdrop-filter:blur(3px);z-index:300;display:none;align-items:center;justify-content:center;padding:24px}
+.reader-overlay.open{display:flex}
+.reader{background:var(--bg2);border:1px solid var(--card-brd);border-radius:16px;width:min(820px,96vw);height:min(88vh,1000px);display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(0,0,0,.6)}
+.reader-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px 20px;border-bottom:1px solid var(--card-brd)}
+.reader-body{flex:1;overflow:auto;padding:24px 32px;font-size:16px;line-height:1.95}
+.reader-body p{margin:13px 0}
+.reader-body h1,.reader-body h2,.reader-body h3{margin:18px 0 10px}
 .nv-hint{font-size:12px;color:var(--muted);margin:2px 0 10px}
 .nv-click{cursor:pointer;transition:border-color .15s}
 .nv-click:hover{border-color:var(--acc)}

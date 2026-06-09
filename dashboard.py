@@ -602,6 +602,25 @@ def api_novel_detail(title):
     return {"ok": True, "fm": fm, "body": body, "assets": _assets_for(base), "health": health}
 
 
+def api_chapter(title, ch):
+    """เนื้อหาบท (prose) สำหรับอ่านในแอป"""
+    _, fm = _find_novel(title)
+    base = _base_for(fm, title)
+    try:
+        n = int(ch)
+    except (TypeError, ValueError):
+        n = 1
+    cf = os.path.join(SB, "05_Active_Projects", "Chapters", f"{base}_Chapter_{n:02d}.md")
+    if not base or not os.path.exists(cf):
+        return {"ok": False, "error": "ไม่พบบท"}
+    chs = sorted(glob.glob(os.path.join(SB, "05_Active_Projects", "Chapters", f"{base}_Chapter_*.md")))
+    total = len(chs)
+    txt = _read_head(cf, 120000)
+    return {"ok": True, "content": txt, "ch": n, "total": total,
+            "title": fm.get("recreation_title") or fm.get("thai_working_title") or title,
+            "chars": len(txt)}
+
+
 def api_health_stories():
     """สแกนสุขภาพทุกเรื่อง → summary + map(title→status) สำหรับ badge หน้านิยาย"""
     try:
@@ -991,6 +1010,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"enabled": RELOAD, "token": _reload_token()})
             if p == "/api/health/stories":
                 return self._send(200, api_health_stories())
+            if p == "/api/chapter":
+                qs = parse_qs(u.query)
+                return self._send(200, api_chapter(qs.get("title", [""])[0], qs.get("ch", ["1"])[0]))
             if p == "/api/cost/advice":
                 return self._send(200, api_cost_advice())
             if p == "/api/publish/status":

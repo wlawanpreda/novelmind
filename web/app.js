@@ -390,7 +390,7 @@ async function loadStudioDetail() {
       ${m.status ? `<span class="tag ${esc(m.status)}">${esc(m.status)}</span>` : ""}</div>`;
   const assetRow = `<div class="nd-assets"><span class="schip ${a.chapters ? "on" : ""}">📖 ${a.chapters || 0} ตอน</span>${chip(a.cover, "ปก")}${chip(a.audio, "เสียง")}${chip(a.teaser, "teaser")}${chip(r.studio?.bible, "bible")}${chip(r.studio?.visual, "ภาพprompt")}</div>`;
   const chapters = (r.chapters && r.chapters.length)
-    ? `<div class="sd-chapters">${r.chapters.map(c => `<span class="chbadge">📄 ${esc(c.name.replace(/^.*_Chapter_/, "ตอน ").replace(".md", ""))} · ${c.kb}KB</span>`).join("")}</div>`
+    ? `<div class="sd-chapters">${r.chapters.map(c => { const n = (c.name.match(/_Chapter_(\d+)/) || [, "1"])[1]; return `<span class="chbadge clickable" onclick="openReader('${esc(r.base)}',${+n})" title="คลิกอ่านเนื้อบท">📖 ${esc(c.name.replace(/^.*_Chapter_/, "ตอน ").replace(".md", ""))} · ${c.kb}KB</span>`; }).join("")}</div>`
     : `<div class="muted" style="padding:6px 0">ยังไม่มีตอน — เขียนนิยายก่อน (หน้านิยาย)</div>`;
   const origBlock = m.original ? `<details class="card sd-doc"><summary>📜 ต้นฉบับที่ดึงมา (Original Source)</summary>
       <div class="sd-orig">
@@ -894,8 +894,13 @@ function closeDrawer() { $("#drawer").classList.remove("open"); clearInterval(po
 // keyboard: Esc ปิด drawer/story list · "/" โฟกัสช่องค้นหาของหน้านั้น
 document.addEventListener("keydown", e => {
   if (e.key === "Escape") {
-    if ($("#drawer")?.classList.contains("open")) closeDrawer();
+    if ($("#readerOverlay")?.classList.contains("open")) closeReader();
+    else if ($("#drawer")?.classList.contains("open")) closeDrawer();
     closeStoryList();
+  }
+  if ($("#readerOverlay")?.classList.contains("open")) {
+    if (e.key === "ArrowLeft") readerStep(-1);
+    if (e.key === "ArrowRight") readerStep(1);
   }
   if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {
     const box = $("#novelSearch") || $("#studioSearch") || $("#ideaSearch");
@@ -965,6 +970,28 @@ async function doTranslate(id) {
   const r = await api("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: _txStore[id] || "" }) });
   box.innerHTML = r.ok ? `<div class="trans-result md">🌐 ${mdToHtml(r.text)}</div>` : `<span style="color:var(--bad)">${esc(r.error || "แปลไม่ได้")}</span>`;
 }
+
+// ---- Chapter Reader (อ่านเนื้อบทในแอป) ----
+const READER = { title: "", ch: 1, total: 1 };
+async function openReader(title, ch) {
+  READER.title = title;
+  $("#readerOverlay").classList.add("open");
+  await loadReaderChapter(ch || 1);
+}
+async function loadReaderChapter(ch) {
+  const body = $("#readerBody");
+  body.innerHTML = `<span class="muted">กำลังโหลด…</span>`;
+  const r = await api(`/api/chapter?title=${encodeURIComponent(READER.title)}&ch=${ch}`);
+  if (!r.ok) { body.innerHTML = `<div class="empty">${esc(r.error || "โหลดไม่ได้")}</div>`; return; }
+  READER.ch = r.ch; READER.total = r.total;
+  $("#readerTitle").textContent = r.title;
+  $("#readerNav").textContent = `ตอน ${r.ch}/${r.total} · ${(r.chars / 1000).toFixed(1)}k ตัวอักษร`;
+  body.innerHTML = mdToHtml(r.content); body.scrollTop = 0;
+  $("#readerPrev").disabled = r.ch <= 1;
+  $("#readerNext").disabled = r.ch >= r.total;
+}
+function readerStep(d) { const n = READER.ch + d; if (n >= 1 && n <= READER.total) loadReaderChapter(n); }
+function closeReader() { $("#readerOverlay").classList.remove("open"); }
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
