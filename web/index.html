@@ -106,9 +106,16 @@
     <!-- STUDIO -->
     <section class="view" id="view-studio">
       <div class="card studio-bar">
-        <label style="flex:1">เลือกเรื่อง
-          <select id="studioProject" onchange="studioStatus()"></select></label>
-        <button class="btn ghost" onclick="loadProjects()">↻</button>
+        <div class="story-picker" style="flex:1">
+          <label>เลือกเรื่อง <span class="sp-count" id="studioCount"></span></label>
+          <div class="sp-wrap">
+            <input id="studioSearch" class="sp-input" placeholder="🔍 พิมพ์ค้นหาเรื่อง แล้วคลิกเลือก…"
+                   autocomplete="off" oninput="filterStories()" onfocus="openStoryList()">
+            <div class="sp-list" id="studioPickList"></div>
+          </div>
+          <input type="hidden" id="studioProject">
+        </div>
+        <button class="btn ghost" onclick="loadProjects()" title="รีโหลดรายการ">↻</button>
       </div>
       <div class="studio-status" id="studioStatus"></div>
       <div class="studio-detail" id="studioDetail"></div>

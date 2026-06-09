@@ -316,14 +316,46 @@ async function promoteIdea(id) {
   if (r.ok) { toast("ส่งเข้าคิวเขียนแล้ว ✍️", "good"); loadIdeas(); refreshAll(); }
 }
 
-// ---- studio ----
+// ---- studio: searchable story picker ----
+let STUDIO_PROJECTS = [];
 async function loadProjects() {
   const { projects } = await api("/api/projects");
-  const sel = $("#studioProject");
-  sel.innerHTML = projects.length
-    ? projects.map(p => `<option value="${esc(p)}">${esc(p.length > 50 ? p.slice(0, 50) + "…" : p)}</option>`).join("")
-    : `<option value="">(ยังไม่มีเรื่อง — เขียนนิยายก่อน)</option>`;
+  STUDIO_PROJECTS = projects || [];
+  const cnt = $("#studioCount");
+  if (cnt) cnt.textContent = STUDIO_PROJECTS.length ? `(${STUDIO_PROJECTS.length} เรื่อง)` : "";
+  renderStoryList("");
+  // เลือกเรื่องแรกอัตโนมัติถ้ายังไม่ได้เลือก
+  const hidden = $("#studioProject");
+  if (STUDIO_PROJECTS.length && hidden && !hidden.value) selectStory(STUDIO_PROJECTS[0], true);
+  else if (hidden && hidden.value) { const s = $("#studioSearch"); if (s) s.value = _shortTitle(hidden.value); }
 }
+const _shortTitle = t => t.length > 52 ? t.slice(0, 52) + "…" : t;
+
+function renderStoryList(q) {
+  const el = $("#studioPickList");
+  if (!el) return;
+  const ql = (q || "").toLowerCase();
+  const cur = $("#studioProject")?.value || "";
+  const matches = STUDIO_PROJECTS.filter(p => p.toLowerCase().includes(ql));
+  el.innerHTML = matches.length
+    ? matches.map(p => `<div class="sp-item${p === cur ? " sel" : ""}" data-v="${esc(p)}" onclick="selectStory(this.dataset.v)">${p === cur ? "✓ " : ""}${esc(p)}</div>`).join("")
+    : `<div class="sp-empty">ไม่พบเรื่องที่ตรงกับ “${esc(q)}”</div>`;
+}
+function filterStories() { renderStoryList($("#studioSearch")?.value || ""); openStoryList(); }
+function openStoryList() { $("#studioPickList")?.classList.add("open"); }
+function closeStoryList() { $("#studioPickList")?.classList.remove("open"); }
+function selectStory(v, silent) {
+  const hidden = $("#studioProject"), search = $("#studioSearch");
+  if (hidden) hidden.value = v;
+  if (search) search.value = _shortTitle(v);
+  closeStoryList();
+  if (!silent) studioStatus();
+  else loadStudioDetail();
+}
+// คลิกนอกกล่อง → ปิด list
+document.addEventListener("click", e => {
+  if (!e.target.closest(".story-picker")) closeStoryList();
+});
 const loadStudio = () => loadProjects().then(studioStatus);
 
 async function studioStatus() {
@@ -455,17 +487,28 @@ function novelRow(n) {
   return row + detail;
 }
 
+let NOVEL_Q = "";
 function renderNovelList() {
   const head = `<div class="head-actions" style="margin-bottom:14px">
       <button class="btn" onclick="runStage('scout')">🔍 Scout เรื่องใหม่</button>
       <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์ทั้งหมด</button>
       <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
     </div>`
-    + (NOVEL_TREND ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(NOVEL_TREND)}</div></details>` : "");
-  const list = NOVELS.length ? NOVELS.map(novelRow).join("")
-    : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`;
-  $("#novelList").innerHTML = head + `<div class="nv-hint">💡 คลิกแต่ละเรื่องเพื่อดูบทวิเคราะห์ จุดเด่น และสั่งงาน</div>` + list;
+    + (NOVEL_TREND ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(NOVEL_TREND)}</div></details>` : "")
+    + `<div class="nv-search"><input id="novelSearch" placeholder="🔍 ค้นหาเรื่อง / แนว / แหล่ง…" value="${esc(NOVEL_Q)}" oninput="onNovelSearch(this.value)"><span class="nv-count"></span></div>`;
+  const ql = NOVEL_Q.toLowerCase();
+  const shown = ql ? NOVELS.filter(n => (n.title + " " + n.genre + " " + n.source + " " + (n.original || "")).toLowerCase().includes(ql)) : NOVELS;
+  const list = shown.length ? shown.map(novelRow).join("")
+    : (NOVELS.length ? `<div class="empty">ไม่พบเรื่องที่ตรงกับ “${esc(NOVEL_Q)}”</div>`
+      : `<div class="empty">ยังไม่มีนิยาย — กด “🔍 Scout เรื่องใหม่”</div>`);
+  $("#novelList").innerHTML = head + `<div class="nv-hint">💡 คลิกแต่ละเรื่องเพื่อดูบทวิเคราะห์ จุดเด่น และสั่งงาน${ql ? ` · แสดง ${shown.length}/${NOVELS.length}` : ""}</div>` + list;
   if (NOVEL_EXP) loadNovelDetail(NOVEL_EXP);
+}
+function onNovelSearch(v) {
+  NOVEL_Q = v;
+  renderNovelList();
+  const inp = $("#novelSearch");
+  if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
 }
 
 function toggleNovel(el) {
@@ -507,13 +550,9 @@ async function writeNovel(title) {
 function gotoStudio(title) {
   loadView("studio");
   setTimeout(() => {
-    const sel = $("#studioProject");
-    if (sel) {
-      const opt = [...sel.options].find(o => o.value === title || o.value.includes(title) || title.includes(o.value));
-      if (opt) sel.value = opt.value;
-      studioStatus();
-    }
-  }, 500);
+    const opt = STUDIO_PROJECTS.find(o => o === title || o.includes(title) || title.includes(o));
+    if (opt) selectStory(opt); else studioStatus();
+  }, 700);
 }
 
 // ---- outputs (จัดกลุ่มตามเรื่อง) ----
@@ -668,6 +707,18 @@ function openDrawer(task, title) {
   poll(); pollTimer = setInterval(poll, 1200);
 }
 function closeDrawer() { $("#drawer").classList.remove("open"); clearInterval(pollTimer); }
+
+// keyboard: Esc ปิด drawer/story list · "/" โฟกัสช่องค้นหาของหน้านั้น
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    if ($("#drawer")?.classList.contains("open")) closeDrawer();
+    closeStoryList();
+  }
+  if (e.key === "/" && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName)) {
+    const box = $("#novelSearch") || $("#studioSearch") || $("#ideaSearch");
+    if (box) { e.preventDefault(); box.focus(); }
+  }
+});
 
 // ---- util ----
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
