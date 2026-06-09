@@ -35,6 +35,12 @@ import sys
 import json
 import time
 from datetime import datetime
+from contextlib import contextmanager
+
+try:
+    import fcntl as _fcntl  # POSIX (macOS/Linux) — ใช้ทำ cross-process lock
+except ImportError:
+    _fcntl = None  # Windows: ไม่มี flock → ตกไปใช้ pacing แบบ per-process
 
 # ---------------------------------------------------------------------------
 # โหลด .env (รูปแบบเดียวกับไฟล์อื่นในโปรเจกต์)
@@ -208,6 +214,84 @@ def _pace_gemini():
     _last_gemini_call = time.time()
 
 
+# --- Single-flight cross-process lock ---------------------------------------
+# ปัญหา: หลาย ANSRE process (worker อัตโนมัติ + งาน manual) ยิง Gemini พร้อมกัน
+#        → ชนโควต้า/throttle จน "empty response" รัวๆ
+# แก้: อนุญาตให้มี Gemini call ในอากาศได้ "ทีละ 1 ทั้งเครื่อง" (single-flight)
+#     + เว้นจังหวะ (CALL_GAP) แบบแชร์ timestamp ข้าม process ผ่านไฟล์ล็อก
+# ปิดได้ด้วย ANSRE_LLM_SINGLEFLIGHT=0 · เฉพาะ Gemini (local ปล่อยขนานได้ ไม่มี limit ฝั่งเรา)
+SINGLEFLIGHT = os.environ.get("ANSRE_LLM_SINGLEFLIGHT", "1").lower() in ("1", "true", "yes", "on")
+_LOCK_PATH = os.environ.get("ANSRE_LLM_LOCK") or os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "SecondBrain", ".llm_gemini.lock")
+_LOCK_WAIT_MAX = float(os.environ.get("ANSRE_LLM_LOCK_TIMEOUT", "300") or 300)
+
+
+@contextmanager
+def _gemini_gate():
+    """ยอมให้ Gemini call ทีละ 1 ทั้งเครื่อง + pacing ร่วมกันข้าม process.
+    ถ้าปิด SINGLEFLIGHT หรือไม่มี fcntl → ใช้ pacing เดิม (per-process)."""
+    if not SINGLEFLIGHT or _fcntl is None:
+        _pace_gemini()
+        yield
+        return
+    try:
+        os.makedirs(os.path.dirname(_LOCK_PATH), exist_ok=True)
+        f = open(_LOCK_PATH, "a+")
+    except Exception:
+        _pace_gemini()
+        yield
+        return
+    locked = False
+    try:
+        deadline = time.time() + _LOCK_WAIT_MAX
+        announced = False
+        while True:
+            try:
+                _fcntl.flock(f, _fcntl.LOCK_EX | _fcntl.LOCK_NB)
+                locked = True
+                break
+            except OSError:
+                if not announced:
+                    print("[llm] single-flight: รอคิว Gemini (process อื่นกำลังเรียกอยู่)...")
+                    announced = True
+                if time.time() > deadline:
+                    print("[llm] single-flight: รอเกินเวลา — ดำเนินต่อโดยไม่ล็อก")
+                    break
+                time.sleep(0.25)
+        # cross-process pacing: อ่าน timestamp ครั้งล่าสุดจากไฟล์ล็อก
+        if CALL_GAP > 0:
+            try:
+                f.seek(0)
+                raw = f.read().strip()
+                last = float(raw) if raw else 0.0
+            except Exception:
+                last = 0.0
+            elapsed = time.time() - last
+            if 0 < elapsed < CALL_GAP:
+                wait = CALL_GAP - elapsed
+                print(f"[llm] pacing(ร่วม): รอ {wait:.1f}s กัน Gemini rate-limit")
+                time.sleep(wait)
+        yield
+    finally:
+        # บันทึก timestamp ล่าสุดลงไฟล์ล็อก (ให้ process ถัดไปเว้นจังหวะถูก) แล้วปลดล็อก
+        try:
+            f.seek(0)
+            f.truncate()
+            f.write(str(time.time()))
+            f.flush()
+        except Exception:
+            pass
+        if locked:
+            try:
+                _fcntl.flock(f, _fcntl.LOCK_UN)
+            except Exception:
+                pass
+        try:
+            f.close()
+        except Exception:
+            pass
+
+
 def _reset_gemini_streak():
     global _gemini_fail_streak
     _gemini_fail_streak = 0
@@ -271,8 +355,9 @@ def _gemini_generate(prompt, role, is_json, temperature, system):
     last_err = None
     for attempt in range(1, 4):
         try:
-            _pace_gemini()  # เว้นจังหวะกัน rate-limit (ถ้าตั้ง ANSRE_CALL_GAP)
-            resp = client.models.generate_content(model=model, contents=prompt, config=config)
+            # single-flight: ล็อกเฉพาะช่วงยิง API จริง (ไม่ถือยาวข้าม retry) + pacing ร่วม
+            with _gemini_gate():
+                resp = client.models.generate_content(model=model, contents=prompt, config=config)
             um = getattr(resp, "usage_metadata", None)
             in_tok = getattr(um, "prompt_token_count", 0) or 0
             out_tok = getattr(um, "candidates_token_count", 0) or 0
