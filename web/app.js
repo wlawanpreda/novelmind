@@ -1098,7 +1098,45 @@ async function loadReaderChapter(ch) {
   $("#readerNext").disabled = r.ch >= r.total;
 }
 function readerStep(d) { const n = READER.ch + d; if (n >= 1 && n <= READER.total) loadReaderChapter(n); }
-function closeReader() { $("#readerOverlay").classList.remove("open"); }
+function closeReader() { $("#readerOverlay").classList.remove("open"); const p = $("#readerHistPanel"); if (p) p.style.display = "none"; }
+
+// ---- Version history (ประวัติเวอร์ชันของบท) ----
+async function toggleHistory() {
+  const p = $("#readerHistPanel");
+  if (!p) return;
+  if (p.style.display !== "none") { p.style.display = "none"; return; }
+  p.style.display = "block";
+  await loadHistory();
+}
+async function loadHistory() {
+  const p = $("#readerHistPanel");
+  p.innerHTML = `<div class="muted">กำลังโหลด…</div>`;
+  const r = await api(`/api/versions?title=${encodeURIComponent(READER.title)}&ch=${READER.ch}`);
+  const vs = (r && r.versions) || [];
+  p.innerHTML = `<div class="rh-head">🕘 ประวัติ ตอน ${READER.ch} <span class="meta">(${vs.length} เวอร์ชัน)</span></div>` +
+    (vs.length ? vs.map(v => `
+      <div class="rh-row" data-v="${esc(v.name)}">
+        <div class="rh-meta"><b>${esc(v.when)}</b><span class="meta">${esc(v.label || "")} · ${(v.chars / 1000).toFixed(1)}k</span></div>
+        <div class="rh-acts">
+          <button class="btn ghost sm" onclick="previewVersion('${esc(v.name)}')">ดู</button>
+          <button class="btn sm" onclick="restoreVersion('${esc(v.name)}')">กู้คืน</button>
+        </div>
+      </div>`).join("") :
+      `<div class="muted">ยังไม่มีเวอร์ชันเก่า — จะถูกบันทึกอัตโนมัติทุกครั้งที่เกลา/ซ่อมบท</div>`);
+}
+async function previewVersion(vname) {
+  const r = await api(`/api/version?title=${encodeURIComponent(READER.title)}&ch=${READER.ch}&v=${encodeURIComponent(vname)}`);
+  if (!r.ok) { toast(r.error || "โหลดไม่ได้", "bad"); return; }
+  $("#readerBody").innerHTML = `<div class="rh-banner">👁️ กำลังดูเวอร์ชันเก่า (${esc(vname.replace('.md', ''))}) — <a href="#" onclick="loadReaderChapter(READER.ch);return false">กลับฉบับปัจจุบัน</a></div>` + mdToHtml(r.content);
+  $("#readerBody").scrollTop = 0;
+}
+async function restoreVersion(vname) {
+  if (!confirm("กู้คืนเวอร์ชันนี้? ฉบับปัจจุบันจะถูกสำรองไว้ก่อนอัตโนมัติ")) return;
+  const r = await api("/api/version/restore", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ title: READER.title, ch: READER.ch, v: vname }) });
+  if (r.ok) { toast(`กู้คืนแล้ว (${(r.chars / 1000).toFixed(1)}k) ✅`, "good"); await loadReaderChapter(READER.ch); await loadHistory(); }
+  else toast(r.error || "กู้คืนไม่สำเร็จ", "bad");
+}
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,

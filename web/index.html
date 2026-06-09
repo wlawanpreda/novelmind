@@ -237,10 +237,14 @@
       <div class="head-actions">
         <button class="btn ghost sm" id="readerPrev" onclick="readerStep(-1)">‹ ก่อน</button>
         <button class="btn ghost sm" id="readerNext" onclick="readerStep(1)">ถัด ›</button>
+        <button class="btn ghost sm" id="readerHist" onclick="toggleHistory()">🕘 ประวัติ</button>
         <button class="btn ghost" onclick="closeReader()">✕</button>
       </div>
     </div>
-    <div class="reader-body md" id="readerBody"></div>
+    <div class="reader-main">
+      <div class="reader-body md" id="readerBody"></div>
+      <div class="reader-hist" id="readerHistPanel" style="display:none"></div>
+    </div>
   </div>
 </div>
 

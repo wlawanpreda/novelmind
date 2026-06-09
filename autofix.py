@@ -68,6 +68,11 @@ def fix_story(title, base):
             print(f"[autofix] ตอน {n}: ไม่มีตอนก่อนหน้า — ข้าม regenerate (ควรเขียนใหม่ทั้งเรื่อง)")
             continue
         if os.path.exists(fp):
+            try:
+                import versions
+                versions.snapshot(fp, "ก่อน-autofix")
+            except Exception:
+                pass
             os.remove(fp)
         asf = os.path.join(SB, "05_Active_Projects", "Audio_Scripts", f"{base}_AudioScript_{n:02d}.md")
         if os.path.exists(asf):

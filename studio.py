@@ -478,9 +478,11 @@ def chapter_loop(title, ch=1, rounds=2, mode="critique", note=""):
     note_block = (f"\n\n📌 คำสั่ง/เป้าหมายเพิ่มเติมจากผู้ใช้ (สำคัญที่สุด ทำตามนี้ก่อน):\n{note}\n") if note else ""
     min_chars = max(int(len(text) * 0.4), 800)   # กันผลลัพธ์สั้นผิดปกติ (LLM ล่ม)
 
-    # สำรองบทเดิมก่อนเขียนทับ
+    # สำรองบทเดิมก่อนเขียนทับ (เก็บประวัติเวอร์ชันสะสม + .bak ล่าสุด)
     try:
         shutil.copy(ch_fp, ch_fp + ".bak")
+        import versions
+        versions.snapshot(ch_fp, f"ก่อนเกลา-{mode}")
     except Exception:
         pass
 

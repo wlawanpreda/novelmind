@@ -364,3 +364,15 @@ textarea.dev-body.editing:focus{border-color:var(--acc)}
 .spark .sp-bar{flex:1;min-height:0;border-radius:2px 2px 0 0;opacity:.85;transition:opacity .12s}
 .spark .sp-bar:hover{opacity:1}
 @media(max-width:680px){.an-kpis{grid-template-columns:repeat(2,1fr)}}
+
+/* ---- Version history (ประวัติเวอร์ชันบท) ---- */
+.reader-main{flex:1;display:flex;overflow:hidden}
+.reader-main .reader-body{flex:1}
+.reader-hist{width:300px;flex-shrink:0;border-left:1px solid var(--card-brd);overflow:auto;padding:14px 16px;background:var(--bg)}
+.rh-head{font-weight:600;margin-bottom:10px}
+.rh-row{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line)}
+.rh-meta{display:flex;flex-direction:column;gap:2px;min-width:0}
+.rh-meta b{font-size:13px}
+.rh-acts{display:flex;gap:5px;flex-shrink:0}
+.rh-banner{background:var(--bg2);border:1px solid var(--acc);border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:13.5px}
+@media(max-width:680px){.reader-hist{width:220px}}

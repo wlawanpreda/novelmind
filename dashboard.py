@@ -676,6 +676,45 @@ def api_chapter(title, ch):
             "chars": len(txt)}
 
 
+def _chapter_path(title, ch):
+    _, fm = _find_novel(title)
+    base = _base_for(fm, title)
+    try:
+        n = int(ch)
+    except (TypeError, ValueError):
+        n = 1
+    if not base:
+        return None
+    return os.path.join(SB, "05_Active_Projects", "Chapters", f"{base}_Chapter_{n:02d}.md")
+
+
+def api_versions(title, ch):
+    fp = _chapter_path(title, ch)
+    if not fp:
+        return {"ok": False, "error": "ไม่พบเรื่อง"}
+    import versions
+    return {"ok": True, "versions": versions.list_versions(fp), "ch": int(ch)}
+
+
+def api_version_read(title, ch, vname):
+    fp = _chapter_path(title, ch)
+    if not fp:
+        return {"ok": False, "error": "ไม่พบเรื่อง"}
+    import versions
+    c = versions.read_version(fp, vname)
+    if c is None:
+        return {"ok": False, "error": "ไม่พบเวอร์ชัน"}
+    return {"ok": True, "content": c, "chars": len(c), "name": vname}
+
+
+def version_restore(payload):
+    fp = _chapter_path(payload.get("title", ""), payload.get("ch", 1))
+    if not fp or not os.path.exists(fp):
+        return {"ok": False, "error": "ไม่พบบทปัจจุบัน"}
+    import versions
+    return versions.restore(fp, payload.get("v", ""))
+
+
 def api_kanban():
     """จัดกลุ่มทุกเรื่องตามขั้นผลิต: รอเขียน → เขียนแล้ว → มีสื่อ → พร้อมปล่อย → เผยแพร่แล้ว"""
     cols = {"todo": [], "written": [], "assets": [], "ready": [], "published": []}
@@ -1129,6 +1168,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"enabled": RELOAD, "token": _reload_token()})
             if p == "/api/health/stories":
                 return self._send(200, api_health_stories())
+            if p == "/api/versions":
+                qs = parse_qs(u.query)
+                return self._send(200, api_versions(qs.get("title", [""])[0], qs.get("ch", ["1"])[0]))
+            if p == "/api/version":
+                qs = parse_qs(u.query)
+                return self._send(200, api_version_read(qs.get("title", [""])[0], qs.get("ch", ["1"])[0], qs.get("v", [""])[0]))
             if p == "/api/chapter":
                 qs = parse_qs(u.query)
                 return self._send(200, api_chapter(qs.get("title", [""])[0], qs.get("ch", ["1"])[0]))
@@ -1207,6 +1252,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, notify_test())
             if u.path == "/api/backup":
                 return self._send(200, backup_run())
+            if u.path == "/api/version/restore":
+                return self._send(200, version_restore(payload))
             if u.path == "/api/trailer":
                 return self._send(200, {"task": start_argv("Channel Trailer", ["trailer.py", "--clip", "5", "--limit", "6"])})
             if u.path == "/api/studio":
