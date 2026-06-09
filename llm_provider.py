@@ -54,6 +54,13 @@ if os.path.exists(_ENV_PATH):
                 _k, _v = _line.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
+# LAN-first / Tailscale-fallback: resolve URL Mac mini ให้ใช้ตัวที่ต่อได้ (ก่อนอ่าน config ด้านล่าง)
+# ครอบ image ด้วย เพราะ cover_generator import llm_provider ก่อน image_provider
+try:
+    import netcfg as _netcfg  # apply() รันตอน import → เขียน os.environ[*_URL] ที่ต่อได้
+except Exception:
+    _netcfg = None
+
 
 # ---------------------------------------------------------------------------
 # Config

@@ -157,6 +157,21 @@ def cmd_doctor():
             print(f"{WARN} local LLM ต่อไม่ได้: {host}:{port} (จะ fallback ไป Gemini)")
             problems.append(f"เปิด Ollama บน {host}:{port} (ดู MACMINI_SETUP.md) — หรือใช้ LLM_BACKEND=gemini ชั่วคราว")
 
+    # network resolve (LAN-first / Tailscale-fallback)
+    try:
+        import netcfg
+        netcfg.apply()
+        for v, info in netcfg.status().items():
+            host = info.get("host")
+            if host == netcfg.PRIMARY:
+                print(f"{OK} {v}: ใช้ LAN {host}")
+            elif host == netcfg.FALLBACK:
+                print(f"{WARN} {v}: LAN ต่อไม่ได้ → ใช้ Tailscale {host}")
+            elif host is None and info.get("url"):
+                print(f"{WARN} {v}: ทั้ง LAN/Tailscale ต่อไม่ได้ — {info['url']} (จะ fallback Gemini)")
+    except Exception:
+        pass
+
     # gateway (เฉพาะเมื่อเปิดใช้)
     gw = os.environ.get("ANSRE_GATEWAY_URL")
     if gw:
