@@ -37,41 +37,60 @@ def _wrap(draw, text, font, max_w):
 
 
 def caption_cover(cover_path: str, title: str, hook: str = "") -> str:
-    """เบิร์นชื่อเรื่อง (บน) + hook (ล่าง) ลงปก → คืน path ภาพใหม่ (ไม่ง้อ libass)"""
+    """เบิร์นชื่อเรื่อง (บน) + hook (ล่าง) ลงปกเป็นภาพแนวตั้ง 9:16 (1080x1920)
+    รองรับปกทุกอัตราส่วน: เติมพื้นหลังด้วยปกที่เบลอ+มืด แล้ววางปกคมชัดกลางเฟรม (ไม่บีบเพี้ยน)
+    คืน path ภาพใหม่ (.jpg) — ไม่ง้อ libass"""
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import Image, ImageDraw, ImageFont, ImageFilter
     except Exception:
         return cover_path
     if not _THAI_FONT:
         return cover_path
     try:
-        img = Image.open(cover_path).convert("RGB").resize((1080, 1080))
-        draw = ImageDraw.Draw(img, "RGBA")
-        title_f = ImageFont.truetype(_THAI_FONT, 70)
-        hook_f = ImageFont.truetype(_THAI_FONT, 46)
+        W, H = 1080, 1920
+        src = Image.open(cover_path).convert("RGB")
+
+        # --- พื้นหลัง: ปกขยายให้เต็มเฟรม (cover) แล้วเบลอ+มืด กันขอบดำว่าง ---
+        sw, sh = src.size
+        scale_bg = max(W / sw, H / sh)
+        bg = src.resize((int(sw * scale_bg) + 1, int(sh * scale_bg) + 1))
+        bx, by = (bg.width - W) // 2, (bg.height - H) // 2
+        bg = bg.crop((bx, by, bx + W, by + H)).filter(ImageFilter.GaussianBlur(28))
+        dark = Image.new("RGB", (W, H), (0, 0, 0))
+        canvas = Image.blend(bg, dark, 0.45)
+
+        # --- ปกคมชัด: ย่อให้พอดีกว้าง 1080 (คงสัดส่วน) วางกลางแนวตั้ง ---
+        scale_fg = W / sw
+        fg = src.resize((W, int(sh * scale_fg)))
+        fy = max(0, (H - fg.height) // 2)
+        canvas.paste(fg, (0, fy))
+
+        draw = ImageDraw.Draw(canvas, "RGBA")
+        title_f = ImageFont.truetype(_THAI_FONT, 76)
+        hook_f = ImageFont.truetype(_THAI_FONT, 48)
 
         def band_text(lines, font, y_start, fill="white"):
             line_h = font.size + 16
             total_h = line_h * len(lines)
-            draw.rectangle([0, y_start - 14, 1080, y_start + total_h + 6], fill=(0, 0, 0, 150))
+            draw.rectangle([0, y_start - 18, W, y_start + total_h + 8], fill=(0, 0, 0, 140))
             y = y_start
             for ln in lines:
                 w = draw.textlength(ln, font=font)
-                draw.text(((1080 - w) / 2, y), ln, font=font, fill=fill,
-                          stroke_width=4, stroke_fill="black")
+                draw.text(((W - w) / 2, y), ln, font=font, fill=fill,
+                          stroke_width=5, stroke_fill="black")
                 y += line_h
 
         # ชื่อเรื่อง (บน)
-        tlines = _wrap(draw, title, title_f, 1000)[:2]
-        band_text(tlines, title_f, 40, fill="#FFFFFF")
+        tlines = _wrap(draw, title, title_f, W - 100)[:3]
+        band_text(tlines, title_f, 70, fill="#FFFFFF")
         # hook (ล่าง)
         if hook:
-            hlines = _wrap(draw, hook, hook_f, 1000)[:3]
+            hlines = _wrap(draw, hook, hook_f, W - 100)[:3]
             line_h = hook_f.size + 16
-            band_text(hlines, hook_f, 1080 - line_h * len(hlines) - 50, fill="#22D3EE")
+            band_text(hlines, hook_f, H - line_h * len(hlines) - 90, fill="#22D3EE")
 
         out = os.path.splitext(cover_path)[0] + "_captioned.jpg"
-        img.save(out, "JPEG", quality=90)
+        canvas.save(out, "JPEG", quality=90)
         return out
     except Exception as e:
         print(f"    [!] caption_cover ล้มเหลว: {e} — ใช้ปกเดิม")
@@ -171,17 +190,17 @@ def generate_teaser(
     frames = max(_dur * fps, fps)
     fade_out_st = max(_dur - 1, 1)
     kenburns = os.environ.get("ANSRE_TEASER_KENBURNS", "1").lower() in ("1", "true", "yes")
+    # ปก (captioned) เป็น 9:16 อยู่แล้ว → เติมเต็มเฟรม 1080x1920 (รองรับปกอัตราส่วนอื่นด้วย crop)
     if kenburns:
         bg_chain = (
-            "[0:v]scale=2160:2160,"
+            "[0:v]scale=2160:3840:force_original_aspect_ratio=increase,crop=2160:3840,"
             f"zoompan=z='min(zoom+0.0006,1.18)':d={frames}:"
             "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
-            f"s=1080x1080:fps={fps},"
-            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
+            f"s=1080x1920:fps={fps},"
             f"fade=t=in:st=0:d=0.8,fade=t=out:st={fade_out_st}:d=0.8[bg]"
         )
     else:
-        bg_chain = "[0:v]scale=1080:1080,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[bg]"
+        bg_chain = "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920[bg]"
     filter_parts = [
         bg_chain,
         "[1:a]showwaves=s=1080x250:mode=line:colors=0x00FFFF:rate=25,colorkey=black:0.01:0.01[wave]",
