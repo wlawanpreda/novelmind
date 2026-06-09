@@ -177,7 +177,7 @@ function ideaCard(i) {
         <input name="plot" placeholder="ปม/ความลับ/จุดเด่น">
         <button class="btn sm primary" onclick="submitChar('${id}')">✚ สร้าง (AI ขยายให้)</button>
       </div>
-      <pre class="dev-body">กำลังโหลด…</pre></div>` : "";
+      <div class="dev-body md"><span class="muted">กำลังโหลด…</span></div></div>` : "";
   return row + detail;
 }
 
@@ -208,7 +208,10 @@ function toggleExpand(id) { EXPANDED = EXPANDED === id ? null : id; renderIdeas(
 async function loadDetail(id) {
   const r = await api("/api/idea/detail?id=" + encodeURIComponent(id));
   const el = document.querySelector("#detail-" + CSS.escape(id) + " .dev-body");
-  if (el) el.textContent = (r.body || "").trim() || "(ยังไม่มีเนื้อหาพัฒนา — กดปุ่มด้านบนเพื่อแตกคอนเซ็ป/ตัวละคร/ชื่อ/ปม)";
+  if (!el || el.tagName === "TEXTAREA") return;
+  const body = (r.body || "").trim();
+  if (body) setMd(el, body);
+  else { el.dataset.raw = ""; el.innerHTML = `<div class="empty" style="padding:18px">ยังไม่มีเนื้อหาพัฒนา — กดปุ่มด้านบนเพื่อแตกคอนเซ็ป/ตัวละคร/ชื่อ/ปม</div>`; }
 }
 async function developIdea(id, kind) {
   const r = await api("/api/idea/develop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, kind }) });
@@ -230,7 +233,7 @@ function editBody(id) {
   const pre = document.querySelector(sel + " .dev-body");
   if (!pre || pre.tagName === "TEXTAREA") return;
   const ta = document.createElement("textarea");
-  ta.className = "dev-body editing"; ta.value = pre.textContent;
+  ta.className = "dev-body editing"; ta.value = pre.dataset.raw ?? pre.textContent;
   pre.replaceWith(ta); ta.focus();
   const bar = document.querySelector(sel + " .dev-bar");
   const save = document.createElement("button");
@@ -352,7 +355,9 @@ async function viewStudio(kind) {
   const title = $("#studioProject").value;
   if (!title) return;
   const r = await api(`/api/studio/output?kind=${encodeURIComponent(kind)}&title=${encodeURIComponent(title)}`);
-  $("#studioOut").textContent = (r.content && r.content.trim()) ? r.content : `(ยังไม่มีผล ${kind} — กดปุ่มสร้างด้านบน)`;
+  const out = $("#studioOut");
+  if (r.content && r.content.trim()) { out.classList.add("md"); setMd(out, r.content); }
+  else { out.classList.remove("md"); out.textContent = `(ยังไม่มีผล ${kind} — กดปุ่มสร้างด้านบน)`; }
 }
 
 // ---- novels ----
@@ -364,7 +369,7 @@ async function loadNovels() {
       <button class="btn" onclick="runStage('scout')">🔍 Scout เรื่องใหม่</button>
       <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์</button>
       <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
-    </div>` + (trend.content ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><pre class="studio-out" style="margin-top:12px">${esc(trend.content)}</pre></details>` : "")
+    </div>` + (trend.content ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(trend.content)}</div></details>` : "")
     + (novels.length ? novels.map(n => `
     <div class="nv-row">
       <div><div class="ti">${n.rank ? `<span class="rankbadge">#${n.rank}</span> ` : ""}${esc(n.title)}</div>
@@ -529,6 +534,50 @@ function closeDrawer() { $("#drawer").classList.remove("open"); clearInterval(po
 
 // ---- util ----
 function esc(s) { return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+// ---- markdown → HTML (เล็ก, ปลอดภัย, ไม่ง้อ lib ภายนอก) ----
+function mdInline(s) {
+  return esc(s)
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*\n]+)\*/g, "<em>$1</em>")
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function mdToHtml(src) {
+  if (!src) return "";
+  const lines = String(src).replace(/\r\n?/g, "\n").split("\n");
+  let html = "", list = null, inCode = false, code = [];
+  const closeList = () => { if (list) { html += "</" + list + ">"; list = null; } };
+  for (const raw of lines) {
+    const line = raw.replace(/\s+$/, "");
+    if (/^```/.test(line)) {
+      if (inCode) { html += "<pre class='md-code'>" + esc(code.join("\n")) + "</pre>"; code = []; inCode = false; }
+      else { closeList(); inCode = true; }
+      continue;
+    }
+    if (inCode) { code.push(raw); continue; }
+    if (!line.trim()) { closeList(); continue; }
+    let m;
+    if ((m = line.match(/^(#{1,6})\s+(.*)$/))) { closeList(); const lv = m[1].length; html += `<h${lv}>${mdInline(m[2])}</h${lv}>`; continue; }
+    if (/^\s*([-*_]\s*){3,}$/.test(line)) { closeList(); html += "<hr>"; continue; }
+    if ((m = line.match(/^\s*[-*+]\s+\[[ xX]\]\s+(.*)$/))) { if (list !== "ul") { closeList(); list = "ul"; html += "<ul class='md-task'>"; } const done = /\[[xX]\]/.test(line); html += `<li>${done ? "✅ " : "⬜ "}${mdInline(m[1])}</li>`; continue; }
+    if ((m = line.match(/^\s*[-*+]\s+(.*)$/))) { if (list !== "ul") { closeList(); list = "ul"; html += "<ul>"; } html += `<li>${mdInline(m[1])}</li>`; continue; }
+    if ((m = line.match(/^\s*\d+[.)]\s+(.*)$/))) { if (list !== "ol") { closeList(); list = "ol"; html += "<ol>"; } html += `<li>${mdInline(m[1])}</li>`; continue; }
+    if ((m = line.match(/^\s*>\s?(.*)$/))) { closeList(); html += `<blockquote>${mdInline(m[1])}</blockquote>`; continue; }
+    closeList();
+    html += `<p>${mdInline(line)}</p>`;
+  }
+  if (inCode && code.length) html += "<pre class='md-code'>" + esc(code.join("\n")) + "</pre>";
+  closeList();
+  return html;
+}
+// ใส่ markdown ลง element + เก็บต้นฉบับไว้แก้ไข (data-raw)
+function setMd(el, text) {
+  if (!el) return;
+  const raw = (text || "").trim();
+  el.dataset.raw = raw;
+  el.innerHTML = raw ? mdToHtml(raw) : "";
+}
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
