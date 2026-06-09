@@ -136,6 +136,18 @@ body{
 .nv-search{display:flex;align-items:center;gap:10px;margin-bottom:6px}
 .nv-search input{flex:1;background:var(--bg);border:1px solid var(--card-brd);color:var(--txt);padding:11px 14px;border-radius:10px;font-family:inherit;font-size:13.5px;outline:none}
 .nv-search input:focus{border-color:var(--acc)}
+/* Cost breakdown (role/model/backend) */
+.breakdown{display:flex;flex-direction:column;gap:9px}
+.bd-row{display:grid;grid-template-columns:minmax(180px,2fr) 3fr auto;gap:14px;align-items:center}
+.bd-name{display:flex;flex-direction:column;gap:3px;min-width:0}
+.bd-label{font-size:13px;font-weight:600;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-sub{font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bd-track{height:10px;background:var(--bg);border:1px solid var(--card-brd);border-radius:6px;overflow:hidden}
+.bd-fill{height:100%;background:var(--grad);border-radius:6px;min-width:3px}
+.bd-usd{font-weight:800;font-size:14px;color:var(--acc2);text-align:right;white-space:nowrap}
+.bd-usd small{display:block;font-size:10px;font-weight:600;color:var(--muted)}
+.stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
+@media(max-width:760px){.bd-row{grid-template-columns:1fr auto}.bd-track{display:none}}
 /* Routing chips */
 .routes{display:flex;flex-wrap:wrap;gap:8px}
 .route{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:10px;background:var(--card);border:1px solid var(--card-brd);font-size:12.5px}

@@ -581,17 +581,43 @@ async function loadOutputs() {
 }
 
 // ---- usage ----
+const _fmtTok = n => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? (n / 1e3).toFixed(0) + "K" : n;
+function renderBreakdown(elId, rows, opts = {}) {
+  const el = $("#" + elId);
+  if (!el) return;
+  if (!rows || !rows.length) { el.innerHTML = `<div class="empty">ยังไม่มีข้อมูล</div>`; return; }
+  const maxUsd = Math.max(1e-6, ...rows.map(r => r.usd));
+  const totUsd = rows.reduce((a, r) => a + r.usd, 0) || 1e-6;
+  el.innerHTML = rows.map(r => {
+    const pct = Math.round(r.usd / totUsd * 100);
+    const avg = r.calls ? r.usd / r.calls : 0;
+    const cls = opts.backendClass ? ` be ${r.name}` : "";
+    return `<div class="bd-row">
+        <div class="bd-name"><span class="bd-label${cls}">${esc(opts.label ? opts.label(r.name) : r.name)}</span>
+          <span class="bd-sub">${r.calls} ครั้ง · in ${_fmtTok(r.in)} / out ${_fmtTok(r.out)} · เฉลี่ย $${avg.toFixed(4)}/ครั้ง</span></div>
+        <div class="bd-track"><div class="bd-fill" style="width:${Math.max(2, r.usd / maxUsd * 100)}%"></div></div>
+        <div class="bd-usd">$${r.usd.toFixed(3)}<small>${pct}%</small></div>
+      </div>`;
+  }).join("");
+}
+
 async function loadUsage() {
   const [u, cfg] = await Promise.all([api("/api/usage"), api("/api/config")]);
   const cap = parseFloat(cfg.daily_cap) || 0;
   const total = u.by_date.reduce((a, [, v]) => a + v, 0);
-  const localN = u.by_backend.local || 0, gemN = u.by_backend.gemini || 0;
+  const findN = (arr, name) => (arr.find(x => x.name === name) || {}).calls || 0;
+  const localN = findN(u.by_backend, "local"), gemN = findN(u.by_backend, "gemini");
   const savedPct = (localN + gemN) ? Math.round(localN / (localN + gemN) * 100) : 0;
+  const tot = u.totals || { calls: 0, in: 0, out: 0 };
   $("#usageCards").innerHTML = `
-    <div class="card stat"><div class="k">💰 วันนี้</div><div class="v">$${u.today.toFixed(4)}</div></div>
-    <div class="card stat flat"><div class="k">📅 รวม 14 วัน</div><div class="v">$${total.toFixed(3)}</div></div>
-    <div class="card stat flat"><div class="k">🟢 local (ฟรี)</div><div class="v">${localN}</div></div>
-    <div class="card stat flat"><div class="k">💚 ประหยัด</div><div class="v">${savedPct}%</div></div>`;
+    <div class="card stat"><div class="k">💰 วันนี้</div><div class="v">$${u.today.toFixed(4)}</div>
+      <div class="stat-sub">${(u.today_agg || {}).calls || 0} ครั้ง</div></div>
+    <div class="card stat flat"><div class="k">📅 รวม 14 วัน</div><div class="v">$${total.toFixed(3)}</div>
+      <div class="stat-sub">${tot.calls} ครั้ง · ${_fmtTok(tot.in + tot.out)} tokens</div></div>
+    <div class="card stat flat"><div class="k">🟢 local (ฟรี)</div><div class="v">${localN}</div>
+      <div class="stat-sub">เรียก local</div></div>
+    <div class="card stat flat"><div class="k">💚 ประหยัด</div><div class="v">${savedPct}%</div>
+      <div class="stat-sub">สัดส่วนใช้ local</div></div>`;
   // แถบเพดานต่อวัน
   const capBox = $("#usageCap");
   if (capBox) {
@@ -610,9 +636,20 @@ async function loadUsage() {
     `<div class="bar" style="height:${Math.max(3, v / max * 100)}%" title="${d}: $${v}">
        <span>$${v.toFixed(3)}</span><small>${d.slice(5)}</small></div>`).join("")
     : `<div class="empty">ยังไม่มีข้อมูลการใช้งาน</div>`;
-  $("#backendBreak").innerHTML = Object.entries(u.by_backend).map(([b, n]) =>
-    `<div class="route"><b>${b}</b><span class="be ${b}">${n} ครั้ง</span></div>`).join("") || `<div class="empty">—</div>`;
+  // แยกรายละเอียด (ต้นทุน + token + เฉลี่ย)
+  renderBreakdown("roleBreak", u.by_role, { label: ROLE_TH });
+  renderBreakdown("modelBreak", u.by_model);
+  renderBreakdown("backendBreak", u.by_backend, { backendClass: true });
 }
+const ROLE_TH = r => ({
+  writer: "✍️ เขียนร้อยแก้ว (writer)", enhancer: "✨ เกลาสำนวน (enhancer)",
+  outline: "📋 วางโครง (outline)", characters: "👥 ตัวละคร (characters)",
+  planner: "🎬 วางฉาก (planner)", scene_planner: "🎬 วางฉาก (scene_planner)",
+  analyzer: "🧠 วิเคราะห์ (analyzer)", audio: "🎧 บทเสียง (audio)",
+  reviewer: "🔍 รีวิว (reviewer)", researcher: "📈 เทรนด์ (researcher)",
+  editor: "📝 บก. (editor)", brainstorm: "💡 คิดไอเดีย (brainstorm)",
+  evaluator: "⭐ ให้คะแนน (evaluator)", default: "อื่นๆ (default)"
+}[r] || r);
 
 // ---- config ----
 async function loadConfig() {

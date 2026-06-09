@@ -134,7 +134,21 @@ def today_spend():
 
 def api_usage():
     log = os.path.join(SB, "llm_usage.jsonl")
-    by_date, by_backend, by_role = {}, {}, {}
+    by_date = {}
+    by_backend, by_role, by_model = {}, {}, {}
+
+    def _agg():
+        return {"calls": 0, "usd": 0.0, "in": 0, "out": 0}
+
+    def _add(dic, key, usd, it, ot):
+        a = dic.setdefault(key or "?", _agg())
+        a["calls"] += 1
+        a["usd"] = round(a["usd"] + usd, 6)
+        a["in"] += it
+        a["out"] += ot
+
+    totals, today_agg = _agg(), _agg()
+    today = datetime.now().strftime("%Y-%m-%d")
     if os.path.exists(log):
         with open(log, "r", encoding="utf-8") as f:
             for line in f:
@@ -143,12 +157,28 @@ def api_usage():
                 except Exception:
                     continue
                 d = e.get("date", "?")
-                by_date[d] = round(by_date.get(d, 0) + e.get("est_usd", 0), 4)
-                by_backend[e.get("backend", "?")] = by_backend.get(e.get("backend", "?"), 0) + 1
-                by_role[e.get("role", "?")] = by_role.get(e.get("role", "?"), 0) + 1
+                usd = e.get("est_usd", 0) or 0
+                it = int(e.get("in_tokens", 0) or 0)
+                ot = int(e.get("out_tokens", 0) or 0)
+                by_date[d] = round(by_date.get(d, 0) + usd, 6)
+                _add(by_backend, e.get("backend"), usd, it, ot)
+                _add(by_role, e.get("role"), usd, it, ot)
+                _add(by_model, e.get("model"), usd, it, ot)
+                _add({"_": totals}, "_", usd, it, ot)
+                if d == today:
+                    _add({"_": today_agg}, "_", usd, it, ot)
+
+    def _tolist(dic):
+        return sorted(([{"name": k, **v} for k, v in dic.items()]),
+                      key=lambda x: x["usd"], reverse=True)
+
     series = sorted(by_date.items())[-14:]
-    return {"by_date": series, "by_backend": by_backend, "by_role": by_role,
-            "today": round(today_spend(), 4)}
+    return {"by_date": series,
+            "by_backend": _tolist(by_backend),
+            "by_role": _tolist(by_role),
+            "by_model": _tolist(by_model),
+            "totals": totals, "today_agg": today_agg,
+            "today": round(today_spend(), 6)}
 
 
 def api_doctor():
