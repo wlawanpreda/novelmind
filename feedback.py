@@ -251,6 +251,49 @@ def learn(use_ai=False):
     return brief
 
 
+def _est_cost_per_story():
+    """ประมาณต้นทุน LLM เฉลี่ยต่อเรื่อง = ต้นทุนรวม / จำนวนเรื่องที่เขียนแล้ว"""
+    log = os.path.join(SB, "llm_usage.jsonl")
+    total = 0.0
+    if os.path.exists(log):
+        for line in open(log, encoding="utf-8"):
+            try:
+                total += json.loads(line).get("est_usd", 0) or 0
+            except Exception:
+                pass
+    n = len(glob.glob(os.path.join(POOL, "*.md"))) or 1
+    processed = sum(1 for fp in glob.glob(os.path.join(POOL, "*.md"))
+                    if 'status: "Processed"' in (open(fp, encoding="utf-8").read(1500)))
+    return round(total / max(processed, 1), 3), round(total, 2), processed
+
+
+def roi():
+    """ROI ต่อเรื่อง: engagement จริง (feedback) เทียบต้นทุนประมาณการ"""
+    rows = load_ledger()
+    est, total_cost, n_processed = _est_cost_per_story()
+    if not rows:
+        print(f"[ROI] ยังไม่มีข้อมูล engagement — บันทึกด้วย: python feedback.py record \"เรื่อง\" --views N")
+        print(f"      (ต้นทุนรวม ${total_cost} · {n_processed} เรื่อง · เฉลี่ย ~${est}/เรื่อง)")
+        return None
+    from collections import defaultdict
+    per = defaultdict(lambda: {"score": 0.0, "views": 0, "n": 0})
+    for r in rows:
+        p = per[r.get("story")]
+        p["score"] += r.get("engagement_score", 0)
+        p["views"] += r.get("views", 0)
+        p["n"] += 1
+    out = []
+    for story, v in per.items():
+        roi_val = v["score"] / est if est else 0
+        out.append((story, v["score"], v["views"], roi_val))
+    out.sort(key=lambda x: x[3], reverse=True)
+    print(f"=== ROI ต่อเรื่อง (ต้นทุนเฉลี่ย ~${est}/เรื่อง · รวม ${total_cost}) ===")
+    print(f"{'ROI':>8} {'engagement':>11} {'views':>9}  เรื่อง")
+    for story, sc, vw, rv in out:
+        print(f"{rv:>8.0f} {sc:>11,.0f} {vw:>9,}  {story[:40]}")
+    return out
+
+
 def read_brief():
     """สรุปสูตรที่ปัง (ให้ ideation/analyze ดึงไปใช้ลำเอียงการผลิต)"""
     if os.path.exists(BRIEF):
@@ -287,6 +330,7 @@ def main():
 
     sub.add_parser("list", help="ดูผลงานที่บันทึก")
     sub.add_parser("brief", help="พิมพ์ brief ที่ป้อนเข้า ideation")
+    sub.add_parser("roi", help="ROI ต่อเรื่อง (engagement เทียบต้นทุน)")
 
     a = ap.parse_args()
     if a.cmd == "record":
@@ -297,6 +341,8 @@ def main():
         _list()
     elif a.cmd == "brief":
         print(read_brief() or "(ยังไม่มี feedback brief — รัน: python feedback.py learn)")
+    elif a.cmd == "roi":
+        roi()
     else:
         ap.print_help()
 
