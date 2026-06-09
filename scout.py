@@ -5,8 +5,13 @@ import glob
 import json
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
-from scraper.syosetu import fetch_syosetu_novels
-from scraper.royalroad import fetch_royalroad_novels
+# scraper อาจอยู่ที่ root (scraper/) หรือใต้ web/ (web/scraper/) — รองรับทั้งสอง
+try:
+    from scraper.syosetu import fetch_syosetu_novels
+    from scraper.royalroad import fetch_royalroad_novels
+except ModuleNotFoundError:
+    from web.scraper.syosetu import fetch_syosetu_novels
+    from web.scraper.royalroad import fetch_royalroad_novels
 
 def sanitize_filename(name: str) -> str:
     """Keep only alphanumeric and underscore characters for filenames."""
@@ -175,7 +180,10 @@ def main():
     if args.source in ["royalroad", "all"]:
         jobs.append(("Royal Road", lambda: fetch_royalroad_novels(limit=args.limit)))
     try:
-        from scraper.scribblehub import fetch_scribblehub_novels
+        try:
+            from scraper.scribblehub import fetch_scribblehub_novels
+        except ModuleNotFoundError:
+            from web.scraper.scribblehub import fetch_scribblehub_novels
         if args.source in ["scribblehub", "all"]:
             jobs.append(("ScribbleHub", lambda: fetch_scribblehub_novels(limit=args.limit)))
     except Exception:
