@@ -117,8 +117,26 @@
         <button class="btn" onclick="studio('video')">🎬 Video / Google Flow</button>
         <button class="btn" onclick="studio('audio')">🎧 Script เสียง</button>
         <button class="btn" onclick="studio('bible')">📖 Story Bible</button>
-        <button class="btn" onclick="studio('chapter-loop')">🔄 ลูปเกลาบท (×2)</button>
       </div>
+
+      <!-- Refine Loop: ปรับปรุงบทหลายรูปแบบ + คำสั่งผู้ใช้/AI วิจารณ์ -->
+      <details class="card refine-card" id="refineCard">
+        <summary>🔄 ปรับปรุงบท (Refine Loop) — เกลาบทให้ดีขึ้นหลายรูปแบบ</summary>
+        <div class="refine-body">
+          <div class="refine-row">
+            <label>ตอนที่<select id="refineChapter"></select></label>
+            <label>รูปแบบการปรับ<select id="refineMode"></select></label>
+            <label>จำนวนรอบ<select id="refineRounds">
+              <option value="1">1 รอบ</option><option value="2" selected>2 รอบ</option><option value="3">3 รอบ</option></select></label>
+          </div>
+          <label class="refine-note-label">🎯 เป้าหมาย / คำสั่งเพิ่มเติม (ไม่บังคับ — AI จะทำตามนี้ก่อน)
+            <textarea id="refineNote" rows="3" placeholder="เช่น: เน้นบรรยากาศลึกลับมากขึ้น · ตัด stat-block ออกให้หมด · ให้ตัวเอกพูดน้อยลง · ปรับชื่อตัวละครให้ตรงกัน"></textarea></label>
+          <div class="refine-actions">
+            <span class="refine-hint" id="refineHint"></span>
+            <button class="btn primary" onclick="runRefine()">🔄 เริ่มปรับปรุง</button>
+          </div>
+        </div>
+      </details>
       <div class="panel">
         <h2>ผลลัพธ์ <span class="line"></span>
           <span class="head-actions" style="gap:6px">

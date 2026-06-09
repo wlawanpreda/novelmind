@@ -367,6 +367,44 @@ async function loadStudioDetail() {
       ${chapters}
       <div class="sd-docs">${concept}${chars}</div>
     </div>`;
+  fillRefine(r.chapters || []);
+}
+
+// ---- Refine Loop (ปรับปรุงบทหลายรูปแบบ) ----
+let REFINE_MODES = null;
+async function fillRefine(chapters) {
+  const cs = $("#refineChapter");
+  if (cs) cs.innerHTML = (chapters.length ? chapters : [{ name: "ตอน 1" }])
+    .map((c, i) => `<option value="${i + 1}">ตอน ${i + 1}</option>`).join("");
+  const ms = $("#refineMode");
+  if (ms && !ms.dataset.filled) {
+    if (!REFINE_MODES) {
+      try { REFINE_MODES = (await api("/api/refine/modes")).modes || []; } catch { REFINE_MODES = []; }
+    }
+    if (REFINE_MODES.length) {
+      ms.innerHTML = REFINE_MODES.map(m => `<option value="${esc(m.key)}">${esc(m.label)}</option>`).join("");
+      ms.dataset.filled = "1";
+    }
+  }
+  const hint = $("#refineHint");
+  if (hint) hint.textContent = chapters.length ? `${chapters.length} ตอนพร้อมปรับ · สำรองบทเดิมไว้ที่ .bak อัตโนมัติ` : "ยังไม่มีตอน — เขียนนิยายก่อน";
+}
+
+async function runRefine() {
+  const title = $("#studioProject")?.value;
+  if (!title) return toast("เลือกเรื่องก่อน", "bad");
+  const mode = $("#refineMode")?.value || "critique";
+  const note = $("#refineNote")?.value || "";
+  const chapter = $("#refineChapter")?.value || "1";
+  const rounds = +($("#refineRounds")?.value || 2);
+  const label = ($("#refineMode")?.selectedOptions[0]?.textContent) || mode;
+  const r = await api("/api/studio", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "chapter-loop", title, mode, note, chapter, rounds })
+  });
+  if (r.error) return toast(r.error, "bad");
+  toast(`เริ่มปรับปรุงบท 🔄 (${label})`);
+  openDrawer(r.task, `Refine: ${label} · ตอน ${chapter} ×${rounds}`);
 }
 
 async function studio(action) {

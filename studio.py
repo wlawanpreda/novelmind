@@ -262,41 +262,101 @@ def idea_loop(idea_id, rounds=3):
 
 
 # ---------------------------------------------------------------------------
-# 2. Chapter loop — คอมเมนต์ (3 มุมมอง) + เขียนใหม่ทีละรอบ
+# 2. Chapter loop — เกลาบทหลายรูปแบบ (mode) + คำสั่งผู้ใช้ + AI วิจารณ์เอง
 # ---------------------------------------------------------------------------
-def chapter_loop(title, ch=1, rounds=2):
+# แต่ละโหมด: review = AI วิจารณ์มุมไหน, rewrite = เขียนใหม่เน้นอะไร
+REFINE_MODES = {
+    "critique": {
+        "label": "🧠 AI วิจารณ์เอง (3 มุมมอง)",
+        "review": "คุณคือทีมวิจารณ์ 3 คน (นักอ่านสายมวลชน / บรรณาธิการ / นักการตลาด) "
+                  "วิจารณ์บทนี้ตรงไปตรงมา ชี้จุดที่ควรปรับ 3-5 ข้อ พร้อมวิธีแก้ที่เป็นรูปธรรม",
+        "rewrite": "เขียนบทนี้ใหม่ให้ดีขึ้นชัดเจนตามคำวิจารณ์ คงโครงเรื่อง/ตัวละคร/ความยาวใกล้เคียง",
+    },
+    "polish": {
+        "label": "✨ เกลาสำนวนให้ลื่น",
+        "review": "ชี้จุดสำนวนที่สะดุด ซ้ำคำ ประโยคพัง จังหวะไม่ลื่น คำฟุ่มเฟือย",
+        "rewrite": "เกลาสำนวนให้คม ลื่นไหล สละสลวย แก้จุดที่สะดุด คงเนื้อหา/เหตุการณ์/ความยาวเดิม",
+    },
+    "concise": {
+        "label": "✂️ กระชับ ตัดน้ำ",
+        "review": "ชี้ส่วนที่ยืดเยื้อ ซ้ำซาก บรรยายเกินจำเป็น น้ำเยอะ",
+        "rewrite": "ตัดส่วนเกิน กระชับ เข้มข้นขึ้น คงใจความและฉากสำคัญทั้งหมด (สั้นลงได้ ~15-25%)",
+    },
+    "dialogue": {
+        "label": "💬 เพิ่ม/เกลาบทสนทนา",
+        "review": "ชี้จุดที่บรรยายมากเกิน บทสนทนาน้อย/แข็ง/ไม่เป็นธรรมชาติ ตัวละครเสียงไม่ชัด",
+        "rewrite": "เพิ่มบทสนทนาให้สมดุลกับบรรยาย เป็นธรรมชาติ มีเสียง/บุคลิกตัวละครชัด ลด monologue ภายในที่ยาว",
+    },
+    "audiobook": {
+        "label": "🎧 ปรับให้เหมาะหนังสือเสียง",
+        "review": "ชี้ stat-block/ตัวเลข/UI เกม/สัญลักษณ์ที่อ่านออกเสียงแล้วสะดุด และประโยคยาวซ้อนอนุประโยคที่ฟังเหนื่อย",
+        "rewrite": "แปลงข้อความระบบ/ตัวเลข/UI เป็นประโยคที่อ่านออกเสียงลื่น ตัดสัญลักษณ์ที่อ่านไม่ได้ "
+                   "(เช่น HP 5/80 → 'พลังชีวิตเหลือห้าจากแปดสิบ') จัดจังหวะประโยคให้ฟังสบาย คงเนื้อหาเดิม",
+    },
+    "vivid": {
+        "label": "🌄 เพิ่มบรรยากาศ/อารมณ์",
+        "review": "ชี้ฉากที่ขาดบรรยากาศ ขาด sensory detail หรืออารมณ์ตื้นเกินไป",
+        "rewrite": "เพิ่มรายละเอียดประสาทสัมผัสและความลึกของอารมณ์ในจุดสำคัญ คงเหตุการณ์เดิม ไม่ยืดเยื้อเกิน",
+    },
+}
+
+
+def list_refine_modes():
+    return [{"key": k, "label": v["label"]} for k, v in REFINE_MODES.items()]
+
+
+def chapter_loop(title, ch=1, rounds=2, mode="critique", note=""):
+    import shutil
     _, chars, _ = _project_files(title)
     ch_fp = _find("05_Active_Projects/Chapters", f"*{_slug(title)}*_Chapter_{int(ch):02d}.md")
     if not ch_fp:
         return {"ok": False, "error": f"ไม่พบบทที่ {ch} ของ '{title}'"}
+    spec = REFINE_MODES.get(mode, REFINE_MODES["critique"])
     text = _read(ch_fp)
     characters = _read(chars)
+    note = (note or "").strip()
+    note_block = (f"\n\n📌 คำสั่ง/เป้าหมายเพิ่มเติมจากผู้ใช้ (สำคัญที่สุด ทำตามนี้ก่อน):\n{note}\n") if note else ""
+    min_chars = max(int(len(text) * 0.4), 800)   # กันผลลัพธ์สั้นผิดปกติ (LLM ล่ม)
+
+    # สำรองบทเดิมก่อนเขียนทับ
+    try:
+        shutil.copy(ch_fp, ch_fp + ".bak")
+    except Exception:
+        pass
+
+    print(f"[chapter-loop] โหมด: {spec['label']} · ตอน {ch} · {rounds} รอบ"
+          + (f" · มีคำสั่งผู้ใช้" if note else ""))
+    from agent_writer import strip_meta, NO_META, generate_content_safe
     history = []
     for r in range(1, rounds + 1):
-        print(f"\n===== CHAPTER LOOP รอบ {r}/{rounds} =====")
+        print(f"\n===== CHAPTER LOOP รอบ {r}/{rounds} ({mode}) =====")
         review = generate(
-            f"""คุณคือทีมวิจารณ์ 3 คน (นักอ่านสายมวลชน / บรรณาธิการ / นักการตลาด)
-วิจารณ์บทนี้แบบตรงไปตรงมา ชี้จุดที่ควรปรับ 3-5 ข้อ:
+            f"""{spec['review']}{note_block}
+บท:
 {text[:8000]}""", role="reviewer")
-        print(f"[รีวิว] {review[:200]}")
-        from agent_writer import strip_meta, NO_META, generate_content_safe
-        text = strip_meta(generate_content_safe("enhancer",
-            f"""เขียนบทนี้ใหม่ตามคำวิจารณ์ ให้ดีขึ้นชัดเจน คงโครงเรื่อง/ตัวละครเดิม:
-
-ข้อมูลตัวละคร:
+        print(f"[วิจารณ์] {review[:240]}")
+        new = strip_meta(generate_content_safe("enhancer",
+            f"""{spec['rewrite']}{note_block}
+ข้อมูลตัวละคร (คงให้ตรง):
 {characters[:1500]}
 
 บทเดิม:
 {text[:8000]}
 
-คำวิจารณ์:
+คำวิจารณ์ (แก้ตามนี้):
 {review}""" + NO_META))
+        if len(new) < min_chars:
+            print(f"[!] รอบ {r}: ผลลัพธ์สั้นผิดปกติ ({len(new)}<{min_chars}) — ข้ามรอบนี้ กันบทพัง")
+            history.append({"round": r, "review": review, "chars": len(text), "skipped": True})
+            continue
+        text = new
         history.append({"round": r, "review": review, "chars": len(text)})
         print(f"[เขียนใหม่] {len(text)} ตัวอักษร")
+
     with open(ch_fp, "w", encoding="utf-8") as f:
         f.write(text)
-    print(f"[chapter-loop] เสร็จ {rounds} รอบ บันทึกทับบทเดิมแล้ว")
-    return {"ok": True, "rounds": history, "chars": len(text)}
+    print(f"[chapter-loop] เสร็จ {rounds} รอบ ({spec['label']}) บันทึกแล้ว (สำรองเดิมที่ .bak)")
+    return {"ok": True, "mode": mode, "rounds": history, "chars": len(text)}
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +376,7 @@ if __name__ == "__main__":
     elif cmd == "idea-loop" and len(a) > 1:
         idea_loop(a[1], int(a[2]) if len(a) > 2 else 3)
     elif cmd == "chapter-loop" and len(a) > 1:
-        chapter_loop(a[1], int(a[2]) if len(a) > 2 else 1, int(a[3]) if len(a) > 3 else 2)
+        chapter_loop(a[1], int(a[2]) if len(a) > 2 else 1, int(a[3]) if len(a) > 3 else 2,
+                     a[4] if len(a) > 4 else "critique", a[5] if len(a) > 5 else "")
     else:
         print(__doc__)

@@ -465,6 +465,14 @@ def api_studio_detail(title):
                      "original": fm.get("title", ""), "status": fm.get("status", "")}}
 
 
+def api_refine_modes():
+    try:
+        import studio
+        return {"modes": studio.list_refine_modes()}
+    except Exception as e:  # noqa: BLE001
+        return {"modes": [], "error": str(e)}
+
+
 def novel_write(payload):
     """เขียนนิยายเรื่องที่เจาะจง (ข้าม quality gate เพราะผู้ใช้เลือกเอง)"""
     title = (payload.get("title") or "").strip()
@@ -483,7 +491,10 @@ def studio_launch(payload):
         "bible": ["studio.py", "bible", title],
         "audio": ["studio.py", "audio-script", title],
         "idea-loop": ["studio.py", "idea-loop", payload.get("id", ""), rounds],
-        "chapter-loop": ["studio.py", "chapter-loop", title, "1", rounds],
+        "chapter-loop": ["studio.py", "chapter-loop", title,
+                         str(payload.get("chapter", 1) or 1), rounds,
+                         payload.get("mode", "critique") or "critique",
+                         payload.get("note", "") or ""],
     }
     argv = argv_map.get(action)
     if not argv:
@@ -745,6 +756,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_studio_detail(parse_qs(u.query).get("title", [""])[0]))
             if p == "/api/novel/detail":
                 return self._send(200, api_novel_detail(parse_qs(u.query).get("title", [""])[0]))
+            if p == "/api/refine/modes":
+                return self._send(200, api_refine_modes())
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
