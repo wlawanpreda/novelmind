@@ -470,7 +470,29 @@ def api_novel_detail(title):
         return {"ok": False, "error": "ไม่พบเรื่อง"}
     txt = _read_head(fp, 80000)
     body = txt.split("\n---", 1)[-1].split("---\n", 1)[-1] if txt.startswith("---") else txt
-    return {"ok": True, "fm": fm, "body": body, "assets": _assets_for(_base_for(fm, title))}
+    base = _base_for(fm, title)
+    health = None
+    try:
+        import story_health
+        health = story_health.scan_story(SB, base, title)
+    except Exception:
+        pass
+    return {"ok": True, "fm": fm, "body": body, "assets": _assets_for(base), "health": health}
+
+
+def api_health_stories():
+    """สแกนสุขภาพทุกเรื่อง → summary + map(title→status) สำหรับ badge หน้านิยาย"""
+    try:
+        import story_health
+        rows = story_health.scan_all(SB)
+        summary = {"green": 0, "yellow": 0, "red": 0}
+        m = {}
+        for r in rows:
+            summary[r["status"]] = summary.get(r["status"], 0) + 1
+            m[r["title"]] = {"status": r["status"], "red": r["red"], "yellow": r["yellow"]}
+        return {"ok": True, "summary": summary, "map": m}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
 
 
 def api_studio_detail(title):
@@ -793,6 +815,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_novel_detail(parse_qs(u.query).get("title", [""])[0]))
             if p == "/api/refine/modes":
                 return self._send(200, api_refine_modes())
+            if p == "/api/health/stories":
+                return self._send(200, api_health_stories())
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})

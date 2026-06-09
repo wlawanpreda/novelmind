@@ -463,12 +463,16 @@ async function viewStudio(kind) {
 
 // ---- novels ----
 const fmtViews = v => v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : v >= 1e3 ? (v / 1e3).toFixed(0) + "K" : v;
-let NOVELS = [], NOVEL_TREND = "", NOVEL_EXP = null;
+let NOVELS = [], NOVEL_TREND = "", NOVEL_EXP = null, NOVEL_HEALTH = {}, NOVEL_HSUM = null;
+const HICON = { red: "🔴", yellow: "🟡", green: "🟢" };
 
 async function loadNovels() {
-  const [{ novels }, trend] = await Promise.all([api("/api/novels"), api("/api/trends")]);
+  const [{ novels }, trend, health] = await Promise.all([
+    api("/api/novels"), api("/api/trends"), api("/api/health/stories")]);
   NOVELS = novels || [];
   NOVEL_TREND = trend.content || "";
+  NOVEL_HEALTH = (health && health.map) || {};
+  NOVEL_HSUM = (health && health.summary) || null;
   renderNovelList();
 }
 
@@ -477,11 +481,13 @@ function novelRow(n) {
   const meta = `${esc(n.source)} · ${esc(n.genre || "—")}${n.rating ? ` · ⭐${esc(n.rating)}` : ""}${n.views ? ` · 👁 ${fmtViews(n.views)}` : ""}`;
   const score = n.popularity ? `<div class="score">${n.popularity}<small style="color:var(--muted);font-size:11px">/100</small></div>` : "<div></div>";
   const fit = n.score ? `<span class="fitbadge" title="market fit">fit ${esc(n.score)}</span>` : "";
+  const h = NOVEL_HEALTH[n.title];
+  const hb = h ? `<span class="hbadge ${h.status}" title="${h.status === "red" ? "พบปัญหาต้องแก้ก่อนปล่อย" : h.status === "yellow" ? "ควรปรับปรุง" : "พร้อมปล่อย"}">${HICON[h.status]}${h.red ? ` ${h.red}` : ""}</span>` : "";
   const row = `<div class="nv-row nv-click${exp ? " expanded" : ""}" data-title="${esc(n.title)}" onclick="toggleNovel(this)">
       <div><div class="ti">${exp ? "▾ " : "▸ "}${n.rank ? `<span class="rankbadge">#${n.rank}</span> ` : ""}${esc(n.title)}</div>
         <div class="meta">${meta}</div></div>
       ${score}
-      <div style="display:flex;gap:8px;align-items:center">${fit}<div class="tag ${n.status}">${esc(n.status)}</div></div>
+      <div style="display:flex;gap:8px;align-items:center">${hb}${fit}<div class="tag ${n.status}">${esc(n.status)}</div></div>
     </div>`;
   const detail = exp ? `<div class="novel-detail" id="novelDetail"><div class="muted" style="padding:18px">กำลังโหลดบทวิเคราะห์…</div></div>` : "";
   return row + detail;
@@ -495,6 +501,7 @@ function renderNovelList() {
       <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
     </div>`
     + (NOVEL_TREND ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(NOVEL_TREND)}</div></details>` : "")
+    + (NOVEL_HSUM ? `<div class="health-banner">🩺 สุขภาพเรื่อง (พร้อมปล่อยไหม): <b class="green">🟢 ${NOVEL_HSUM.green} พร้อม</b> · <b class="yellow">🟡 ${NOVEL_HSUM.yellow} ควรแก้</b> · <b class="red">🔴 ${NOVEL_HSUM.red} ต้องแก้ด่วน</b> <span class="hb-hint">— คลิกเรื่องดูปัญหา</span></div>` : "")
     + `<div class="nv-search"><input id="novelSearch" placeholder="🔍 ค้นหาเรื่อง / แนว / แหล่ง…" value="${esc(NOVEL_Q)}" oninput="onNovelSearch(this.value)"><span class="nv-count"></span></div>`;
   const ql = NOVEL_Q.toLowerCase();
   const shown = ql ? NOVELS.filter(n => (n.title + " " + n.genre + " " + n.source + " " + (n.original || "")).toLowerCase().includes(ql)) : NOVELS;
@@ -532,11 +539,18 @@ async function loadNovelDetail(title) {
       ${fm.author ? `<span>✍️ ${esc(fm.author)}</span>` : ""}
       ${fm.url ? `<a href="${esc(fm.url)}" target="_blank" rel="noopener">🔗 ต้นฉบับ</a>` : ""}</div>`;
   const assets = `<div class="nd-assets"><span class="schip ${a.chapters ? "on" : ""}">📖 ${a.chapters || 0} ตอน</span>${chip(a.cover, "ปก")}${chip(a.audio, "เสียง")}${chip(a.teaser, "teaser")}</div>`;
+  const hh = r.health;
+  let healthBox = "";
+  if (hh) {
+    if (hh.status === "green") healthBox = `<div class="nd-health green">🟢 สุขภาพดี พร้อมปล่อยจริง — ไม่พบปัญหา</div>`;
+    else healthBox = `<div class="nd-health ${hh.status}"><div class="ndh-head">${HICON[hh.status]} พบ ${hh.issues.length} จุดที่ควรแก้${hh.status === "red" ? " (มีบางจุดต้องแก้ก่อนปล่อย)" : ""}</div>`
+      + hh.issues.map(i => `<div class="ndh-item ${i.sev}">${i.sev === "red" ? "🔴" : "🟡"} <b>[${esc(i.where)}]</b> ${esc(i.label)}</div>`).join("") + `</div>`;
+  }
   const actions = `<div class="dev-bar">
       <button class="btn sm primary" data-t="${esc(title)}" onclick="writeNovel(this.dataset.t)">✍️ เขียนเรื่องนี้</button>
       <button class="btn sm" data-t="${esc(title)}" onclick="gotoStudio(this.dataset.t)">🎨 ไป Studio</button>
       ${a.teaser ? `<button class="btn sm" onclick="loadView('outputs')">🎬 ดูผลผลิต</button>` : ""}</div>`;
-  el.innerHTML = stats + assets + actions
+  el.innerHTML = stats + assets + healthBox + actions
     + `<div class="md nd-body">${mdToHtml(r.body || "(ยังไม่มีบทวิเคราะห์ — กด “🧠 วิเคราะห์ทั้งหมด” ด้านบน)")}</div>`;
 }
 
