@@ -391,13 +391,20 @@ async function loadStudioDetail() {
   const chapters = (r.chapters && r.chapters.length)
     ? `<div class="sd-chapters">${r.chapters.map(c => `<span class="chbadge">📄 ${esc(c.name.replace(/^.*_Chapter_/, "ตอน ").replace(".md", ""))} · ${c.kb}KB</span>`).join("")}</div>`
     : `<div class="muted" style="padding:6px 0">ยังไม่มีตอน — เขียนนิยายก่อน (หน้านิยาย)</div>`;
-  const concept = r.outline ? `<details class="card sd-doc" open><summary>📋 คอนเซ็ป / โครงเรื่อง</summary><div class="md" style="max-height:55vh;overflow:auto;margin-top:10px">${mdToHtml(r.outline)}</div></details>` : "";
+  const origBlock = m.original ? `<details class="card sd-doc"><summary>📜 ต้นฉบับที่ดึงมา (Original Source)</summary>
+      <div class="sd-orig">
+        <div><span class="om-k">ชื่อต้นฉบับ:</span> ${esc(m.original)}</div>
+        <div><span class="om-k">แนว:</span> ${esc(m.genre || "—")} · <span class="om-k">แหล่ง:</span> ${esc(m.source || "—")}</div>
+        ${transButton((m.original || "") + (m.genre ? "\n(แนว: " + m.genre + ")" : ""), "🌐 แปลชื่อ/แนวเป็นไทย")}
+      </div></details>` : "";
+  const conceptTx = r.outline ? `<div style="margin:8px 0 4px">${transButton(r.outline.slice(0, 2500), "🌐 แปลคอนเซ็ป (ส่วนต่างชาติ)")}</div>` : "";
+  const concept = r.outline ? `<details class="card sd-doc" open><summary>📋 คอนเซ็ป / โครงเรื่อง</summary>${conceptTx}<div class="md" style="max-height:55vh;overflow:auto;margin-top:6px">${mdToHtml(r.outline)}</div></details>` : "";
   const chars = r.characters ? `<details class="card sd-doc"><summary>👥 ตัวละคร</summary><div class="md" style="max-height:55vh;overflow:auto;margin-top:10px">${mdToHtml(r.characters)}</div></details>` : "";
   el.innerHTML = `<div class="sd-panel">
       ${metaRow}${assetRow}
       <div class="sd-section-title">📖 ตอนที่เขียนแล้ว (${(r.chapters || []).length})</div>
       ${chapters}
-      <div class="sd-docs">${concept}${chars}</div>
+      <div class="sd-docs">${origBlock}${concept}${chars}</div>
     </div>`;
   fillRefine(r.chapters || []);
 }
@@ -553,7 +560,8 @@ async function loadNovelDetail(title) {
       <button class="btn sm" data-t="${esc(title)}" onclick="gotoStudio(this.dataset.t)">🎨 ไป Studio</button>
       ${incomplete ? `<button class="btn sm" data-t="${esc(title)}" onclick="finishNovel(this.dataset.t)" title="เติมปก/เสียง/teaser ที่ขาด">✅ เติมสินทรัพย์</button>` : ""}
       ${a.teaser ? `<button class="btn sm" onclick="loadView('outputs')">🎬 ดูผลผลิต</button>` : ""}</div>`;
-  el.innerHTML = stats + assets + healthBox + actions
+  const origNovel = (fm.title && fm.title !== title) ? `<div class="nd-orig">📜 ต้นฉบับที่ดึงมา: <b>${esc(fm.title)}</b>${fm.author ? ` · ${esc(fm.author)}` : ""}${fm.genre ? ` · ${esc(fm.genre)}` : ""} ${transButton((fm.title || "") + (fm.genre ? "\n(แนว: " + fm.genre + ")" : ""), "🌐 แปล")}</div>` : "";
+  el.innerHTML = stats + origNovel + assets + healthBox + actions
     + `<div class="md nd-body">${mdToHtml(r.body || "(ยังไม่มีบทวิเคราะห์ — กด “🧠 วิเคราะห์ทั้งหมด” ด้านบน)")}</div>`;
 }
 
@@ -914,6 +922,22 @@ function setMd(el, text) {
   const raw = (text || "").trim();
   el.dataset.raw = raw;
   el.innerHTML = raw ? mdToHtml(raw) : "";
+}
+
+// ---- แปลภาษาต่างชาติ → ไทย ----
+let _txId = 0; const _txStore = {};
+function transButton(text, label) {
+  const id = "tx" + (++_txId);
+  _txStore[id] = text || "";
+  return `<button class="btn sm ghost" onclick="doTranslate('${id}',this)">${label || "🌐 แปลเป็นไทย"}</button><div class="trans-box" id="${id}"></div>`;
+}
+async function doTranslate(id) {
+  const box = document.getElementById(id);
+  if (!box) return;
+  if (box.classList.contains("open")) { box.classList.remove("open"); box.innerHTML = ""; return; }
+  box.classList.add("open"); box.innerHTML = `<span class="muted">กำลังแปล…</span>`;
+  const r = await api("/api/translate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: _txStore[id] || "" }) });
+  box.innerHTML = r.ok ? `<div class="trans-result md">🌐 ${mdToHtml(r.text)}</div>` : `<span style="color:var(--bad)">${esc(r.error || "แปลไม่ได้")}</span>`;
 }
 
 function loadView(v) {

@@ -545,18 +545,20 @@ def api_studio_status(title):
 
 
 def _find_novel(title):
-    """หาไฟล์นิยายใน pool จากชื่อ (thai_working_title/recreation_title/title) — exact ก่อน แล้ว substring"""
+    """หาไฟล์นิยายใน pool จากชื่อ — normalize ตัวคั่น (_ : ช่องว่าง) เพื่อให้ slug กับชื่อจริงแมตช์กัน"""
     files = glob.glob(os.path.join(SB, "01_Scouting_Pool", "*.md"))
-    t = (title or "").strip()
-    if not t:
+    _norm = lambda s: re.sub(r"[\s_:：]+", "", s or "")
+    tn = _norm(title)
+    if not tn:
         return None, {}
-    for fp in files:
+    keys = ("thai_working_title", "recreation_title", "title")
+    for fp in files:  # exact (normalized)
         fm = _frontmatter(fp)
-        if t in (fm.get("thai_working_title"), fm.get("recreation_title"), fm.get("title")):
+        if any(_norm(fm.get(k)) == tn for k in keys):
             return fp, fm
-    for fp in files:
+    for fp in files:  # substring (normalized)
         fm = _frontmatter(fp)
-        if any(t in (fm.get(k) or "") for k in ("thai_working_title", "recreation_title", "title")):
+        if any(fm.get(k) and (tn in _norm(fm.get(k)) or _norm(fm.get(k)) in tn) for k in keys):
             return fp, fm
     return None, {}
 
@@ -635,6 +637,22 @@ def api_studio_detail(title):
             "meta": {"market_fit": fm.get("market_fit_score", ""), "popularity": fm.get("popularity_score", ""),
                      "genre": fm.get("genre", ""), "source": fm.get("source", ""),
                      "original": fm.get("title", ""), "status": fm.get("status", "")}}
+
+
+def api_translate(payload):
+    """แปลข้อความ (ภาษาต่างชาติ เช่น ญี่ปุ่น/อังกฤษ) เป็นไทย"""
+    text = (payload.get("text") or "").strip()
+    if not text:
+        return {"ok": False, "error": "no text"}
+    try:
+        from llm_provider import generate
+        out = generate(
+            "แปลข้อความต่อไปนี้เป็นภาษาไทยให้เป็นธรรมชาติ ลื่นไหล "
+            "(ส่วนที่เป็นไทยอยู่แล้วคงไว้) ตอบเฉพาะคำแปล ไม่ต้องอธิบายหรือใส่หมายเหตุ:\n\n"
+            + text[:3000], role="analyzer")
+        return {"ok": True, "text": (out or "").strip()}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
 
 
 def api_refine_modes():
@@ -1013,6 +1031,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, novel_finish(payload))
             if u.path == "/api/publish/run":
                 return self._send(200, publish_run(payload))
+            if u.path == "/api/translate":
+                return self._send(200, api_translate(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
