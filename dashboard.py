@@ -181,6 +181,34 @@ def api_usage():
             "today": round(today_spend(), 6)}
 
 
+def api_publish_status():
+    """สถานะเผยแพร่: แพลตฟอร์มที่เปิด · teaser พร้อม · เผยแพร่แล้วกี่ชิ้น"""
+    ap = os.path.join(SB, "05_Active_Projects")
+    teasers = set(glob.glob(os.path.join(ap, "Teasers", "*.mp4")) +
+                  glob.glob(os.path.join(ap, "Teaser_Output", "*.mp4")))
+    plat = {p: os.environ.get(p, "0").lower() in ("1", "true", "yes", "on")
+            for p in ("PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL")}
+    published = 0
+    try:
+        import publisher
+        led = publisher.load_ledger(SB)
+        for e in led.values():
+            if any(str(v).startswith("http") or str(v) in ("queued", "ok", "uploaded")
+                   for v in (e.values() if isinstance(e, dict) else [])):
+                published += 1
+    except Exception:
+        pass
+    return {"ok": True, "teasers": len(teasers), "platforms": plat,
+            "any_enabled": any(plat.values()), "published": published}
+
+
+def publish_run(payload):
+    dry = not any(os.environ.get(p, "0").lower() in ("1", "true", "yes", "on")
+                  for p in ("PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL"))
+    argv = ["publisher.py", SB] + (["--dry-run"] if (dry or payload.get("dry")) else [])
+    return {"task": start_argv("publish" + ("(dry)" if dry else ""), argv), "dry": dry}
+
+
 def api_cost_advice():
     """วิเคราะห์ usage → คำแนะนำลดต้นทุน (ย้าย role แพงไป local + ปรับ pacing)"""
     u = api_usage()
@@ -875,6 +903,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_health_stories())
             if p == "/api/cost/advice":
                 return self._send(200, api_cost_advice())
+            if p == "/api/publish/status":
+                return self._send(200, api_publish_status())
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
@@ -927,6 +957,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, novel_write(payload))
             if u.path == "/api/novel/finish":
                 return self._send(200, novel_finish(payload))
+            if u.path == "/api/publish/run":
+                return self._send(200, publish_run(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})

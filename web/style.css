@@ -173,6 +173,11 @@ body{
 .ca-detail{font-size:11.5px;color:var(--muted);margin-top:3px}
 .ca-save{font-weight:800;color:var(--good);font-size:13px;white-space:nowrap}
 @media(max-width:760px){.ca-row{grid-template-columns:1fr auto}.ca-save{display:none}}
+/* Publish panel */
+.publish-panel{margin-bottom:16px;display:flex;flex-direction:column;gap:12px}
+.pp-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+.pp-platforms{display:flex;gap:8px;flex-wrap:wrap}
+.pp-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
 @media(max-width:760px){.bd-row{grid-template-columns:1fr auto}.bd-track{display:none}}
 /* Routing chips */
 .routes{display:flex;flex-wrap:wrap;gap:8px}

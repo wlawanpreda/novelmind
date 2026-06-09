@@ -580,7 +580,39 @@ function gotoStudio(title) {
 }
 
 // ---- outputs (จัดกลุ่มตามเรื่อง) ----
+async function loadPublish() {
+  const el = $("#publishPanel");
+  if (!el) return;
+  const p = await api("/api/publish/status");
+  if (!p.ok) { el.innerHTML = ""; return; }
+  const tog = (k, lbl) => `<button class="btn sm ${p.platforms[k] ? "primary" : "ghost"}" data-k="${k}" onclick="togglePublish(this,'${k}')">${p.platforms[k] ? "✅" : "⚪"} ${lbl}</button>`;
+  el.innerHTML = `<div class="card publish-panel">
+      <div class="pp-head"><b>📤 เผยแพร่</b>
+        <span class="meta">🎬 ${p.teasers} teaser พร้อม · เผยแพร่แล้ว ${p.published}</span></div>
+      <div class="pp-platforms">${tog("PUBLISH_YOUTUBE", "YouTube")}${tog("PUBLISH_TIKTOK", "TikTok")}${tog("PUBLISH_NOVEL", "คิวนิยาย")}</div>
+      <div class="pp-actions">
+        <button class="btn primary" onclick="runPublish()">${p.any_enabled ? "📤 เผยแพร่ทั้งหมด" : "🧪 ทดลอง (dry-run)"}</button>
+        <span class="meta">${p.any_enabled ? "" : "ยังไม่เปิดแพลตฟอร์ม — กดเพื่อทดสอบ · ต้องใส่ credential (ดู PUBLISHING.md)"}</span>
+      </div>
+    </div>`;
+}
+async function togglePublish(btn, key) {
+  const on = btn.classList.contains("primary");
+  const r = await api("/api/env", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [key]: on ? "0" : "1" }) });
+  if (r.error) return toast(r.error, "bad");
+  toast(`${key} → ${on ? "ปิด" : "เปิด"}`, "good");
+  loadPublish();
+}
+async function runPublish() {
+  if (!confirm("เริ่มเผยแพร่ teaser ทั้งหมด?\n(ถ้ายังไม่เปิดแพลตฟอร์ม/ไม่มี credential จะเป็น dry-run ปลอดภัย)")) return;
+  const r = await api("/api/publish/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  if (r.error) return toast(r.error, "bad");
+  toast(r.dry ? "เริ่ม dry-run 🧪" : "เริ่มเผยแพร่ 📤");
+  openDrawer(r.task, "เผยแพร่" + (r.dry ? " (dry-run)" : ""));
+}
+
 async function loadOutputs() {
+  loadPublish();
   const { stories } = await api("/api/outputs");
   const el = $("#storyOutputs");
   if (!stories || !stories.length) { el.innerHTML = `<div class="empty">ยังไม่มีผลผลิต — กด “เดิน Pipeline” หรือผลิตจากหน้านิยาย</div>`; return; }

@@ -240,10 +240,12 @@ def publish_novel(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
 # Orchestration
 # ---------------------------------------------------------------------------
 def run(sb: str, dry: bool = False):
-    teaser_dir = os.path.join(sb, "05_Active_Projects", "Teaser_Output")
-    teasers = sorted(glob.glob(os.path.join(teaser_dir, "*.mp4")))
+    # teaser อาจอยู่ทั้ง Teasers (ใหม่) และ Teaser_Output (เดิม)
+    teasers = sorted(set(
+        glob.glob(os.path.join(sb, "05_Active_Projects", "Teasers", "*.mp4")) +
+        glob.glob(os.path.join(sb, "05_Active_Projects", "Teaser_Output", "*.mp4"))))
     if not teasers:
-        log(f"[publisher] ไม่พบ teaser ใน {teaser_dir}")
+        log(f"[publisher] ไม่พบ teaser ใน Teasers/ หรือ Teaser_Output/")
         return
     log(f"[publisher] พบ {len(teasers)} teaser | enabled: "
         f"YT={_enabled('PUBLISH_YOUTUBE')} TT={_enabled('PUBLISH_TIKTOK')} Novel={_enabled('PUBLISH_NOVEL')}")
