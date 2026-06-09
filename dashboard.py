@@ -624,6 +624,7 @@ def studio_launch(payload):
         "bible": ["studio.py", "bible", title],
         "audio": ["studio.py", "audio-script", title],
         "auto-qa": ["studio.py", "auto-qa", title, str(payload.get("chapter", 1) or 1)],
+        "continuity": ["studio.py", "continuity", title],
         "idea-loop": ["studio.py", "idea-loop", payload.get("id", ""), rounds],
         "chapter-loop": ["studio.py", "chapter-loop", title,
                          str(payload.get("chapter", 1) or 1), rounds,

@@ -305,6 +305,45 @@ def list_refine_modes():
     return [{"key": k, "label": v["label"]} for k, v in REFINE_MODES.items()]
 
 
+def continuity_check(title):
+    """ตรวจความต่อเนื่องข้ามตอน: ชื่อตัวละคร/กฎโลก/ตัวเลข/พล็อต ขัดกันไหม (แก้ปัญหาชื่อไม่ตรง)"""
+    import json as _json
+    base = _slug(title)
+    outline = _read(_find("02_Concept_Extraction", f"{base}_Outline.md") or "")
+    chars = _read(_find("04_Character_Database", f"{base}_Characters.md") or "")
+    chapters = sorted(glob.glob(os.path.join(SB, "05_Active_Projects", "Chapters", f"{base}_Chapter_*.md")))
+    if not chapters:
+        return {"ok": False, "error": "ไม่พบบท"}
+    joined = "\n\n".join(f"[ตอน {i+1}]\n{_read(c)[:3500]}" for i, c in enumerate(chapters))
+    prompt = f"""คุณคือ Continuity Editor ตรวจความต่อเนื่องของนิยายข้ามตอน
+หาจุดที่ "ขัดแย้งกันเอง" โดยเฉพาะ: ชื่อตัวละครไม่ตรงกันข้ามตอน/ไฟล์, กฎของโลก/ระบบขัดกัน,
+ตัวเลข/สถานะไม่ต่อเนื่อง, เหตุการณ์ซ้ำ/ขัดกัน
+
+โครงเรื่อง: {outline[:2000]}
+ตัวละคร: {chars[:1500]}
+บททั้งหมด (ช่วงต้นแต่ละตอน):
+{joined[:9000]}
+
+ตอบ JSON เท่านั้น:
+{{"consistent": <true/false>, "score": <1-10>,
+  "conflicts": ["จุดขัดแย้ง 1 (ระบุตอน)", "2"],
+  "name_issues": ["ชื่อที่ไม่ตรง เช่น ตอน1 ใช้ X ตอน2 ใช้ Y"],
+  "fix_suggestions": ["วิธีแก้ 1", "2"]}}"""
+    try:
+        from llm_provider import generate
+        raw = generate(prompt, role="reviewer", is_json=True)
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = _json.loads(m.group(0) if m else raw)
+    except Exception as e:
+        return {"ok": False, "error": f"ตรวจไม่ได้: {e}"}
+    out = _save("Story_Bible", f"{base}_Continuity.md",
+                f"# Continuity Check: {title}\n\n```json\n{_json.dumps(data, ensure_ascii=False, indent=2)}\n```\n")
+    print(f"[continuity] {title}: score {data.get('score')}/10 · consistent={data.get('consistent')}")
+    data["ok"] = True
+    data["file"] = out
+    return data
+
+
 def auto_qa(title, ch=1):
     """Auto-QA: LLM ให้คะแนนคุณภาพบท (1-10) + ชี้จุดต้องแก้ + คำตัดสิน"""
     import json as _json
@@ -421,5 +460,8 @@ if __name__ == "__main__":
     elif cmd == "auto-qa" and len(a) > 1:
         import json as _j
         print(_j.dumps(auto_qa(a[1], int(a[2]) if len(a) > 2 else 1), ensure_ascii=False, indent=2))
+    elif cmd == "continuity" and len(a) > 1:
+        import json as _j
+        print(_j.dumps(continuity_check(a[1]), ensure_ascii=False, indent=2))
     else:
         print(__doc__)
