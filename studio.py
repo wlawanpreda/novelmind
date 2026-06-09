@@ -305,6 +305,46 @@ def list_refine_modes():
     return [{"key": k, "label": v["label"]} for k, v in REFINE_MODES.items()]
 
 
+def auto_qa(title, ch=1):
+    """Auto-QA: LLM ให้คะแนนคุณภาพบท (1-10) + ชี้จุดต้องแก้ + คำตัดสิน"""
+    import json as _json
+    ch_fp = _find("05_Active_Projects/Chapters", f"*{_slug(title)}*_Chapter_{int(ch):02d}.md")
+    if not ch_fp:
+        return {"ok": False, "error": f"ไม่พบบทที่ {ch}"}
+    text = _read(ch_fp)
+    prompt = f"""คุณคือบรรณาธิการนิยายไทยมืออาชีพ ตรวจคุณภาพบทนี้อย่างเข้มงวดเพื่อตัดสินว่าพร้อมเผยแพร่ไหม
+ให้คะแนน 1-10 ในแต่ละด้าน แล้วสรุป
+
+บท (ตอนที่ {ch}):
+{text[:9000]}
+
+ตอบ JSON เท่านั้น:
+{{
+  "prose": <1-10 สำนวน/ความลื่นไหล>,
+  "engagement": <1-10 ความน่าติดตาม/hook>,
+  "consistency": <1-10 ความสอดคล้องของกฎ/ชื่อ/ตัวเลข>,
+  "audiobook": <1-10 เหมาะอ่านออกเสียง>,
+  "overall": <1-10 รวม>,
+  "verdict": "<ready=พร้อมปล่อย | revise=ควรแก้ก่อน | rewrite=ต้องเขียนใหม่>",
+  "issues": ["จุดที่ต้องแก้ 1", "2", "3"],
+  "strengths": ["จุดเด่น 1", "2"]
+}}"""
+    try:
+        from llm_provider import generate
+        raw = generate(prompt, role="reviewer", is_json=True)
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        data = _json.loads(m.group(0) if m else raw)
+    except Exception as e:
+        return {"ok": False, "error": f"QA ล้มเหลว: {e}"}
+    print(f"[auto-qa] {title} ตอน {ch}: overall {data.get('overall')}/10 · {data.get('verdict')}")
+    # บันทึกผล QA ลงไฟล์ให้ดูย้อนหลัง
+    out = _save("QA_Reports", f"{_slug(title)}_QA_{int(ch):02d}.md",
+                f"# QA: {title} ตอน {ch}\n\n```json\n{_json.dumps(data, ensure_ascii=False, indent=2)}\n```\n")
+    data["ok"] = True
+    data["file"] = out
+    return data
+
+
 def chapter_loop(title, ch=1, rounds=2, mode="critique", note=""):
     import shutil
     _, chars, _ = _project_files(title)
@@ -378,5 +418,8 @@ if __name__ == "__main__":
     elif cmd == "chapter-loop" and len(a) > 1:
         chapter_loop(a[1], int(a[2]) if len(a) > 2 else 1, int(a[3]) if len(a) > 3 else 2,
                      a[4] if len(a) > 4 else "critique", a[5] if len(a) > 5 else "")
+    elif cmd == "auto-qa" and len(a) > 1:
+        import json as _j
+        print(_j.dumps(auto_qa(a[1], int(a[2]) if len(a) > 2 else 1), ensure_ascii=False, indent=2))
     else:
         print(__doc__)
