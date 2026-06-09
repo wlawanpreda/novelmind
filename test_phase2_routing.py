@@ -12,8 +12,10 @@ def check(name, cond):
 
 # ── 1) flag logic: _USE_GATEWAY = มี URL และไม่ใช่ internal ───────────────────
 def reload_with(env, mod):
+    # ตั้งเป็นค่าว่าง (present) แทนการ pop — กัน .env loader (setdefault) เซ็ตคืนจาก .env จริง
+    # ทำให้ test isolate จาก .env: "ไม่มี URL" = "" → _USE_GATEWAY=False อย่างแท้จริง
     for k in ("ANSRE_GATEWAY_URL", "ANSRE_GATEWAY_INTERNAL"):
-        os.environ.pop(k, None)
+        os.environ[k] = ""
     os.environ.update(env)
     m = importlib.import_module(mod)
     return importlib.reload(m)
