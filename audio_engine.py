@@ -141,26 +141,65 @@ def generate_tts_macos_say(text: str, temp_dir: str) -> AudioSegment:
             pass
     return segment
 
+_MALE_V = "th-TH-NiwatNeural"
+_FEMALE_V = "th-TH-PremwadeeNeural"
+# แผนเสียงต่อตัวละคร (สร้างต่อเรื่องด้วย assign_voices) — speaker -> (voice, pitch)
+VOICE_ASSIGN = {}
+
+
+def assign_voices(segments, characters_text=""):
+    """กำหนดเสียง+pitch ต่อตัวละครอัตโนมัติ (เดาเพศจากไฟล์ตัวละคร + แยก pitch ให้เสียงไม่ซ้ำ)"""
+    import itertools
+    ctext = (characters_text or "").lower()
+    female_kw = ["หญิง", "สาว", "นาง", "แม่", "ป้า", "ย่า", "ยาย", "ราชินี", "นางเอก", "เธอ"]
+    male_kw = ["ชาย", "หนุ่ม", "นาย", "พ่อ", "ลุง", "ปู่", "กษัตริย์", "พระเอก", "เขา"]
+    mp = itertools.cycle(["+0Hz", "-15Hz", "-28Hz", "+12Hz", "-40Hz"])
+    fp = itertools.cycle(["+10Hz", "-6Hz", "+25Hz", "-15Hz", "+38Hz"])
+    seen, assign = [], {}
+    for s in segments:
+        sp = s.get("speaker", "")
+        if sp and sp != "SFX" and sp not in seen:
+            seen.append(sp)
+    for sp in seen:
+        low = sp.lower()
+        if sp == "ผู้บรรยาย":
+            assign[sp] = (_FEMALE_V, "+0Hz")             # ผู้บรรยาย = หญิงโทนปกติ
+        elif "ระบบ" in sp or low == "system":
+            assign[sp] = (_MALE_V, "-45Hz")              # ระบบ = เสียงต่ำ จักรกล
+        else:
+            i = ctext.find(low)
+            ctx = ctext[max(0, i - 60):i + 300] if i >= 0 else ""
+            is_f = any(k in ctx for k in female_kw)
+            is_m = any(k in ctx for k in male_kw)
+            if is_f and not is_m:
+                assign[sp] = (_FEMALE_V, next(fp))
+            elif is_m and not is_f:
+                assign[sp] = (_MALE_V, next(mp))
+            else:                                         # เดาไม่ออก → สลับให้ต่างกัน
+                assign[sp] = (_MALE_V, next(mp)) if len(assign) % 2 else (_FEMALE_V, next(fp))
+    return assign
+
+
 def generate_tts_edgetts(text: str, speaker: str, temp_dir: str) -> AudioSegment:
     """Generate free high-quality Thai speech using edge-tts (Microsoft Edge neural voices)."""
     from concurrent.futures import ThreadPoolExecutor
-    
-    # Map speaker to voice
-    voice = "th-TH-PremwadeeNeural" # default
-    speaker_lower = speaker.lower()
-    
-    # Custom simple rule for speaker matching
-    male_names = ["อคิน", "วายุ", "ชาย", "พ่อ", "หมอ", "ลุง", "ตำรวจ", "พศิน", "เอก", "นนท์", "เก่ง"]
-    if speaker in ["อคิน", "วายุ", "ระบบ", "niwat"] or any(name in speaker_lower for name in male_names):
-        voice = "th-TH-NiwatNeural"
-    elif speaker in ["premwadee", "ผู้บรรยาย"]:
-        voice = "th-TH-PremwadeeNeural"
-        
+
+    # 1) แผนเสียงต่อเรื่อง (multi-voice) ถ้ามี
+    if speaker in VOICE_ASSIGN:
+        voice, pitch = VOICE_ASSIGN[speaker]
+    else:
+        # 2) fallback heuristic เพศจากชื่อ
+        voice, pitch = _FEMALE_V, "+0Hz"
+        speaker_lower = speaker.lower()
+        male_names = ["อคิน", "วายุ", "ชาย", "พ่อ", "หมอ", "ลุง", "ตำรวจ", "พศิน", "เอก", "นนท์", "เก่ง"]
+        if speaker in ["อคิน", "วายุ", "ระบบ", "niwat"] or any(n in speaker_lower for n in male_names):
+            voice = _MALE_V
+
     temp_file = tempfile.NamedTemporaryFile(suffix=".mp3", dir=temp_dir, delete=False)
     temp_file.close()
-    
+
     async def _speak():
-        communicate = edge_tts.Communicate(text, voice)
+        communicate = edge_tts.Communicate(text, voice, pitch=pitch)
         await communicate.save(temp_file.name)
         
     try:
@@ -246,7 +285,22 @@ def render_script_to_audio(script_path: str, output_path: str) -> bool:
         return False
         
     print(f"[+] Parsed {len(segments_data)} audio segments.")
-    
+
+    # multi-voice: กำหนดเสียง+pitch ต่อตัวละคร จากไฟล์ตัวละครของเรื่อง
+    global VOICE_ASSIGN
+    try:
+        base = re.sub(r"_AudioScript_.*$", "", os.path.basename(script_path))
+        sb = os.path.dirname(os.path.dirname(os.path.dirname(script_path)))
+        cf = os.path.join(sb, "04_Character_Database", f"{base}_Characters.md")
+        ctext = open(cf, "r", encoding="utf-8").read() if os.path.exists(cf) else ""
+        VOICE_ASSIGN = assign_voices(segments_data, ctext)
+        _g = lambda v: ("ชาย" if v[0] == _MALE_V else "หญิง") + v[1]
+        print(f"[+] Multi-voice ({len(VOICE_ASSIGN)} ตัวละคร): "
+              + ", ".join(f"{k}→{_g(v)}" for k, v in list(VOICE_ASSIGN.items())[:6]))
+    except Exception as e:
+        VOICE_ASSIGN = {}
+        print(f"[!] assign_voices: {e}")
+
     # Create temporary directory for audio parts
     with tempfile.TemporaryDirectory() as temp_dir:
         stitched_audio = AudioSegment.empty()
