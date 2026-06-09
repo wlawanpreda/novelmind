@@ -503,6 +503,7 @@ _STUDIO_OUT = {
     "video": ("Video_Prompts", "_Video.md"),
     "bible": ("Story_Bible", "_Bible.md"),
     "audio": ("Audio_Scripts", "_AudioScript_01.md"),
+    "caption": ("Captions", "_Caption.md"),
 }
 
 
@@ -791,6 +792,7 @@ def studio_launch(payload):
         "audio": ["studio.py", "audio-script", title],
         "auto-qa": ["studio.py", "auto-qa", title, str(payload.get("chapter", 1) or 1)],
         "continuity": ["studio.py", "continuity", title],
+        "caption": ["studio.py", "caption", title],
         "idea-loop": ["studio.py", "idea-loop", payload.get("id", ""), rounds],
         "chapter-loop": ["studio.py", "chapter-loop", title,
                          str(payload.get("chapter", 1) or 1), rounds,

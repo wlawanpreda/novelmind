@@ -305,6 +305,52 @@ def list_refine_modes():
     return [{"key": k, "label": v["label"]} for k, v in REFINE_MODES.items()]
 
 
+def caption_seo(title):
+    """สร้างแคปชั่น+แฮชแท็ก+SEO ต่อคลิป (YouTube/TikTok) — ก่อนเผยแพร่"""
+    import json as _json
+    base = _slug(title)
+    outline = _read(_find("02_Concept_Extraction", f"{base}_Outline.md") or "")
+    prompt = f"""คุณคือนักการตลาดคอนเทนต์ไวรัล สร้างแคปชั่น+แฮชแท็กให้คลิป teaser นิยายเรื่องนี้ ให้ดึงคนคลิกสูงสุด
+เรื่อง: {title}
+โครงเรื่องย่อ: {outline[:1800]}
+
+ตอบ JSON เท่านั้น:
+{{
+  "youtube_title": "ชื่อคลิป YouTube ดึงคลิก ไม่เกิน 60 ตัวอักษร",
+  "youtube_desc": "คำบรรยาย YouTube 2-3 ย่อหน้า น่าสนใจ + call-to-action ให้กดติดตาม",
+  "tiktok_caption": "แคปชั่น TikTok สั้น กระชับ มีอิโมจิ ชวนดูจนจบ",
+  "hook_line": "ประโยคเปิดตรึงคนใน 3 วินาทีแรก",
+  "hashtags": ["#แฮชแท็ก", "...10-12 อัน ผสมไทย+อังกฤษ ตรงกลุ่มนิยาย/แนวเรื่อง"]
+}}"""
+    try:
+        raw = generate(prompt, role="researcher", is_json=True)
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        d = _json.loads(m.group(0) if m else raw)
+    except Exception as e:
+        return {"ok": False, "error": f"สร้างไม่ได้: {e}"}
+    md = f"""# 🏷️ Caption & SEO: {title}
+
+## ▶️ YouTube
+**ชื่อคลิป:** {d.get('youtube_title','')}
+
+{d.get('youtube_desc','')}
+
+## 🎵 TikTok
+{d.get('tiktok_caption','')}
+
+## 🪝 Hook (3 วิแรก)
+{d.get('hook_line','')}
+
+## #️⃣ Hashtags
+{' '.join(d.get('hashtags', []))}
+"""
+    out = _save("Captions", f"{base}_Caption.md", md)
+    print(f"[caption] {title} → {out}")
+    d["ok"] = True
+    d["file"] = out
+    return d
+
+
 def continuity_check(title):
     """ตรวจความต่อเนื่องข้ามตอน: ชื่อตัวละคร/กฎโลก/ตัวเลข/พล็อต ขัดกันไหม (แก้ปัญหาชื่อไม่ตรง)"""
     import json as _json
@@ -463,5 +509,8 @@ if __name__ == "__main__":
     elif cmd == "continuity" and len(a) > 1:
         import json as _j
         print(_j.dumps(continuity_check(a[1]), ensure_ascii=False, indent=2))
+    elif cmd == "caption" and len(a) > 1:
+        import json as _j
+        print(_j.dumps(caption_seo(a[1]), ensure_ascii=False, indent=2))
     else:
         print(__doc__)
