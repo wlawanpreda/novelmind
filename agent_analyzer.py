@@ -84,6 +84,21 @@ def _extract_json(raw: str) -> Dict[str, Any]:
     raise ValueError("ไม่พบ JSON ในผลลัพธ์")
 
 
+def _proven_winners_ctx() -> str:
+    """Phase 5: ดึงสูตรที่ปังจริงมาชี้นำการให้คะแนน market_fit (ปิดด้วย ANSRE_USE_FEEDBACK=0)"""
+    if os.environ.get("ANSRE_USE_FEEDBACK", "1").lower() not in ("1", "true", "yes"):
+        return ""
+    try:
+        import feedback
+        fb = feedback.read_brief()
+        if fb:
+            return ("\n\n🏆 สูตรที่พิสูจน์แล้วว่าทำผลงานดีจริงในช่องของเรา "
+                    "(ให้น้ำหนัก market_fit สูงขึ้นถ้าเรื่องนี้เข้าทางสูตรเหล่านี้):\n" + fb[:700] + "\n")
+    except Exception:
+        pass
+    return ""
+
+
 def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, Any]:
     """Send novel data to Gemini to perform translation, market fit analysis and localization suggestion in JSON format."""
     prompt = f"""
@@ -103,7 +118,7 @@ def analyze_novel_with_ai(frontmatter: Dict[str, Any], body: str) -> Dict[str, A
   points {frontmatter.get('points','?')} · {frontmatter.get('chapters','?')} ตอน
 - เรื่องย่อ/เนื้อหาดิบ:
 {body}
-
+{_proven_winners_ctx()}
 วิเคราะห์โดยใช้ "ตัวเลขความนิยม" เป็นหลักฐานว่าอะไรทำให้เรื่องนี้ประสบความสำเร็จ
 ให้ผลลัพธ์ JSON เท่านั้น:
 {{

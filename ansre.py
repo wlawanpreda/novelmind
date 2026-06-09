@@ -323,6 +323,8 @@ def main():
         need_gem_or_exit(); return run([py, "agent_analyzer.py", SB] + rest)
     if cmd == "trends":
         return run([py, "trends.py"] + rest)
+    if cmd == "feedback":
+        return run([py, "feedback.py"] + (rest if rest else ["learn"]))
     if cmd == "write":
         need_gem_or_exit(); return run([py, "agent_writer.py", SB] + rest)
     if cmd == "cover":

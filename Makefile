@@ -97,6 +97,8 @@ analyze: ## วิเคราะห์ novels ที่ scout มา (สกั
 	@$(ANSRE) analyze
 trends: ## 📈 สรุปเทรนด์ตลาด → คำแนะนำเรื่องต่อไป
 	@$(ANSRE) trends
+feedback: ## 🏆 เรียนรู้จากผลงานจริง (Phase 5) — make feedback ARGS="record '...' --views N"
+	@$(ANSRE) feedback $(ARGS)
 write: ## เขียนนิยาย (6-stage) จากที่ analyze แล้ว
 	@$(ANSRE) write
 continue: ## เขียนตอนถัดไป — make continue ARGS="2 --title ป้า"
