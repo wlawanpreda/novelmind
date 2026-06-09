@@ -162,8 +162,28 @@ def generate_teaser(
     # 1. Scale cover image to 1080x1080 and pad to 1080x1920 (centered, black background)
     # 2. Convert audio to waveform with showwaves, colored cyan (0x00FFFF), black keyed out to transparent, placed in bottom region (y=1520)
     # 3. If subtitles exist, burn them using subtitles filter positioned nicely above the waveform
+    # Ken Burns: ซูมเข้าช้าๆ ให้ปกมีชีวิต (scale ใหญ่ก่อนกัน zoompan กระตุก) + fade in/out
+    fps = 25
+    try:
+        _dur = int(float(max_duration_sec))
+    except (TypeError, ValueError):
+        _dur = 60
+    frames = max(_dur * fps, fps)
+    fade_out_st = max(_dur - 1, 1)
+    kenburns = os.environ.get("ANSRE_TEASER_KENBURNS", "1").lower() in ("1", "true", "yes")
+    if kenburns:
+        bg_chain = (
+            "[0:v]scale=2160:2160,"
+            f"zoompan=z='min(zoom+0.0006,1.18)':d={frames}:"
+            "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
+            f"s=1080x1080:fps={fps},"
+            "pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,"
+            f"fade=t=in:st=0:d=0.8,fade=t=out:st={fade_out_st}:d=0.8[bg]"
+        )
+    else:
+        bg_chain = "[0:v]scale=1080:1080,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[bg]"
     filter_parts = [
-        "[0:v]scale=1080:1080,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[bg]",
+        bg_chain,
         "[1:a]showwaves=s=1080x250:mode=line:colors=0x00FFFF:rate=25,colorkey=black:0.01:0.01[wave]",
         "[bg][wave]overlay=0:1520[bg_wave]"
     ]
@@ -207,8 +227,10 @@ def generate_teaser(
         if result.returncode != 0 and ("No such filter: 'subtitles'" in result.stderr or "Error parsing filterchain" in result.stderr):
             print("    [!] FFmpeg 'subtitles' filter not supported (requires libass). Retrying without subtitles...")
             
+            # ใช้ Ken Burns chain เดิม (zoompan/fade) — อย่าตกกลับเป็นภาพนิ่ง
+            # caption ชื่อเรื่อง/hook เบิร์นบนปกด้วย PIL แล้ว จึงไม่เสียข้อความแม้ทิ้ง SRT
             filter_parts_no_sub = [
-                "[0:v]scale=1080:1080,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black[bg]",
+                bg_chain,
                 "[1:a]showwaves=s=1080x250:mode=line:colors=0x00FFFF:rate=25,colorkey=black:0.01:0.01[wave]",
                 "[bg][wave]overlay=0:1520[bg_wave]"
             ]
