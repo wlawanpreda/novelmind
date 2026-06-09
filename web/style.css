@@ -178,6 +178,13 @@ body{
 .pp-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
 .pp-platforms{display:flex;gap:8px;flex-wrap:wrap}
 .pp-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+/* Scheduler */
+.sched-status{display:flex;align-items:center;gap:8px;font-size:14px}
+.sched-status .dot{width:10px;height:10px;border-radius:50%;background:var(--bad)}
+.sched-status.on .dot{background:var(--good);box-shadow:0 0 8px var(--good)}
+.sched-flow{font-size:12.5px;color:#cbd5e1;background:var(--bg);border:1px solid var(--card-brd);border-radius:9px;padding:10px 13px;margin:10px 0}
+.sched-row{display:flex;gap:8px;align-items:center;font-size:13px;margin:8px 0}
+.sched-row .green{color:var(--good)}
 @media(max-width:760px){.bd-row{grid-template-columns:1fr auto}.bd-track{display:none}}
 /* Routing chips */
 .routes{display:flex;flex-wrap:wrap;gap:8px}

@@ -774,6 +774,30 @@ async function loadHealth() {
       <div class="badge">${c.ok ? "✓" : (c.level === "warn" ? "!" : "✕")}</div>
       <div><div class="t">${esc(c.label)}</div><div class="d">${esc(c.detail)}</div></div>
     </div>`).join("");
+  loadScheduler();
+}
+
+async function loadScheduler() {
+  const el = $("#schedulerPanel");
+  if (!el) return;
+  const [s, pub] = await Promise.all([api("/api/status"), api("/api/publish/status")]);
+  const on = s.worker_running;
+  const autopub = pub.any_enabled;
+  el.innerHTML = `<div class="sched">
+      <div class="sched-status ${on ? "on" : "off"}">
+        <span class="dot"></span> worker: <b>${on ? "กำลังทำงาน — ผลิตเองทั้งวัน" : "หยุดอยู่"}</b>
+      </div>
+      <div class="head-actions" style="margin:12px 0">
+        <button class="btn ${on ? "ghost" : "primary"}" onclick="worker('start')">▶ เปิด worker (รันเองทุก ~20 นาที)</button>
+        <button class="btn ${on ? "" : "ghost"}" onclick="worker('stop')">■ ปิด worker</button>
+      </div>
+      <div class="sched-flow">📋 รอบการทำงาน: scout → ideate → analyze → write → cover → audio → teaser ${autopub ? "→ <b style='color:var(--good)'>📤 เผยแพร่อัตโนมัติ</b>" : "→ <span style='color:var(--muted)'>publish (ปิดอยู่)</span>"}</div>
+      <div class="sched-row">
+        <span>📤 เผยแพร่อัตโนมัติหลังผลิต:</span>
+        <b class="${autopub ? "green" : ""}">${autopub ? "เปิด ✅" : "ปิด — เปิดแพลตฟอร์มที่หน้าผลผลิต"}</b>
+      </div>
+      <div class="meta">ℹ️ worker ใช้ launchd รันเบื้องหลังแม้ปิดเบราว์เซอร์ · คุมเพดานค่าใช้จ่ายที่หน้าค่าใช้จ่าย · กันชน Gemini ด้วย single-flight อัตโนมัติ</div>
+    </div>`;
 }
 
 // ---- actions ----
