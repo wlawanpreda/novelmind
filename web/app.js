@@ -824,7 +824,30 @@ async function loadScheduler() {
         <span class="meta" id="notifyMsg"></span>
       </div>
       <div class="meta">ℹ️ worker ใช้ launchd รันเบื้องหลังแม้ปิดเบราว์เซอร์ · แจ้งเตือน Discord เมื่อ pipeline เสร็จ/พัง · คุมเพดานที่หน้าค่าใช้จ่าย</div>
+    </div>
+    <div class="card sched" style="margin-top:14px">
+      <div class="sched-row"><b>💾 สำรองข้อมูล (Backup)</b>
+        <button class="btn sm primary" onclick="runBackup(this)">สำรองตอนนี้</button>
+        <span class="meta">งานทั้งหมดอยู่ใน SecondBrain — สำรองไว้กันหาย</span></div>
+      <div id="backupList" class="backup-list"></div>
     </div>`;
+  loadBackupList();
+}
+async function loadBackupList() {
+  const el = $("#backupList");
+  if (!el) return;
+  const r = await api("/api/backups");
+  const bs = (r && r.backups) || [];
+  el.innerHTML = bs.length
+    ? bs.map(b => `<div class="bk-row"><span>📦 ${esc(b.name)} · ${b.size_mb}MB</span><a class="btn sm ghost" href="/backup/${encodeURIComponent(b.name)}" download>⬇ ดาวน์โหลด</a></div>`).join("")
+    : `<div class="meta">ยังไม่มี backup — กด “สำรองตอนนี้”</div>`;
+}
+async function runBackup(btn) {
+  btn.disabled = true; btn.textContent = "กำลังสำรอง…";
+  const r = await api("/api/backup", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  btn.disabled = false; btn.textContent = "สำรองตอนนี้";
+  if (r.ok) { toast(`สำรองแล้ว ${r.size_mb}MB ✅`, "good"); loadBackupList(); }
+  else toast(r.error || "สำรองไม่สำเร็จ", "bad");
 }
 async function testNotify(btn) {
   btn.disabled = true;

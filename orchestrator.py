@@ -213,6 +213,13 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
         log("[publish] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE/PUBLISH_TIKTOK/PUBLISH_NOVEL")
 
     log("######## ORCHESTRATOR CYCLE END ########\n")
+    # สำรองข้อมูลอัตโนมัติ (เฉพาะถ้าเกิน 24 ชม.จากครั้งก่อน)
+    if not dry:
+        try:
+            import backup
+            backup.auto_backup()
+        except Exception:
+            pass
     # แจ้งเตือน Discord (ถ้าตั้ง webhook) — สรุปผลผลิตปัจจุบัน
     if not dry:
         try:

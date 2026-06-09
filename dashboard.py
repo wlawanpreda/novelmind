@@ -703,6 +703,22 @@ def api_studio_detail(title):
                      "original": fm.get("title", ""), "status": fm.get("status", "")}}
 
 
+def api_backups():
+    try:
+        import backup
+        return {"ok": True, "backups": backup.list_backups()}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def backup_run():
+    try:
+        import backup
+        return backup.make_backup(SB)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
 def notify_test():
     try:
         import notify
@@ -1060,6 +1076,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_chapter(qs.get("title", [""])[0], qs.get("ch", ["1"])[0]))
             if p == "/api/kanban":
                 return self._send(200, api_kanban())
+            if p == "/api/backups":
+                return self._send(200, api_backups())
+            if p.startswith("/backup/"):
+                fn = os.path.basename(unquote(p.split("/backup/", 1)[1]))
+                return self._serve_file(os.path.join(ROOT, "backups", fn))
             if p == "/api/cost/advice":
                 return self._send(200, api_cost_advice())
             if p == "/api/publish/status":
@@ -1124,6 +1145,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_translate(payload))
             if u.path == "/api/notify/test":
                 return self._send(200, notify_test())
+            if u.path == "/api/backup":
+                return self._send(200, backup_run())
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
