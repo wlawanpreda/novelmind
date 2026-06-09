@@ -664,6 +664,38 @@ async function loadUsage() {
   renderBreakdown("roleBreak", u.by_role, { label: ROLE_TH });
   renderBreakdown("modelBreak", u.by_model);
   renderBreakdown("backendBreak", u.by_backend, { backendClass: true });
+  loadCostAdvice();
+}
+
+async function loadCostAdvice() {
+  const el = $("#costAdvice");
+  if (!el) return;
+  const a = await api("/api/cost/advice");
+  if (!a.ok || !a.advice || !a.advice.length) {
+    el.innerHTML = `<div class="card cost-advice"><b>💡 คำแนะนำลดต้นทุน</b><div class="meta" style="margin-top:8px">ต้นทุนสมดุลดีแล้ว — ไม่มีคำแนะนำเร่งด่วน (หรือยังไม่มีข้อมูลพอ)</div></div>`;
+    return;
+  }
+  const items = a.advice.map(x => `
+    <div class="ca-row">
+      <div class="ca-text"><div class="ca-label">${esc(x.label)}</div><div class="ca-detail">${esc(x.detail)}</div></div>
+      <div class="ca-save">${x.save ? `~$${x.save.toFixed(2)}` : ""}</div>
+      <button class="btn sm primary" data-k="${esc(x.env_key)}" data-v="${esc(x.env_val)}" data-l="${esc(x.label)}" onclick="applyCostAdvice(this)">ปรับ</button>
+    </div>`).join("");
+  el.innerHTML = `<div class="card cost-advice">
+      <div class="ca-head"><b>💡 คำแนะนำลดต้นทุน</b>
+        <span class="ca-total">ประหยัดได้ราว <b>$${a.total_save_est.toFixed(2)}</b> / 14 วัน</span></div>
+      <div class="ca-list">${items}</div>
+      <div class="meta" style="margin-top:8px">ℹ️ ย้ายไป local ต้องมี Mac mini พร้อม (ตั้งใน LLM Routing) · draft = คุณภาพลดบ้าง</div>
+    </div>`;
+}
+
+async function applyCostAdvice(btn) {
+  const k = btn.dataset.k, v = btn.dataset.v, l = btn.dataset.l;
+  if (!confirm(`ปรับ: ${l}\n(ตั้ง ${k}=${v} ใน .env)\nตกลงไหม?`)) return;
+  const r = await api("/api/env", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ [k]: v }) });
+  if (r.error) return toast(r.error, "bad");
+  toast(`ปรับแล้ว: ${k}=${v} ✅`, "good");
+  loadCostAdvice();
 }
 const ROLE_TH = r => ({
   writer: "✍️ เขียนร้อยแก้ว (writer)", enhancer: "✨ เกลาสำนวน (enhancer)",

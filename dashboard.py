@@ -181,6 +181,48 @@ def api_usage():
             "today": round(today_spend(), 6)}
 
 
+def api_cost_advice():
+    """วิเคราะห์ usage → คำแนะนำลดต้นทุน (ย้าย role แพงไป local + ปรับ pacing)"""
+    u = api_usage()
+    advice = []
+    # role ที่ route ไป gemini ตอนนี้ (เพื่อแนะนำย้าย local)
+    try:
+        sys.path.insert(0, ROOT)
+        import llm_provider
+        def _be(r): return llm_provider.resolve_backend(r)
+    except Exception:
+        def _be(r): return os.environ.get("LLM_BACKEND", "gemini")
+
+    tot = (u.get("totals") or {}).get("usd", 0) or 1e-6
+    for r in u.get("by_role", []):
+        name, usd, calls = r["name"], r["usd"], r["calls"]
+        if usd < 0.2:  # ข้าม role ที่ถูกอยู่แล้ว
+            continue
+        be = _be(name)
+        if be == "gemini":
+            advice.append({
+                "type": "move_local", "role": name, "usd": round(usd, 3),
+                "pct": round(usd / tot * 100),
+                "label": f"ย้าย “{name}” ไป Mac mini local (ฟรี)",
+                "detail": f"ตอนนี้ {calls} ครั้ง = ${usd:.2f} ({round(usd/tot*100)}% ของต้นทุน) → ประหยัดได้เกือบทั้งหมด",
+                "env_key": f"LLM_ROLE_{name.upper()}", "env_val": "local",
+                "save": round(usd, 3),
+            })
+    # โหมดเขียน pro→flash
+    if os.environ.get("WRITING_MODE", "premium") in ("master", "premium"):
+        pro = next((m for m in u.get("by_model", []) if "pro" in m["name"]), None)
+        if pro and pro["usd"] > 1:
+            advice.append({
+                "type": "writing_mode", "label": "เปลี่ยนโหมดเขียนเป็น draft (flash ทุก stage)",
+                "detail": f"ตอนนี้ pro = ${pro['usd']:.2f} — draft จะถูกลง ~5-8 เท่า (คุณภาพลดบ้าง)",
+                "env_key": "WRITING_MODE", "env_val": "draft", "save": round(pro["usd"] * 0.7, 3),
+            })
+    advice.sort(key=lambda x: x.get("save", 0), reverse=True)
+    total_save = round(sum(a.get("save", 0) for a in advice if a["type"] == "move_local"), 2)
+    return {"ok": True, "advice": advice, "total_save_est": total_save,
+            "today": u["today"], "total14": round(sum(v for _, v in u["by_date"]), 3)}
+
+
 def api_doctor():
     checks = []
 
@@ -611,9 +653,12 @@ def _worker_running():
     return subprocess.run(["launchctl", "list", LAUNCH_LABEL], capture_output=True).returncode == 0
 
 
-EDITABLE_ENV = {"LLM_BACKEND", "WRITING_MODE", "ANSRE_DAILY_USD_CAP",
+EDITABLE_ENV = {"LLM_BACKEND", "WRITING_MODE", "ANSRE_DAILY_USD_CAP", "ANSRE_CALL_GAP",
                 "LOCAL_LLM_BASE_URL", "LOCAL_LLM_MODEL", "TTS_ENGINE",
-                "PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL"}
+                "PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL"} | {
+                f"LLM_ROLE_{r.upper()}" for r in
+                ("writer", "enhancer", "outline", "characters", "planner",
+                 "analyzer", "audio", "reviewer", "researcher", "editor", "brainstorm")}
 
 
 def update_env(updates: dict):
@@ -828,6 +873,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_refine_modes())
             if p == "/api/health/stories":
                 return self._send(200, api_health_stories())
+            if p == "/api/cost/advice":
+                return self._send(200, api_cost_advice())
             if p.startswith("/api/task/"):
                 info = task_info(p.split("/api/task/")[1])
                 return self._send(200, info or {"error": "no task"})
