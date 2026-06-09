@@ -510,7 +510,7 @@ function renderNovelList() {
       <button class="btn" onclick="finishNovel('')" title="เติมปก+teaser ให้ทุกเรื่องที่ขาด">✅ เติมสินทรัพย์ทุกเรื่อง</button>
     </div>`
     + (NOVEL_TREND ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(NOVEL_TREND)}</div></details>` : "")
-    + (NOVEL_HSUM ? `<div class="health-banner">🩺 สุขภาพเรื่อง (พร้อมปล่อยไหม): <b class="green">🟢 ${NOVEL_HSUM.green} พร้อม</b> · <b class="yellow">🟡 ${NOVEL_HSUM.yellow} ควรแก้</b> · <b class="red">🔴 ${NOVEL_HSUM.red} ต้องแก้ด่วน</b> <span class="hb-hint">— คลิกเรื่องดูปัญหา</span></div>` : "")
+    + (NOVEL_HSUM ? `<div class="health-banner">🩺 สุขภาพเรื่อง (พร้อมปล่อยไหม): <b class="green">🟢 ${NOVEL_HSUM.green} พร้อม</b> · <b class="yellow">🟡 ${NOVEL_HSUM.yellow} ควรแก้</b> · <b class="red">🔴 ${NOVEL_HSUM.red} ต้องแก้ด่วน</b> <span class="hb-hint">— คลิกเรื่องดูปัญหา</span>${NOVEL_HSUM.red ? ` <button class="btn sm primary" onclick="autofixNovel('')">🔧 ซ่อมเรื่องพังทั้งหมด</button>` : ""}</div>` : "")
     + `<div class="nv-search"><input id="novelSearch" placeholder="🔍 ค้นหาเรื่อง / แนว / แหล่ง…" value="${esc(NOVEL_Q)}" oninput="onNovelSearch(this.value)"><span class="nv-count"></span></div>`;
   const ql = NOVEL_Q.toLowerCase();
   const shown = ql ? NOVELS.filter(n => (n.title + " " + n.genre + " " + n.source + " " + (n.original || "")).toLowerCase().includes(ql)) : NOVELS;
@@ -552,8 +552,13 @@ async function loadNovelDetail(title) {
   let healthBox = "";
   if (hh) {
     if (hh.status === "green") healthBox = `<div class="nd-health green">🟢 สุขภาพดี พร้อมปล่อยจริง — ไม่พบปัญหา</div>`;
-    else healthBox = `<div class="nd-health ${hh.status}"><div class="ndh-head">${HICON[hh.status]} พบ ${hh.issues.length} จุดที่ควรแก้${hh.status === "red" ? " (มีบางจุดต้องแก้ก่อนปล่อย)" : ""}</div>`
-      + hh.issues.map(i => `<div class="ndh-item ${i.sev}">${i.sev === "red" ? "🔴" : "🟡"} <b>[${esc(i.where)}]</b> ${esc(i.label)}</div>`).join("") + `</div>`;
+    else {
+      const canFix = hh.issues.some(i => i.sev === "red" && /error|CJK|meta-talk|สั้น/.test(i.label));
+      healthBox = `<div class="nd-health ${hh.status}"><div class="ndh-head">${HICON[hh.status]} พบ ${hh.issues.length} จุดที่ควรแก้${hh.status === "red" ? " (มีบางจุดต้องแก้ก่อนปล่อย)" : ""}</div>`
+        + hh.issues.map(i => `<div class="ndh-item ${i.sev}">${i.sev === "red" ? "🔴" : "🟡"} <b>[${esc(i.where)}]</b> ${esc(i.label)}</div>`).join("")
+        + (canFix ? `<div style="margin-top:10px"><button class="btn sm primary" data-t="${esc(title)}" onclick="autofixNovel(this.dataset.t)">🔧 ซ่อมอัตโนมัติ</button> <span class="meta">regenerate บท error / เขียนไฟล์ตัวละคร CJK ใหม่</span></div>` : "")
+        + `</div>`;
+    }
   }
   const incomplete = a.chapters && (!a.cover || !a.audio || !a.teaser);
   const actions = `<div class="dev-bar">
@@ -564,6 +569,13 @@ async function loadNovelDetail(title) {
   const origNovel = (fm.title && fm.title !== title) ? `<div class="nd-orig">📜 ต้นฉบับที่ดึงมา: <b>${esc(fm.title)}</b>${fm.author ? ` · ${esc(fm.author)}` : ""}${fm.genre ? ` · ${esc(fm.genre)}` : ""} ${transButton((fm.title || "") + (fm.genre ? "\n(แนว: " + fm.genre + ")" : ""), "🌐 แปล")}</div>` : "";
   el.innerHTML = stats + origNovel + assets + healthBox + actions
     + `<div class="md nd-body">${mdToHtml(r.body || "(ยังไม่มีบทวิเคราะห์ — กด “🧠 วิเคราะห์ทั้งหมด” ด้านบน)")}</div>`;
+}
+
+async function autofixNovel(title) {
+  if (!confirm(`ซ่อมอัตโนมัติ${title ? ` “${title}”` : " เรื่องพังทั้งหมด"}?\n\n• บทมี error → ลบแล้วเขียนตอนนั้นใหม่\n• ไฟล์ตัวละครหลุดภาษาจีน/meta → เขียนใหม่เป็นไทย\n(ใช้ LLM สักครู่)`)) return;
+  const r = await api("/api/novel/autofix", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("เริ่มซ่อม 🔧"); openDrawer(r.task, "ซ่อม" + (title ? ": " + title : "เรื่องพังทั้งหมด"));
 }
 
 async function finishNovel(title) {

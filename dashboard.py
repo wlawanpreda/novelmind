@@ -682,6 +682,13 @@ def novel_write(payload):
     return {"task": start_argv(f"write:{title[:18]}", ["agent_writer.py", SB, "--only", title])}
 
 
+def novel_autofix(payload):
+    """ซ่อมเรื่องอัตโนมัติ (บท error→regenerate, ตัวละคร CJK→เขียนใหม่) — เรื่องเดียวหรือทุก red"""
+    title = (payload.get("title") or "").strip()
+    argv = ["autofix.py", SB] + (["--only", title] if title else [])
+    return {"task": start_argv("autofix:" + (title[:14] if title else "red"), argv)}
+
+
 def novel_finish(payload):
     """เติมสินทรัพย์ที่ขาด (ปก/teaser/[+audio]) — เรื่องเดียวหรือทุกเรื่อง"""
     title = (payload.get("title") or "").strip()
@@ -1040,6 +1047,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, novel_write(payload))
             if u.path == "/api/novel/finish":
                 return self._send(200, novel_finish(payload))
+            if u.path == "/api/novel/autofix":
+                return self._send(200, novel_autofix(payload))
             if u.path == "/api/publish/run":
                 return self._send(200, publish_run(payload))
             if u.path == "/api/translate":
