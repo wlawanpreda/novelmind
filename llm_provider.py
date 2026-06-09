@@ -460,16 +460,17 @@ def generate(prompt: str, role: str = "default", is_json: bool = False,
     """
     if _USE_GATEWAY:
         try:
-            return _via_gateway_llm(prompt, role, is_json, system)
+            return _via_gateway_llm(prompt, role, is_json, temperature, system)
         except Exception as e:  # noqa: BLE001
             print(f"[llm] gateway ล้มเหลว ({e}); fallback -> ทำเองในเครื่อง")
     return _generate_direct(prompt, role, is_json, temperature, system, fallback)
 
 
-def _via_gateway_llm(prompt, role, is_json, system) -> str:
+def _via_gateway_llm(prompt, role, is_json, temperature, system) -> str:
     """ส่ง prompt ไป ANSRE Gateway (ใช้ SDK บางๆ)."""
     from ansre_client import Ansre
-    return Ansre(GATEWAY_URL, GATEWAY_TOKEN).llm(prompt, role=role, system=system, is_json=is_json)
+    return Ansre(GATEWAY_URL, GATEWAY_TOKEN).llm(
+        prompt, role=role, system=system, is_json=is_json, temperature=temperature)
 
 
 def _generate_direct(prompt: str, role: str = "default", is_json: bool = False,

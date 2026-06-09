@@ -120,7 +120,7 @@ check: ## compile-check ทุกไฟล์ .py (root + legacy + scraper)
 	echo "✅ ทุกไฟล์ compile ผ่าน"
 
 test: ## รัน test ทั้งหมด (hermetic, ศูนย์ค่าใช้จ่าย)
-	@for t in test_gateway_e2e.py test_phase2_routing.py test_gateway_http_e2e.py test_singleflight.py; do \
+	@for t in test_gateway_e2e.py test_phase2_routing.py test_gateway_http_e2e.py test_gateway_hardening.py test_singleflight.py; do \
 		$(PY) $$t >/tmp/_ansre_test.out 2>&1 && echo "✅ $$t" || { echo "❌ $$t"; tail -8 /tmp/_ansre_test.out; }; \
 	done; rm -f /tmp/_ansre_test.out
 

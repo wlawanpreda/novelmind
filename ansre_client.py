@@ -34,10 +34,10 @@ class Ansre:
             return r.read() if raw else json.loads(r.read().decode())
 
     # LLM (sync)
-    def llm(self, prompt, role="default", system=None, is_json=False) -> str:
+    def llm(self, prompt, role="default", system=None, is_json=False, temperature=None) -> str:
         return self._req("POST", "/v1/llm/generate",
                          {"prompt": prompt, "role": role, "system": system,
-                          "is_json": is_json})["text"]
+                          "is_json": is_json, "temperature": temperature})["text"]
 
     # Image (async job)
     def image(self, prompt, save_to=None, aspect_ratio="1:1", backend=None,

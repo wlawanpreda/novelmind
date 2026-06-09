@@ -27,6 +27,8 @@ from __future__ import annotations
 import os
 import json
 import time
+import re
+import hmac
 import uuid
 import asyncio
 import sqlite3
@@ -51,10 +53,14 @@ DB = os.path.join(JOB_DIR, "jobs.sqlite")
 OLLAMA_ROOT = os.environ.get("LOCAL_LLM_BASE_URL", "http://localhost:11434/v1").rstrip("/")
 if OLLAMA_ROOT.endswith("/v1"):
     OLLAMA_ROOT = OLLAMA_ROOT[:-3]
+MAX_QUEUE = int(os.environ.get("ANSRE_GATEWAY_MAX_QUEUE", "100"))       # กันคิวบวมไม่จำกัด
+JOB_TTL_SEC = int(os.environ.get("ANSRE_JOB_TTL_SEC", str(7 * 24 * 3600)))  # ลบงานเก่ากว่านี้ตอน start
+_JOB_ID_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")                          # กัน path traversal
 
 os.makedirs(JOB_DIR, exist_ok=True)
 
-# งานหนัก (image) ถือ lock นี้ → ทำทีละชิ้น ไม่ทับ LLM → เครื่องไม่ swap
+# งานหนัก (image render + LLM) ใช้ "heavy gate" เดียวกัน → ไม่โหลด SDXL+Ollama ทับกัน = ไม่ swap
+# (single-flight: งานหนักวิ่งทีละชิ้น; Ollama เองก็ serialize อยู่แล้ว ไม่เสีย throughput)
 HEAVY_LOCK = asyncio.Lock()
 JOB_QUEUE: "asyncio.Queue[str]" = asyncio.Queue()
 
@@ -101,9 +107,11 @@ def _free_ollama():
 
 # ── worker: หยิบงานทีละชิ้น ทำใต้ HEAVY_LOCK ─────────────────────────────────
 def _run_image_job(job_id):
-    job = _job_get(job_id)
-    params = json.loads(_db().execute(
-        "SELECT params FROM jobs WHERE id=?", (job_id,)).fetchone()[0]) if job else {}
+    with _db() as c:
+        row = c.execute("SELECT params FROM jobs WHERE id=?", (job_id,)).fetchone()
+    if not row:
+        raise RuntimeError("job not found")
+    params = json.loads(row[0])
     out = os.path.join(JOB_DIR, f"{job_id}.png")
     _free_ollama()
     ok = image_provider.generate_image(
@@ -132,9 +140,40 @@ async def _worker(idx: int):
             JOB_QUEUE.task_done()
 
 
+def _cleanup_old_jobs():
+    """ลบงานที่จบแล้ว (done/error) + ไฟล์ผล ที่เก่ากว่า TTL — กัน DB/ดิสก์โตไม่จำกัด"""
+    cutoff = time.time() - JOB_TTL_SEC
+    job_dir_abs = os.path.abspath(JOB_DIR)
+    with _db() as c:
+        rows = c.execute("SELECT result_path FROM jobs WHERE status IN ('done','error') "
+                         "AND updated < ?", (cutoff,)).fetchall()
+        for (rp,) in rows:
+            # ลบเฉพาะไฟล์ที่อยู่ใน JOB_DIR จริง (กันเผลอลบไฟล์นอกบ้าน)
+            if rp and os.path.abspath(rp).startswith(job_dir_abs + os.sep):
+                try:
+                    os.remove(rp)
+                except OSError:
+                    pass
+        c.execute("DELETE FROM jobs WHERE status IN ('done','error') AND updated < ?", (cutoff,))
+
+def _requeue_pending() -> int:
+    """งานค้าง queued/running จาก process ก่อนตาย → ใส่คิวใหม่ (durability)"""
+    with _db() as c:
+        c.execute("UPDATE jobs SET status='queued' WHERE status='running'")
+        ids = [r[0] for r in c.execute(
+            "SELECT id FROM jobs WHERE status='queued' ORDER BY created").fetchall()]
+    for jid in ids:
+        JOB_QUEUE.put_nowait(jid)
+    return len(ids)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _db().close()
+    _cleanup_old_jobs()
+    n = _requeue_pending()
+    if n:
+        print(f"[gateway] re-enqueue {n} งานค้างจากครั้งก่อน")
     tasks = [asyncio.create_task(_worker(i)) for i in range(WORKERS)]
     yield
     for t in tasks:
@@ -152,7 +191,8 @@ if _cors:
 
 
 def _auth(tok: str | None):
-    if TOKEN and tok != TOKEN:
+    # constant-time เทียบ กัน timing side-channel
+    if TOKEN and not hmac.compare_digest(tok or "", TOKEN):
         raise HTTPException(401, "invalid token")
 
 
@@ -162,13 +202,17 @@ class LLMReq(BaseModel):
     role: str = "default"
     system: str | None = None
     is_json: bool = False
+    temperature: float | None = None
     stream: bool = False
 
 @app.post("/v1/llm/generate")
 async def llm_generate(req: LLMReq, x_ansre_token: str | None = Header(None)):
     _auth(x_ansre_token)
-    text = await asyncio.to_thread(
-        llm_provider.generate, req.prompt, req.role, req.is_json, None, req.system)
+    # ถือ HEAVY_LOCK ระหว่างเรียก LLM → ไม่ทับ image render (กัน Ollama+SDXL โหลดชน=swap)
+    async with HEAVY_LOCK:
+        text = await asyncio.to_thread(
+            llm_provider.generate, req.prompt, req.role, req.is_json,
+            req.temperature, req.system)
     if req.stream:
         async def gen():
             yield f"data: {json.dumps({'text': text})}\n\n"
@@ -188,13 +232,22 @@ class ImageReq(BaseModel):
 async def image_generate(req: ImageReq, x_ansre_token: str | None = Header(None)):
     _auth(x_ansre_token)
     job_id = req.client_job_id or uuid.uuid4().hex
+    # กัน path traversal: job_id ถูกเอาไปต่อเป็นชื่อไฟล์ → อนุญาตเฉพาะ [A-Za-z0-9_-]
+    if not _JOB_ID_RE.fullmatch(job_id):
+        raise HTTPException(400, "client_job_id ต้องเป็น [A-Za-z0-9_-] ยาว 1-64")
+    if JOB_QUEUE.qsize() >= MAX_QUEUE:
+        raise HTTPException(429, f"คิวเต็ม ({MAX_QUEUE}) — ลองใหม่ภายหลัง")
+    now = time.time()
+    # INSERT OR IGNORE = single-flight: ยิงซ้ำ client_job_id เดิม → ไม่สร้าง/ไม่ enqueue ซ้ำ
     with _db() as c:
-        if c.execute("SELECT 1 FROM jobs WHERE id=?", (job_id,)).fetchone():
-            return {"job_id": job_id, "status": "duplicate",
-                    "result_url": f"/v1/image/result/{job_id}"}
-        now = time.time()
-        c.execute("INSERT INTO jobs(id,status,kind,params,created,updated) VALUES(?,?,?,?,?,?)",
-                  (job_id, "queued", "image", req.model_dump_json(), now, now))
+        cur = c.execute(
+            "INSERT OR IGNORE INTO jobs(id,status,kind,params,created,updated) "
+            "VALUES(?,?,?,?,?,?)",
+            (job_id, "queued", "image", req.model_dump_json(), now, now))
+        inserted = cur.rowcount > 0
+    if not inserted:
+        return {"job_id": job_id, "status": "duplicate",
+                "result_url": f"/v1/image/result/{job_id}"}
     await JOB_QUEUE.put(job_id)
     return {"job_id": job_id, "status": "queued", "queue_size": JOB_QUEUE.qsize(),
             "result_url": f"/v1/image/result/{job_id}"}
