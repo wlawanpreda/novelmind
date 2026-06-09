@@ -457,7 +457,7 @@ async function studio(action) {
   toast("เริ่ม: " + action);
   openDrawer(r.task, "studio: " + action);
   // หลังเสร็จ ลองโหลดผลให้ดู
-  const kind = { visual: "visual", video: "video", audio: "audio", bible: "bible", caption: "caption" }[action];
+  const kind = { visual: "visual", video: "video", audio: "audio", bible: "bible", caption: "caption", abtest: "abtest" }[action];
   if (kind) setTimeout(() => viewStudio(kind), 1500);
 }
 

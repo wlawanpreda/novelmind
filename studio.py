@@ -305,6 +305,41 @@ def list_refine_modes():
     return [{"key": k, "label": v["label"]} for k, v in REFINE_MODES.items()]
 
 
+def ab_variants(title):
+    """สร้างตัวเลือก A/B/C ของ ชื่อเรื่อง/hook/ปก เพื่อนำไปทดสอบว่าแบบไหนปัง"""
+    import json as _json
+    base = _slug(title)
+    outline = _read(_find("02_Concept_Extraction", f"{base}_Outline.md") or "")
+    prompt = f"""คุณคือครีเอทีฟโฆษณา สร้างตัวเลือกทดสอบ A/B/C (3 แบบ แนวต่างกันชัด) สำหรับนิยายเรื่องนี้
+เพื่อนำไปปล่อยเทียบว่าแบบไหนคนคลิก/ดูมากกว่า
+เรื่อง: {title}
+โครงเรื่องย่อ: {outline[:1600]}
+
+ตอบ JSON เท่านั้น:
+{{"variants": [
+  {{"label": "A", "angle": "มุมขาย (เช่น ดราม่า/แอ็คชัน/ปริศนา)",
+    "title": "ชื่อเรื่อง/คลิป", "hook": "ประโยค hook เปิด", "cover_concept": "ไอเดียปกสั้นๆ"}},
+  {{"label": "B", ...}}, {{"label": "C", ...}}
+]}}"""
+    try:
+        raw = generate(prompt, role="brainstorm", is_json=True, temperature=1.0)
+        m = re.search(r"\{.*\}", raw, re.DOTALL)
+        d = _json.loads(m.group(0) if m else raw)
+    except Exception as e:
+        return {"ok": False, "error": f"สร้างไม่ได้: {e}"}
+    md = f"# 🔀 A/B Variants: {title}\n\n"
+    for v in d.get("variants", []):
+        md += (f"## ตัวเลือก {v.get('label','')} — {v.get('angle','')}\n"
+               f"- **ชื่อ:** {v.get('title','')}\n"
+               f"- **Hook:** {v.get('hook','')}\n"
+               f"- **ไอเดียปก:** {v.get('cover_concept','')}\n\n")
+    out = _save("AB_Tests", f"{base}_AB.md", md)
+    print(f"[ab] {title} → {len(d.get('variants',[]))} ตัวเลือก → {out}")
+    d["ok"] = True
+    d["file"] = out
+    return d
+
+
 def caption_seo(title):
     """สร้างแคปชั่น+แฮชแท็ก+SEO ต่อคลิป (YouTube/TikTok) — ก่อนเผยแพร่"""
     import json as _json
@@ -512,5 +547,8 @@ if __name__ == "__main__":
     elif cmd == "caption" and len(a) > 1:
         import json as _j
         print(_j.dumps(caption_seo(a[1]), ensure_ascii=False, indent=2))
+    elif cmd == "abtest" and len(a) > 1:
+        import json as _j
+        print(_j.dumps(ab_variants(a[1]), ensure_ascii=False, indent=2))
     else:
         print(__doc__)
