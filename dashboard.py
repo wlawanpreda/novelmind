@@ -30,7 +30,7 @@ import glob
 import time
 import threading
 import subprocess
-from datetime import datetime
+from datetime import datetime, timedelta
 from urllib.parse import urlparse, parse_qs, unquote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -299,6 +299,59 @@ def api_cost_advice():
     total_save = round(sum(a.get("save", 0) for a in advice if a["type"] == "move_local"), 2)
     return {"ok": True, "advice": advice, "total_save_est": total_save,
             "today": u["today"], "total14": round(sum(v for _, v in u["by_date"]), 3)}
+
+
+def api_analytics(days=30):
+    """แนวโน้มตามเวลา: ต้นทุน/วัน + ผลผลิต/วัน (นับจากเวลาแก้ไขไฟล์ผลงาน)"""
+    ap = os.path.join(SB, "05_Active_Projects")
+    # ผลผลิตแต่ละชนิด → โฟลเดอร์ + pattern
+    prod_dirs = {
+        "บท": [("Chapters", "*_Chapter_*.md")],
+        "ปก": [("Covers", "*.png"), ("Covers", "*.jpg")],
+        "เสียง": [("Audio_Output", "*.mp3")],
+        "teaser": [("Teasers", "*.mp4"), ("Teaser_Output", "*.mp4")],
+    }
+    # สร้างชุดวันที่ย้อนหลัง (เติม 0 วันว่าง)
+    start = datetime.now().date() - timedelta(days=days - 1)
+    dates = [(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(days)]
+    didx = {d: i for i, d in enumerate(dates)}
+
+    prod = {k: [0] * days for k in prod_dirs}
+    prod_total = {k: 0 for k in prod_dirs}
+    for kind, specs in prod_dirs.items():
+        seen = set()
+        for folder, pat in specs:
+            for fp in glob.glob(os.path.join(ap, folder, pat)):
+                if fp in seen:
+                    continue
+                seen.add(fp)
+                d = datetime.fromtimestamp(os.path.getmtime(fp)).strftime("%Y-%m-%d")
+                prod_total[kind] += 1
+                if d in didx:
+                    prod[kind][didx[d]] += 1
+
+    # ต้นทุน/วัน จาก usage log
+    cost = [0.0] * days
+    log = os.path.join(SB, "llm_usage.jsonl")
+    if os.path.exists(log):
+        with open(log, "r", encoding="utf-8") as f:
+            for line in f:
+                try:
+                    e = json.loads(line)
+                except Exception:
+                    continue
+                d = e.get("date", "?")
+                if d in didx:
+                    cost[didx[d]] = round(cost[didx[d]] + (e.get("est_usd", 0) or 0), 6)
+
+    active = [i for i in range(days) if cost[i] > 0 or any(prod[k][i] for k in prod)]
+    span = (max(active) - min(active) + 1) if active else 0
+    chapters_total = prod_total.get("บท", 0)
+    return {"ok": True, "days": days, "dates": dates,
+            "cost": cost, "production": prod, "prod_total": prod_total,
+            "cost_total": round(sum(cost), 3),
+            "velocity": round(chapters_total / span, 2) if span else 0,
+            "active_days": len(active)}
 
 
 def api_doctor():
@@ -1088,6 +1141,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._serve_file(os.path.join(ROOT, "backups", fn))
             if p == "/api/cost/advice":
                 return self._send(200, api_cost_advice())
+            if p == "/api/analytics":
+                return self._send(200, api_analytics())
             if p == "/api/publish/status":
                 return self._send(200, api_publish_status())
             if p.startswith("/api/task/"):

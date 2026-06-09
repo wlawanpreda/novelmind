@@ -351,3 +351,16 @@ textarea.dev-body.editing:focus{border-color:var(--acc)}
 .settings .btn{grid-column:1/-1;justify-self:start}
 @media(max-width:680px){.settings{grid-template-columns:1fr}}
 @media(max-width:780px){.app{grid-template-columns:1fr}.side{position:static;height:auto;display:flex;flex-wrap:wrap;align-items:center;gap:10px}.nav{flex-direction:row;flex-wrap:wrap;margin-top:0}.side-foot{display:none}}
+
+/* ---- Analytics (แนวโน้ม) ---- */
+.an-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.an-kpi{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.an-kpi .an-v{font-size:24px;font-weight:700;color:var(--acc)}
+.an-kpi .an-t{font-size:12.5px;color:var(--fg);margin-top:3px}
+.an-kpi .an-s{font-size:11px;color:var(--muted);margin-top:2px}
+.an-h{font-weight:600;margin-bottom:10px}
+.an-h .meta{font-weight:400}
+.spark{display:flex;align-items:flex-end;gap:2px;height:90px;padding-top:6px}
+.spark .sp-bar{flex:1;min-height:0;border-radius:2px 2px 0 0;opacity:.85;transition:opacity .12s}
+.spark .sp-bar:hover{opacity:1}
+@media(max-width:680px){.an-kpis{grid-template-columns:repeat(2,1fr)}}

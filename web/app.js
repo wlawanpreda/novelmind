@@ -9,6 +9,7 @@ const VIEW_META = {
   studio: ["Studio", "สร้าง prompt ภาพ/วิดีโอ, script เสียง, ลูปเกลาบท"],
   outputs: ["ผลผลิต", "ปก หนังสือเสียง และวิดีโอ teaser"],
   kanban: ["บอร์ดผลิต", "ทุกเรื่องเรียงตามขั้น: รอเขียน → เขียนแล้ว → มีสื่อ → พร้อมปล่อย → เผยแพร่"],
+  analytics: ["แนวโน้ม", "ผลผลิตและต้นทุนตามช่วงเวลา 30 วัน"],
   usage: ["ค่าใช้จ่าย", "ติดตามการใช้ token และต้นทุน"],
   config: ["LLM Routing", "งานไหนวิ่งไป Gemini หรือ Mac mini"],
   health: ["สุขภาพระบบ", "ตรวจว่าทุกอย่างพร้อมใช้งาน"],
@@ -1038,6 +1039,45 @@ async function loadKanban() {
   }).join("") + `</div>`;
 }
 
+// ---- Analytics over time (แนวโน้มผลผลิต + ต้นทุน) ----
+function spark(values, color, fmt) {
+  const max = Math.max(...values, 0.0001);
+  return `<div class="spark">${values.map((v, i) =>
+    `<div class="sp-bar" style="height:${Math.max(v / max * 100, v > 0 ? 6 : 0)}%;background:${color}" title="${fmt ? fmt(v, i) : v}"></div>`
+  ).join("")}</div>`;
+}
+async function loadAnalytics() {
+  const el = $("#analyticsPanel");
+  if (!el) return;
+  el.innerHTML = `<div class="muted" style="padding:20px">กำลังโหลด…</div>`;
+  const r = await api("/api/analytics");
+  if (!r.ok) { el.innerHTML = `<div class="empty">โหลดไม่ได้</div>`; return; }
+  const d = r.dates, lbl = (v, i) => `${d[i]}: ${v}`;
+  const PT = r.prod_total;
+  const PCOL = { "บท": "#5b8cff", "ปก": "#c77dff", "เสียง": "#4dd0a0", "teaser": "#ff8c5b" };
+  const kpis = [
+    ["📝 บททั้งหมด", PT["บท"] || 0, ""],
+    ["⚡ ความเร็วผลิต", r.velocity, "บท/วัน (วันที่ทำงาน)"],
+    ["🎨 ปก/เสียง/teaser", `${PT["ปก"] || 0}/${PT["เสียง"] || 0}/${PT["teaser"] || 0}`, ""],
+    ["💵 ต้นทุนรวม", `$${r.cost_total}`, `${r.active_days} วันที่มีงาน`],
+  ];
+  el.innerHTML = `
+    <div class="an-kpis">${kpis.map(([t, v, s]) =>
+      `<div class="an-kpi"><div class="an-v">${v}</div><div class="an-t">${t}</div>${s ? `<div class="an-s">${s}</div>` : ""}</div>`
+    ).join("")}</div>
+    <div class="card">
+      <div class="an-h">💵 ต้นทุน/วัน <span class="meta">(${r.days} วันล่าสุด · รวม $${r.cost_total})</span></div>
+      ${spark(r.cost, "#4dd0a0", (v, i) => `${d[i]}: $${v.toFixed(3)}`)}
+    </div>
+    ${Object.keys(r.production).map(k => `
+      <div class="card">
+        <div class="an-h">${({ "บท": "📝", "ปก": "🎨", "เสียง": "🎧", "teaser": "🎬" }[k] || "")} ${k}/วัน
+          <span class="meta">(รวม ${PT[k] || 0})</span></div>
+        ${spark(r.production[k], PCOL[k] || "#5b8cff", lbl)}
+      </div>`).join("")}
+    <div class="meta" style="margin-top:8px">📈 แท่ง = ปริมาณต่อวัน · ชี้เมาส์เพื่อดูวันที่/ค่า · ผลผลิตนับจากเวลาแก้ไขไฟล์</div>`;
+}
+
 // ---- Chapter Reader (อ่านเนื้อบทในแอป) ----
 const READER = { title: "", ch: 1, total: 1 };
 async function openReader(title, ch) {
@@ -1062,7 +1102,7 @@ function closeReader() { $("#readerOverlay").classList.remove("open"); }
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
-     kanban: loadKanban, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
+     kanban: loadKanban, analytics: loadAnalytics, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
 }
 function refreshAll() {
   const active = $(".nav a.active").dataset.view;
