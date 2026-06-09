@@ -328,8 +328,10 @@ def main():
         return run([py, "chapter_continuer.py", SB] + rest)
     if cmd == "web":
         port = os.environ.get("ANSRE_WEB_PORT", "8765")
-        print(f"🌐 เปิด dashboard ที่ http://localhost:{port}")
-        return run([py, "dashboard.py"])
+        print(f"🌐 เปิด dashboard ที่ http://localhost:{port} (hot-reload เปิด — แก้โค้ดแล้วเห็นทันที)")
+        # --no-reload เพื่อปิด hot-reload · ส่ง rest อื่นต่อ
+        extra = [] if "--no-reload" in rest else ["--reload"]
+        return run([py, "dashboard.py"] + extra + [a for a in rest if a != "--no-reload"])
     if cmd == "run":
         return run([py, "orchestrator.py"] + (rest if rest else ["--once"]))
     if cmd == "scout":

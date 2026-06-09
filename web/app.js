@@ -927,3 +927,20 @@ function refreshAll() {
 // boot
 loadOverview();
 setInterval(loadOverview, 8000);
+
+// ---- hot-reload (dev): poll reload token, refresh เมื่อไฟล์เปลี่ยน ----
+(async () => {
+  try {
+    const r = await api("/api/reload-token");
+    if (!r || !r.enabled) return;
+    let tok = r.token, misses = 0;
+    console.log("🔥 hot-reload เปิด");
+    setInterval(async () => {
+      try {
+        const x = await api("/api/reload-token");
+        misses = 0;
+        if (x && x.token && x.token !== tok) { tok = x.token; location.reload(); }
+      } catch { if (++misses > 3) location.reload(); }  // server restart (แก้ .py) → กลับมาแล้ว reload
+    }, 1500);
+  } catch { }
+})();

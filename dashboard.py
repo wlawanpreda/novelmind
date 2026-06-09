@@ -40,6 +40,56 @@ WEB = os.path.join(ROOT, "web")
 TASK_DIR = os.path.join(SB, ".tasks")
 PORT = int(os.environ.get("PORT") or os.environ.get("ANSRE_WEB_PORT") or "8765")
 
+# --- Hot-reload (dev) ---
+RELOAD = (os.environ.get("ANSRE_RELOAD") == "1") or ("--reload" in sys.argv)
+
+
+def _watched_files():
+    fs = []
+    for ext in ("*.html", "*.js", "*.css"):
+        fs += glob.glob(os.path.join(WEB, ext))
+    fs += glob.glob(os.path.join(ROOT, "*.py"))
+    return fs
+
+
+def _reload_token():
+    try:
+        return str(round(max((os.path.getmtime(f) for f in _watched_files()), default=0), 2))
+    except Exception:
+        return "0"
+
+
+def _free_port(port):
+    """kill process ที่ค้างพอร์ตอยู่ (กัน OSError: Address already in use)"""
+    try:
+        out = subprocess.run(["lsof", "-ti", f"tcp:{port}"], capture_output=True, text=True).stdout.split()
+        mypid = str(os.getpid())
+        killed = [p for p in out if p and p != mypid]
+        for p in killed:
+            subprocess.run(["kill", p], capture_output=True)
+        if killed:
+            print(f"[web] ปิด instance เดิมที่ค้างพอร์ต {port} (pid {','.join(killed)})", flush=True)
+            time.sleep(1)
+    except Exception:
+        pass
+
+
+def _reload_watcher():
+    """เฝ้า *.py — เปลี่ยนแล้ว restart server อัตโนมัติ (web files ไม่ต้อง restart, client reload เอง)"""
+    seen = {f: os.path.getmtime(f) for f in glob.glob(os.path.join(ROOT, "*.py"))}
+    while True:
+        time.sleep(1)
+        for f in glob.glob(os.path.join(ROOT, "*.py")):
+            try:
+                m = os.path.getmtime(f)
+            except OSError:
+                continue
+            if seen.get(f) and m > seen[f]:
+                print(f"[reload] {os.path.basename(f)} เปลี่ยน → restart dashboard", flush=True)
+                time.sleep(0.3)  # กันอ่านไฟล์ตอนเขียนยังไม่จบ
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            seen[f] = m
+
 LAUNCH_LABEL = "com.ansre.worker"
 LAUNCH_PLIST = os.path.expanduser(f"~/Library/LaunchAgents/{LAUNCH_LABEL}.plist")
 
@@ -901,6 +951,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_novel_detail(parse_qs(u.query).get("title", [""])[0]))
             if p == "/api/refine/modes":
                 return self._send(200, api_refine_modes())
+            if p == "/api/reload-token":
+                return self._send(200, {"enabled": RELOAD, "token": _reload_token()})
             if p == "/api/health/stories":
                 return self._send(200, api_health_stories())
             if p == "/api/cost/advice":
@@ -970,6 +1022,11 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     os.makedirs(WEB, exist_ok=True)
+    _free_port(PORT)   # ปิด instance เดิมที่ค้างพอร์ต กัน Address already in use
+    if RELOAD:
+        threading.Thread(target=_reload_watcher, daemon=True).start()
+        print("[reload] 🔥 hot-reload เปิด — แก้ web/*.{html,js,css} → เบราว์เซอร์ refresh เอง · แก้ *.py → restart อัตโนมัติ", flush=True)
+    ThreadingHTTPServer.allow_reuse_address = True
     srv = ThreadingHTTPServer(("0.0.0.0", PORT), Handler)
     # flush ทันที เพื่อให้ตัว preview/launcher จับสัญญาณ "ready" ได้ (ไม่งั้น stdout ถูก buffer)
     print(f"ANSRE Dashboard ready — Listening on http://localhost:{PORT}", flush=True)
