@@ -621,6 +621,51 @@ def api_chapter(title, ch):
             "chars": len(txt)}
 
 
+def api_kanban():
+    """จัดกลุ่มทุกเรื่องตามขั้นผลิต: รอเขียน → เขียนแล้ว → มีสื่อ → พร้อมปล่อย → เผยแพร่แล้ว"""
+    cols = {"todo": [], "written": [], "assets": [], "ready": [], "published": []}
+    pub_bases = set()
+    try:
+        import publisher
+        for k, e in publisher.load_ledger(SB).items():
+            if isinstance(e, dict) and any(str(v).startswith("http") for v in e.values()):
+                pub_bases.add(re.sub(r"_Teaser.*$", "", k))
+    except Exception:
+        pass
+    try:
+        import story_health
+    except Exception:
+        story_health = None
+    for fp in glob.glob(os.path.join(SB, "01_Scouting_Pool", "*.md")):
+        fm = _frontmatter(fp)
+        st = fm.get("status", "")
+        title = fm.get("thai_working_title") or fm.get("title") or "?"
+        card = {"title": title, "fit": fm.get("market_fit_score", ""), "status": st}
+        if st in ("Scouted", "Analyzed"):
+            card["sub"] = "วิเคราะห์แล้ว" if st == "Analyzed" else "รอวิเคราะห์"
+            cols["todo"].append(card)
+        elif st == "Processed":
+            base = _base_for(fm, title)
+            a = _assets_for(base)
+            complete = a["cover"] and a["audio"] and a["teaser"]
+            h = story_health.scan_story(SB, base, title) if story_health else {"status": "green"}
+            card["health"] = h["status"]
+            card["assets"] = a
+            if base in pub_bases:
+                cols["published"].append(card)
+            elif complete and h["status"] == "green":
+                cols["ready"].append(card)
+            elif complete:
+                cols["assets"].append(card)
+            else:
+                card["sub"] = f"{'✅' if a['cover'] else '⚪'}ปก {'✅' if a['audio'] else '⚪'}เสียง {'✅' if a['teaser'] else '⚪'}teaser"
+                cols["written"].append(card)
+    for c in cols.values():
+        c.sort(key=lambda x: float(x.get("fit") or 0), reverse=True)
+    return {"ok": True, "columns": cols,
+            "counts": {k: len(v) for k, v in cols.items()}}
+
+
 def api_health_stories():
     """สแกนสุขภาพทุกเรื่อง → summary + map(title→status) สำหรับ badge หน้านิยาย"""
     try:
@@ -1013,6 +1058,8 @@ class Handler(BaseHTTPRequestHandler):
             if p == "/api/chapter":
                 qs = parse_qs(u.query)
                 return self._send(200, api_chapter(qs.get("title", [""])[0], qs.get("ch", ["1"])[0]))
+            if p == "/api/kanban":
+                return self._send(200, api_kanban())
             if p == "/api/cost/advice":
                 return self._send(200, api_cost_advice())
             if p == "/api/publish/status":

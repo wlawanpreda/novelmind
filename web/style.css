@@ -111,6 +111,18 @@ body{
 .reader-body{flex:1;overflow:auto;padding:24px 32px;font-size:16px;line-height:1.95}
 .reader-body p{margin:13px 0}
 .reader-body h1,.reader-body h2,.reader-body h3{margin:18px 0 10px}
+/* Kanban */
+.kanban{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;align-items:start}
+.kan-col{background:var(--card);border:1px solid var(--card-brd);border-radius:12px;padding:10px;min-height:120px}
+.kan-head{display:flex;justify-content:space-between;align-items:center;padding:6px 8px 10px;border-bottom:2px solid var(--card-brd);margin-bottom:10px;font-size:13px}
+.kan-n{background:var(--bg);border:1px solid var(--card-brd);border-radius:20px;padding:1px 9px;font-size:12px;font-weight:700}
+.kan-cards{display:flex;flex-direction:column;gap:8px}
+.kan-card{background:var(--bg);border:1px solid var(--card-brd);border-radius:9px;padding:10px 11px;cursor:pointer;transition:border-color .15s}
+.kan-card:hover{border-color:var(--acc)}
+.kc-title{font-size:12.5px;font-weight:600;line-height:1.4}
+.kc-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.kan-empty{color:var(--muted);font-size:12px;text-align:center;padding:10px}
+@media(max-width:1000px){.kanban{grid-template-columns:repeat(2,1fr)}}
 .nv-hint{font-size:12px;color:var(--muted);margin:2px 0 10px}
 .nv-click{cursor:pointer;transition:border-color .15s}
 .nv-click:hover{border-color:var(--acc)}

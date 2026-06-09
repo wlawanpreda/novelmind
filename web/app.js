@@ -8,6 +8,7 @@ const VIEW_META = {
   novels: ["นิยาย", "คลังนิยายที่หามาและดัดแปลง"],
   studio: ["Studio", "สร้าง prompt ภาพ/วิดีโอ, script เสียง, ลูปเกลาบท"],
   outputs: ["ผลผลิต", "ปก หนังสือเสียง และวิดีโอ teaser"],
+  kanban: ["บอร์ดผลิต", "ทุกเรื่องเรียงตามขั้น: รอเขียน → เขียนแล้ว → มีสื่อ → พร้อมปล่อย → เผยแพร่"],
   usage: ["ค่าใช้จ่าย", "ติดตามการใช้ token และต้นทุน"],
   config: ["LLM Routing", "งานไหนวิ่งไป Gemini หรือ Mac mini"],
   health: ["สุขภาพระบบ", "ตรวจว่าทุกอย่างพร้อมใช้งาน"],
@@ -971,6 +972,34 @@ async function doTranslate(id) {
   box.innerHTML = r.ok ? `<div class="trans-result md">🌐 ${mdToHtml(r.text)}</div>` : `<span style="color:var(--bad)">${esc(r.error || "แปลไม่ได้")}</span>`;
 }
 
+// ---- Production Kanban ----
+const KAN_COLS = [
+  ["todo", "📝 รอเขียน", "var(--muted)"],
+  ["written", "✍️ เขียนแล้ว (ขาดสื่อ)", "#93c5fd"],
+  ["assets", "🎬 มีสื่อครบ", "var(--acc)"],
+  ["ready", "🚀 พร้อมปล่อย", "var(--good)"],
+  ["published", "📤 เผยแพร่แล้ว", "var(--acc2)"],
+];
+async function loadKanban() {
+  const el = $("#kanbanBoard");
+  if (!el) return;
+  el.innerHTML = `<div class="muted" style="padding:20px">กำลังโหลด…</div>`;
+  const r = await api("/api/kanban");
+  if (!r.ok) { el.innerHTML = `<div class="empty">โหลดไม่ได้</div>`; return; }
+  const hicon = { red: "🔴", yellow: "🟡", green: "🟢" };
+  el.innerHTML = `<div class="kanban">` + KAN_COLS.map(([k, label, color]) => {
+    const cards = r.columns[k] || [];
+    return `<div class="kan-col">
+        <div class="kan-head" style="border-color:${color}"><b>${label}</b><span class="kan-n">${cards.length}</span></div>
+        <div class="kan-cards">${cards.length ? cards.map(c => `
+          <div class="kan-card" data-t="${esc(c.title)}" onclick="gotoStudio(this.dataset.t)" title="คลิกไป Studio">
+            <div class="kc-title">${c.health ? hicon[c.health] + " " : ""}${esc(c.title)}</div>
+            <div class="kc-sub">${c.fit ? `🎯 ${esc(c.fit)}` : ""}${c.sub ? ` · ${esc(c.sub)}` : ""}</div>
+          </div>`).join("") : `<div class="kan-empty">—</div>`}</div>
+      </div>`;
+  }).join("") + `</div>`;
+}
+
 // ---- Chapter Reader (อ่านเนื้อบทในแอป) ----
 const READER = { title: "", ch: 1, total: 1 };
 async function openReader(title, ch) {
@@ -995,7 +1024,7 @@ function closeReader() { $("#readerOverlay").classList.remove("open"); }
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
-     outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
+     kanban: loadKanban, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
 }
 function refreshAll() {
   const active = $(".nav a.active").dataset.view;
