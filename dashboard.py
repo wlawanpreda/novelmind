@@ -639,6 +639,17 @@ def api_studio_detail(title):
                      "original": fm.get("title", ""), "status": fm.get("status", "")}}
 
 
+def notify_test():
+    try:
+        import notify
+        if not notify.enabled():
+            return {"ok": False, "error": "ยังไม่ตั้ง ANSRE_DISCORD_WEBHOOK ใน .env"}
+        ok = notify.notify("🔔 ทดสอบจาก dashboard — ระบบแจ้งเตือนใช้งานได้!", "ANSRE ทดสอบแจ้งเตือน", "good")
+        return {"ok": ok, "error": "" if ok else "ส่งไม่สำเร็จ (เช็ค webhook)"}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
 def api_translate(payload):
     """แปลข้อความ (ภาษาต่างชาติ เช่น ญี่ปุ่น/อังกฤษ) เป็นไทย"""
     text = (payload.get("text") or "").strip()
@@ -1033,6 +1044,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, publish_run(payload))
             if u.path == "/api/translate":
                 return self._send(200, api_translate(payload))
+            if u.path == "/api/notify/test":
+                return self._send(200, notify_test())
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})

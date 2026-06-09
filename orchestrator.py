@@ -213,6 +213,18 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
         log("[publish] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE/PUBLISH_TIKTOK/PUBLISH_NOVEL")
 
     log("######## ORCHESTRATOR CYCLE END ########\n")
+    # แจ้งเตือน Discord (ถ้าตั้ง webhook) — สรุปผลผลิตปัจจุบัน
+    if not dry:
+        try:
+            import glob as _g
+            ap = os.path.join(SECOND_BRAIN, "05_Active_Projects")
+            cnt = lambda *p: len(_g.glob(os.path.join(ap, *p)))
+            from notify import notify as _notify
+            _notify(f"📖 ตอน {cnt('Chapters', '*.md')} · 🖼️ ปก {cnt('Covers', '*.jpg')+cnt('Covers','*.png')} · "
+                    f"🎧 เสียง {cnt('Audio_Output', '*.mp3')} · 🎬 teaser {cnt('Teasers','*.mp4')+cnt('Teaser_Output','*.mp4')}",
+                    "✅ Pipeline รอบหนึ่งเสร็จ", "good")
+        except Exception:
+            pass
 
 
 def main():
@@ -231,6 +243,13 @@ def main():
                 time.sleep(LOOP_SLEEP)
         else:
             run_cycle(do_scout=do_scout, dry=dry)
+    except Exception as e:  # noqa: BLE001
+        try:
+            from notify import notify as _notify
+            _notify(f"orchestrator ล้มเหลว: {e}", "🔴 Pipeline error", "bad")
+        except Exception:
+            pass
+        raise
     finally:
         if not dry:
             release_lock()

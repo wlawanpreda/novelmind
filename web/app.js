@@ -805,8 +805,21 @@ async function loadScheduler() {
         <span>📤 เผยแพร่อัตโนมัติหลังผลิต:</span>
         <b class="${autopub ? "green" : ""}">${autopub ? "เปิด ✅" : "ปิด — เปิดแพลตฟอร์มที่หน้าผลผลิต"}</b>
       </div>
-      <div class="meta">ℹ️ worker ใช้ launchd รันเบื้องหลังแม้ปิดเบราว์เซอร์ · คุมเพดานค่าใช้จ่ายที่หน้าค่าใช้จ่าย · กันชน Gemini ด้วย single-flight อัตโนมัติ</div>
+      <div class="sched-row">
+        <span>🔔 แจ้งเตือน Discord:</span>
+        <button class="btn sm" onclick="testNotify(this)">ทดสอบส่งแจ้งเตือน</button>
+        <span class="meta" id="notifyMsg"></span>
+      </div>
+      <div class="meta">ℹ️ worker ใช้ launchd รันเบื้องหลังแม้ปิดเบราว์เซอร์ · แจ้งเตือน Discord เมื่อ pipeline เสร็จ/พัง · คุมเพดานที่หน้าค่าใช้จ่าย</div>
     </div>`;
+}
+async function testNotify(btn) {
+  btn.disabled = true;
+  const r = await api("/api/notify/test", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const m = $("#notifyMsg");
+  if (r.ok) { toast("ส่งแจ้งเตือนแล้ว — เช็ค Discord ✅", "good"); if (m) m.textContent = "✅ ส่งสำเร็จ"; }
+  else { toast(r.error || "ส่งไม่สำเร็จ", "bad"); if (m) m.textContent = "❌ " + (r.error || ""); }
+  btn.disabled = false;
 }
 
 // ---- actions ----
