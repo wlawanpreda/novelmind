@@ -499,6 +499,7 @@ function renderNovelList() {
       <button class="btn" onclick="runStage('scout')">🔍 Scout เรื่องใหม่</button>
       <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์ทั้งหมด</button>
       <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
+      <button class="btn" onclick="finishNovel('')" title="เติมปก+teaser ให้ทุกเรื่องที่ขาด">✅ เติมสินทรัพย์ทุกเรื่อง</button>
     </div>`
     + (NOVEL_TREND ? `<details class="card" style="margin-bottom:14px"><summary style="cursor:pointer;font-weight:700">📈 Trend Report (คลิกดู)</summary><div class="md" style="margin-top:12px;max-height:60vh;overflow:auto">${mdToHtml(NOVEL_TREND)}</div></details>` : "")
     + (NOVEL_HSUM ? `<div class="health-banner">🩺 สุขภาพเรื่อง (พร้อมปล่อยไหม): <b class="green">🟢 ${NOVEL_HSUM.green} พร้อม</b> · <b class="yellow">🟡 ${NOVEL_HSUM.yellow} ควรแก้</b> · <b class="red">🔴 ${NOVEL_HSUM.red} ต้องแก้ด่วน</b> <span class="hb-hint">— คลิกเรื่องดูปัญหา</span></div>` : "")
@@ -546,12 +547,21 @@ async function loadNovelDetail(title) {
     else healthBox = `<div class="nd-health ${hh.status}"><div class="ndh-head">${HICON[hh.status]} พบ ${hh.issues.length} จุดที่ควรแก้${hh.status === "red" ? " (มีบางจุดต้องแก้ก่อนปล่อย)" : ""}</div>`
       + hh.issues.map(i => `<div class="ndh-item ${i.sev}">${i.sev === "red" ? "🔴" : "🟡"} <b>[${esc(i.where)}]</b> ${esc(i.label)}</div>`).join("") + `</div>`;
   }
+  const incomplete = a.chapters && (!a.cover || !a.audio || !a.teaser);
   const actions = `<div class="dev-bar">
       <button class="btn sm primary" data-t="${esc(title)}" onclick="writeNovel(this.dataset.t)">✍️ เขียนเรื่องนี้</button>
       <button class="btn sm" data-t="${esc(title)}" onclick="gotoStudio(this.dataset.t)">🎨 ไป Studio</button>
+      ${incomplete ? `<button class="btn sm" data-t="${esc(title)}" onclick="finishNovel(this.dataset.t)" title="เติมปก/เสียง/teaser ที่ขาด">✅ เติมสินทรัพย์</button>` : ""}
       ${a.teaser ? `<button class="btn sm" onclick="loadView('outputs')">🎬 ดูผลผลิต</button>` : ""}</div>`;
   el.innerHTML = stats + assets + healthBox + actions
     + `<div class="md nd-body">${mdToHtml(r.body || "(ยังไม่มีบทวิเคราะห์ — กด “🧠 วิเคราะห์ทั้งหมด” ด้านบน)")}</div>`;
+}
+
+async function finishNovel(title) {
+  const withAudio = confirm(`เติมสินทรัพย์ที่ขาด${title ? ` ให้ “${title}”` : " ให้ทุกเรื่อง"}\n\nOK = รวมหนังสือเสียงด้วย (ช้า, TTS)\nCancel = เฉพาะปก+teaser (เร็ว)`);
+  const r = await api("/api/novel/finish", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, audio: withAudio }) });
+  if (r.error) return toast(r.error, "bad");
+  toast("เริ่มเติมสินทรัพย์ ✅"); openDrawer(r.task, "เติมสินทรัพย์" + (title ? ": " + title : " (ทุกเรื่อง)"));
 }
 
 async function writeNovel(title) {

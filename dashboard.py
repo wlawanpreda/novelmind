@@ -533,6 +533,17 @@ def novel_write(payload):
     return {"task": start_argv(f"write:{title[:18]}", ["agent_writer.py", SB, "--only", title])}
 
 
+def novel_finish(payload):
+    """เติมสินทรัพย์ที่ขาด (ปก/teaser/[+audio]) — เรื่องเดียวหรือทุกเรื่อง"""
+    title = (payload.get("title") or "").strip()
+    argv = ["finish.py", SB]
+    if title:
+        argv += ["--only", title]
+    if payload.get("audio"):
+        argv += ["--audio"]
+    return {"task": start_argv("finish:" + (title[:14] if title else "all"), argv)}
+
+
 def studio_launch(payload):
     action = payload.get("action", "")
     title = payload.get("title", "")
@@ -867,6 +878,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, idea_character(payload))
             if u.path == "/api/novel/write":
                 return self._send(200, novel_write(payload))
+            if u.path == "/api/novel/finish":
+                return self._send(200, novel_finish(payload))
             if u.path == "/api/studio":
                 return self._send(200, studio_launch(payload))
             return self._send(404, {"error": "not found"})
