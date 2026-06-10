@@ -11,6 +11,7 @@ const VIEW_META = {
   kanban: ["บอร์ดผลิต", "ทุกเรื่องเรียงตามขั้น: รอเขียน → เขียนแล้ว → มีสื่อ → พร้อมปล่อย → เผยแพร่"],
   analytics: ["แนวโน้ม", "ผลผลิตและต้นทุนตามช่วงเวลา 30 วัน"],
   calendar: ["ปฏิทิน", "วางแผนปล่อยคอนเทนต์ · ดูวันว่าง · รายการที่ถึงกำหนด"],
+  feedback: ["ผลตอบรับ", "บันทึก engagement จริง → เรียนรู้สูตรที่ปัง → ป้อนกลับการผลิต"],
   usage: ["ค่าใช้จ่าย", "ติดตามการใช้ token และต้นทุน"],
   config: ["LLM Routing", "งานไหนวิ่งไป Gemini หรือ Mac mini"],
   health: ["สุขภาพระบบ", "ตรวจว่าทุกอย่างพร้อมใช้งาน"],
@@ -1337,6 +1338,57 @@ async function calDone(id) {
   if (r.ok) { toast("ทำเครื่องหมายปล่อยแล้ว ✅", "good"); loadCalendar(); }
 }
 
+// ---- Feedback loop (ผลตอบรับจริง → เรียนรู้) ----
+async function loadFeedback() {
+  const el = $("#feedbackPanel");
+  if (!el) return;
+  const r = await api("/api/feedback");
+  if (!r.ok) { el.innerHTML = `<div class="empty">${esc(r.error || "โหลดไม่ได้")}</div>`; return; }
+  const opts = (typeof STUDIO_PROJECTS !== "undefined" ? STUDIO_PROJECTS : []).map(p => `<option>${esc(p)}</option>`).join("");
+  const rows = (r.ledger || []).map(e => `
+    <tr><td>${esc(e.story || "").slice(0, 28)}</td><td>${PLAT_ICON[e.platform] || "📌"}</td>
+      <td>${fmtViews(e.views || 0)}</td><td>${fmtViews(e.likes || 0)}</td>
+      <td>${e.comments || 0}</td><td>${e.shares || 0}</td>
+      <td><b>${Math.round(e.engagement_score || 0).toLocaleString()}</b></td>
+      <td>${((e.engagement_rate || 0) * 100).toFixed(1)}%</td></tr>`).join("");
+  el.innerHTML = `
+    <div class="fb-wrap">
+      <div class="card">
+        <b>➕ บันทึกผลตอบรับ (engagement จริง)</b>
+        <div class="fb-form">
+          <input id="fb-story" list="fb-stories" placeholder="ชื่อเรื่อง">
+          <datalist id="fb-stories">${opts}</datalist>
+          <select id="fb-plat"><option value="youtube">▶️ YouTube</option><option value="tiktok">🎵 TikTok</option><option value="novel">📚 นิยาย</option></select>
+          <input id="fb-views" type="number" min="0" placeholder="views">
+          <input id="fb-likes" type="number" min="0" placeholder="likes">
+          <input id="fb-comments" type="number" min="0" placeholder="comments">
+          <input id="fb-shares" type="number" min="0" placeholder="shares">
+          <button class="btn primary sm" onclick="recordFeedback()">บันทึก + เรียนรู้</button>
+        </div>
+      </div>
+      ${r.brief ? `<div class="card fb-brief"><b>🎯 สูตรที่ปัง (ป้อนกลับเข้า ideation/scout)</b><pre class="fb-pre">${esc(r.brief)}</pre></div>` : ""}
+      <div class="card">
+        <b>📋 ผลตอบรับที่บันทึก (${r.count})</b>
+        ${rows ? `<div class="fb-table-wrap"><table class="fb-table">
+          <thead><tr><th>เรื่อง</th><th>แพลตฟอร์ม</th><th>views</th><th>likes</th><th>คอมเมนต์</th><th>แชร์</th><th>คะแนน</th><th>rate</th></tr></thead>
+          <tbody>${rows}</tbody></table></div>` : `<div class="muted" style="margin-top:8px">ยังไม่มีข้อมูล — บันทึกผลตอบรับเรื่องแรกด้านบน (ดูตัวเลขจาก YouTube/TikTok analytics)</div>`}
+      </div>
+      ${r.report ? `<div class="card"><b>📊 รายงานเต็ม</b><div class="md" style="margin-top:8px">${mdToHtml(r.report)}</div></div>` : ""}
+    </div>`;
+}
+async function recordFeedback() {
+  const story = $("#fb-story").value.trim();
+  if (!story) return toast("ใส่ชื่อเรื่องก่อน", "bad");
+  const body = {
+    story, platform: $("#fb-plat").value,
+    views: +$("#fb-views").value || 0, likes: +$("#fb-likes").value || 0,
+    comments: +$("#fb-comments").value || 0, shares: +$("#fb-shares").value || 0,
+  };
+  const r = await api("/api/feedback/record", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  if (r.ok) { toast(`บันทึกแล้ว · คะแนน ${Math.round(r.rec.engagement_score)} ✅`, "good"); loadFeedback(); }
+  else toast(r.error || "บันทึกไม่สำเร็จ", "bad");
+}
+
 // ---- Chapter Reader (อ่านเนื้อบทในแอป) ----
 const READER = { title: "", ch: 1, total: 1 };
 async function openReader(title, ch) {
@@ -1399,7 +1451,7 @@ async function restoreVersion(vname) {
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
-     kanban: loadKanban, analytics: loadAnalytics, calendar: loadCalendar, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
+     kanban: loadKanban, analytics: loadAnalytics, calendar: loadCalendar, feedback: loadFeedback, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
 }
 function refreshAll() {
   const active = $(".nav a.active").dataset.view;

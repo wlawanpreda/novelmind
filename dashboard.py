@@ -748,6 +748,39 @@ def export_pack_run(payload):
         return {"ok": False, "error": str(e)}
 
 
+def api_feedback():
+    """ผลตอบรับจริง: ledger + winning-patterns report + brief"""
+    try:
+        import feedback
+        ledger = sorted(feedback.load_ledger(), key=lambda r: r.get("recorded_at", ""), reverse=True)
+        report = _read_head(feedback.REPORT, 8000) if os.path.exists(feedback.REPORT) else ""
+        brief = _read_head(feedback.BRIEF, 2000) if os.path.exists(feedback.BRIEF) else ""
+        return {"ok": True, "ledger": ledger[:50], "count": len(ledger),
+                "report": report, "brief": brief}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
+def feedback_record(payload):
+    """บันทึก engagement ของเรื่อง แล้วสังเคราะห์ brief ใหม่ทันที"""
+    try:
+        import feedback
+        story = (payload.get("story") or "").strip()
+        if not story:
+            return {"ok": False, "error": "ต้องระบุชื่อเรื่อง"}
+        rec = feedback.record(story,
+                              views=payload.get("views", 0) or 0,
+                              likes=payload.get("likes", 0) or 0,
+                              comments=payload.get("comments", 0) or 0,
+                              shares=payload.get("shares", 0) or 0,
+                              platform=payload.get("platform", "") or "",
+                              url=payload.get("url", "") or "")
+        feedback.learn(use_ai=False)  # อัปเดต brief/report (ฟรี ไม่ใช้ AI)
+        return {"ok": True, "rec": rec}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
 def api_scout():
     try:
         import trend_scout
@@ -1280,6 +1313,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_calendar())
             if p == "/api/scout":
                 return self._send(200, api_scout())
+            if p == "/api/feedback":
+                return self._send(200, api_feedback())
             if p == "/api/audiobook":
                 qs = parse_qs(u.query)
                 return self._send(200, api_audiobook_status(qs.get("title", [""])[0]))
@@ -1375,6 +1410,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, export_pack_run(payload))
             if u.path == "/api/continue":
                 return self._send(200, continue_run(payload))
+            if u.path == "/api/feedback/record":
+                return self._send(200, feedback_record(payload))
             if u.path == "/api/calendar/add":
                 return self._send(200, calendar_add(payload))
             if u.path == "/api/calendar/remove":
