@@ -717,6 +717,15 @@ def export_pack_run(payload):
         return {"ok": False, "error": str(e)}
 
 
+def api_scout():
+    try:
+        import trend_scout
+        rows = trend_scout.scout(SB)
+        return {"ok": True, "rows": rows[:20], "total": len(rows)}
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
 def api_calendar():
     import schedule_plan
     return {"ok": True, "plan": schedule_plan.list_plan(SB),
@@ -1235,6 +1244,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, api_health_stories())
             if p == "/api/calendar":
                 return self._send(200, api_calendar())
+            if p == "/api/scout":
+                return self._send(200, api_scout())
             if p == "/api/audiobook":
                 qs = parse_qs(u.query)
                 return self._send(200, api_audiobook_status(qs.get("title", [""])[0]))

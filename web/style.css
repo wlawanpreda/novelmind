@@ -416,3 +416,18 @@ textarea.dev-body.editing:focus{border-color:var(--acc)}
 .cal-due{padding:6px 0;font-size:13px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .cal-due.overdue{color:#fbbf24}
 @media(max-width:780px){.cal-wrap{grid-template-columns:1fr}}
+
+/* ---- Trend Scout (ควรลงมือต่อ) ---- */
+.scout-card{margin-bottom:16px}
+.sc-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:6px}
+.sc-list{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}
+.sc-row{display:grid;grid-template-columns:28px 1fr 130px;gap:10px;align-items:center;padding:8px 10px;background:var(--bg);border:1px solid var(--line);border-radius:10px}
+.sc-rank{font-size:18px;font-weight:700;color:var(--acc);text-align:center}
+.sc-title{font-size:13.5px;font-weight:600}
+.sc-reasons{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.sc-tag{font-size:10.5px;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--muted)}
+.sc-score{display:flex;align-items:center;gap:7px}
+.sc-bar{flex:1;height:7px;background:var(--bg2);border-radius:4px;overflow:hidden}
+.sc-fill{height:100%;background:linear-gradient(90deg,#4dd0a0,#5b8cff);border-radius:4px}
+.sc-score b{font-size:13px;min-width:34px;text-align:right}
+@media(max-width:680px){.sc-row{grid-template-columns:24px 1fr 90px}}

@@ -540,6 +540,36 @@ async function loadNovels() {
   NOVEL_HEALTH = (health && health.map) || {};
   NOVEL_HSUM = (health && health.summary) || null;
   renderNovelList();
+  loadScout();
+}
+
+// ---- Trend Scout (จัดอันดับเรื่องควรลงมือต่อ) ----
+let SCOUT_OPEN = false;
+async function loadScout() {
+  const el = $("#scoutPanel");
+  if (!el) return;
+  const r = await api("/api/scout");
+  if (!r.ok || !r.rows || !r.rows.length) { el.innerHTML = ""; return; }
+  const top = r.rows.slice(0, SCOUT_OPEN ? 12 : 5);
+  const maxScore = r.rows[0].score || 100;
+  const cards = top.map((x, i) => `
+    <div class="sc-row">
+      <div class="sc-rank">${i + 1}</div>
+      <div class="sc-main">
+        <div class="sc-title">${x.recreated ? "" : "🆕 "}${esc(x.title)} <span class="meta">${esc(x.source)}${x.genre ? " · " + esc(x.genre) : ""}</span></div>
+        <div class="sc-reasons">${x.reasons.map(z => `<span class="sc-tag">${esc(z)}</span>`).join("")}</div>
+      </div>
+      <div class="sc-score">
+        <div class="sc-bar"><div class="sc-fill" style="width:${x.score / maxScore * 100}%"></div></div>
+        <b>${x.score}</b>
+      </div>
+    </div>`).join("");
+  el.innerHTML = `<div class="card scout-card">
+      <div class="sc-head"><b>🧭 ควรลงมือต่อ — จัดอันดับโอกาสตลาด</b>
+        <span class="meta">จาก ${r.total} เรื่อง · ฮิตต้นทาง + AI fit + หมวดมาแรง + ความสด</span></div>
+      <div class="sc-list">${cards}</div>
+      <button class="btn ghost sm" onclick="SCOUT_OPEN=!SCOUT_OPEN;loadScout()">${SCOUT_OPEN ? "ย่อ" : "ดูเพิ่ม (12 อันดับ)"}</button>
+    </div>`;
 }
 
 function novelRow(n) {
