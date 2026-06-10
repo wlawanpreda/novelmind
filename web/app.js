@@ -594,6 +594,7 @@ function renderNovelList() {
   const head = `<div class="head-actions" style="margin-bottom:14px">
       <button class="btn" onclick="runStage('scout')">🔍 Scout เรื่องใหม่</button>
       <button class="btn" onclick="runStage('analyze')">🧠 วิเคราะห์ทั้งหมด</button>
+      <button class="btn" onclick="runStage('continue')" title="เขียนตอนต่อให้เรื่องที่ยังไม่ถึงเป้า (ทีละน้อยกันงบบาน)">📖 เขียนต่อทุกเรื่อง</button>
       <button class="btn" onclick="runStage('trends')">📈 สรุปเทรนด์</button>
       <button class="btn" onclick="finishNovel('')" title="เติมปก+teaser ให้ทุกเรื่องที่ขาด">✅ เติมสินทรัพย์ทุกเรื่อง</button>
     </div>`

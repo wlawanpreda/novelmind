@@ -59,7 +59,7 @@ def _cfg_int(name, default):
 
 MIN_POOL = _cfg_int("ANSRE_MIN_POOL", 3)
 SCOUT_EVERY_HOURS = _cfg_int("ANSRE_SCOUT_EVERY_HOURS", 12)
-SCOUT_LIMIT = _cfg_int("ANSRE_SCOUT_LIMIT", 2)
+SCOUT_LIMIT = _cfg_int("ANSRE_SCOUT_LIMIT", 15)  # ดึงลึกพอให้ทะลุเรื่องที่ทำแล้ว → ได้เรื่องใหม่จริง
 LOOP_SLEEP = _cfg_int("ANSRE_LOOP_SLEEP", 1800)
 TEASER_DURATION = _cfg_int("ANSRE_TEASER_DURATION", 60)
 # ความลึกเป้าหมาย (จำนวนตอน/เรื่อง) + คุมงบ: เขียนต่อกี่ตอน/เรื่อง/รอบ และกี่เรื่อง/รอบ
