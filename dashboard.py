@@ -717,6 +717,28 @@ def export_pack_run(payload):
         return {"ok": False, "error": str(e)}
 
 
+def api_calendar():
+    import schedule_plan
+    return {"ok": True, "plan": schedule_plan.list_plan(SB),
+            "upcoming": schedule_plan.upcoming(SB)}
+
+
+def calendar_add(payload):
+    import schedule_plan
+    e = schedule_plan.add_entry(SB, payload)
+    return {"ok": bool(e), "entry": e} if e else {"ok": False, "error": "ต้องมีชื่อเรื่อง + วันที่"}
+
+
+def calendar_remove(payload):
+    import schedule_plan
+    return {"ok": schedule_plan.remove_entry(SB, payload.get("id"))}
+
+
+def calendar_status(payload):
+    import schedule_plan
+    return {"ok": schedule_plan.set_status(SB, payload.get("id"), payload.get("status", "done"))}
+
+
 def _chapter_path(title, ch):
     _, fm = _find_novel(title)
     base = _base_for(fm, title)
@@ -1211,6 +1233,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"enabled": RELOAD, "token": _reload_token()})
             if p == "/api/health/stories":
                 return self._send(200, api_health_stories())
+            if p == "/api/calendar":
+                return self._send(200, api_calendar())
             if p == "/api/audiobook":
                 qs = parse_qs(u.query)
                 return self._send(200, api_audiobook_status(qs.get("title", [""])[0]))
@@ -1304,6 +1328,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, audiobook_run(payload))
             if u.path == "/api/export":
                 return self._send(200, export_pack_run(payload))
+            if u.path == "/api/calendar/add":
+                return self._send(200, calendar_add(payload))
+            if u.path == "/api/calendar/remove":
+                return self._send(200, calendar_remove(payload))
+            if u.path == "/api/calendar/status":
+                return self._send(200, calendar_status(payload))
             if u.path == "/api/trailer":
                 return self._send(200, {"task": start_argv("Channel Trailer", ["trailer.py", "--clip", "5", "--limit", "6"])})
             if u.path == "/api/studio":

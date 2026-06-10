@@ -393,3 +393,26 @@ textarea.dev-body.editing:focus{border-color:var(--acc)}
 .bud-mark{position:absolute;top:-4px;transform:translateX(-50%);font-size:9px;color:var(--muted);border-left:1px dashed var(--muted);padding-left:2px;height:22px}
 .bud-mark.hard{color:#f87171;border-color:#f87171}
 .bud-legend{display:flex;justify-content:space-between;margin-top:10px;font-size:12.5px;color:var(--muted)}
+
+/* ---- Content Calendar (ปฏิทิน) ---- */
+.cal-wrap{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start}
+.cal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;font-size:16px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.cal-dow{text-align:center;font-size:11px;color:var(--muted);padding:4px 0;font-weight:600}
+.cal-cell{min-height:74px;background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:4px 5px;cursor:pointer;transition:border-color .12s}
+.cal-cell:hover{border-color:var(--acc)}
+.cal-cell.empty{background:transparent;border:none;cursor:default}
+.cal-cell.free:hover{background:var(--bg2)}
+.cal-cell.today{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc) inset}
+.cal-d{font-size:12px;color:var(--muted);margin-bottom:3px}
+.cal-cell.today .cal-d{color:var(--acc);font-weight:700}
+.cal-chip{font-size:10.5px;background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:2px 4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cal-chip.done{opacity:.5;text-decoration:line-through}
+.cal-chip:hover{border-color:#f87171}
+.cal-side .card{margin-bottom:12px}
+.cal-form{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.cal-form input,.cal-form select{background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:8px;padding:9px 10px;font-family:inherit;font-size:13px}
+.cal-due-list{list-style:none;padding:0;margin:8px 0 14px}
+.cal-due{padding:6px 0;font-size:13px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cal-due.overdue{color:#fbbf24}
+@media(max-width:780px){.cal-wrap{grid-template-columns:1fr}}

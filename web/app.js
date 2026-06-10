@@ -10,6 +10,7 @@ const VIEW_META = {
   outputs: ["ผลผลิต", "ปก หนังสือเสียง และวิดีโอ teaser"],
   kanban: ["บอร์ดผลิต", "ทุกเรื่องเรียงตามขั้น: รอเขียน → เขียนแล้ว → มีสื่อ → พร้อมปล่อย → เผยแพร่"],
   analytics: ["แนวโน้ม", "ผลผลิตและต้นทุนตามช่วงเวลา 30 วัน"],
+  calendar: ["ปฏิทิน", "วางแผนปล่อยคอนเทนต์ · ดูวันว่าง · รายการที่ถึงกำหนด"],
   usage: ["ค่าใช้จ่าย", "ติดตามการใช้ token และต้นทุน"],
   config: ["LLM Routing", "งานไหนวิ่งไป Gemini หรือ Mac mini"],
   health: ["สุขภาพระบบ", "ตรวจว่าทุกอย่างพร้อมใช้งาน"],
@@ -1155,6 +1156,97 @@ async function loadAnalytics() {
     <div class="meta" style="margin-top:8px">📈 แท่ง = ปริมาณต่อวัน · ชี้เมาส์เพื่อดูวันที่/ค่า · ผลผลิตนับจากเวลาแก้ไขไฟล์</div>`;
 }
 
+// ---- Content Calendar (ปฏิทินคอนเทนต์) ----
+let CAL_MONTH = null; // {y, m} 0-based month
+const PLAT_ICON = { youtube: "▶️", tiktok: "🎵", novel: "📚", spotify: "🎧", other: "📌" };
+async function loadCalendar() {
+  const el = $("#calendarPanel");
+  if (!el) return;
+  const r = await api("/api/calendar");
+  const plan = (r && r.plan) || [];
+  const up = (r && r.upcoming) || { overdue: [], soon: [], today: "" };
+  const now = up.today ? new Date(up.today + "T00:00:00") : new Date();
+  if (!CAL_MONTH) CAL_MONTH = { y: now.getFullYear(), m: now.getMonth() };
+  const { y, m } = CAL_MONTH;
+  const todayStr = up.today;
+  // group entries by date
+  const byDate = {};
+  plan.forEach(e => (byDate[e.date] = byDate[e.date] || []).push(e));
+  // build month grid
+  const first = new Date(y, m, 1), startDow = first.getDay();
+  const days = new Date(y, m + 1, 0).getDate();
+  const monthName = first.toLocaleDateString("th-TH", { month: "long", year: "numeric" });
+  let cells = "";
+  for (let i = 0; i < startDow; i++) cells += `<div class="cal-cell empty"></div>`;
+  for (let d = 1; d <= days; d++) {
+    const ds = `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+    const items = byDate[ds] || [];
+    const isToday = ds === todayStr;
+    const chips = items.map(e => `<div class="cal-chip ${e.status === 'done' ? 'done' : ''}" title="${esc(e.title)} (${esc(e.platform)})" onclick="calRemove(${e.id})">${PLAT_ICON[e.platform] || "📌"} ${esc(e.title.slice(0, 10))}</div>`).join("");
+    cells += `<div class="cal-cell ${isToday ? 'today' : ''} ${items.length ? '' : 'free'}" data-d="${ds}" onclick="calPick('${ds}')">
+      <div class="cal-d">${d}</div>${chips}</div>`;
+  }
+  const dows = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"].map(x => `<div class="cal-dow">${x}</div>`).join("");
+  const dueList = up.overdue.map(e => `<li class="cal-due overdue">⚠️ <b>${esc(e.date)}</b> ${esc(e.title)} <span class="meta">(${esc(e.platform)})</span> <button class="btn ghost sm" onclick="calDone(${e.id})">✓ ปล่อยแล้ว</button></li>`).join("");
+  const soonList = up.soon.map(e => `<li class="cal-due">📅 <b>${esc(e.date)}</b> ${esc(e.title)} <span class="meta">(${esc(e.platform)})</span> <button class="btn ghost sm" onclick="calDone(${e.id})">✓</button></li>`).join("");
+  const opts = (typeof STUDIO_PROJECTS !== "undefined" ? STUDIO_PROJECTS : []).map(p => `<option>${esc(p)}</option>`).join("");
+  el.innerHTML = `
+    <div class="cal-wrap">
+      <div class="card cal-cal">
+        <div class="cal-head">
+          <button class="btn ghost sm" onclick="calMonth(-1)">‹</button>
+          <b>${monthName}</b>
+          <button class="btn ghost sm" onclick="calMonth(1)">›</button>
+        </div>
+        <div class="cal-grid">${dows}${cells}</div>
+        <div class="meta" style="margin-top:8px">คลิกวันว่างเพื่อเพิ่มแผน · คลิกชิปเพื่อลบ</div>
+      </div>
+      <div class="cal-side">
+        <div class="card">
+          <b>➕ เพิ่มแผนปล่อย</b>
+          <div class="cal-form">
+            <input id="cal-title" list="cal-stories" placeholder="ชื่อเรื่อง">
+            <datalist id="cal-stories">${opts}</datalist>
+            <input id="cal-date" type="date" value="${todayStr}">
+            <select id="cal-plat"><option value="youtube">▶️ YouTube</option><option value="tiktok">🎵 TikTok</option><option value="novel">📚 นิยาย</option><option value="spotify">🎧 Spotify</option><option value="other">📌 อื่นๆ</option></select>
+            <input id="cal-note" placeholder="หมายเหตุ (ไม่บังคับ)">
+            <button class="btn primary sm" onclick="calAdd()">เพิ่มลงปฏิทิน</button>
+          </div>
+        </div>
+        <div class="card">
+          <b>⚠️ เลยกำหนด (${up.overdue.length})</b>
+          <ul class="cal-due-list">${dueList || '<li class="meta">ไม่มี</li>'}</ul>
+          <b>📅 ใกล้ถึง 14 วัน (${up.soon.length})</b>
+          <ul class="cal-due-list">${soonList || '<li class="meta">ยังไม่มีแผน</li>'}</ul>
+        </div>
+      </div>
+    </div>`;
+}
+function calMonth(d) {
+  if (!CAL_MONTH) return;
+  let m = CAL_MONTH.m + d, y = CAL_MONTH.y;
+  if (m < 0) { m = 11; y--; } if (m > 11) { m = 0; y++; }
+  CAL_MONTH = { y, m };
+  loadCalendar();
+}
+function calPick(ds) { const f = $("#cal-date"); if (f) { f.value = ds; f.focus(); } }
+async function calAdd() {
+  const title = $("#cal-title").value.trim(), date = $("#cal-date").value, platform = $("#cal-plat").value, note = $("#cal-note").value;
+  if (!title || !date) return toast("ใส่ชื่อเรื่อง + วันที่", "bad");
+  const r = await api("/api/calendar/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, date, platform, note }) });
+  if (r.ok) { toast("เพิ่มแผนแล้ว ✅", "good"); loadCalendar(); }
+  else toast(r.error || "เพิ่มไม่สำเร็จ", "bad");
+}
+async function calRemove(id) {
+  if (!confirm("ลบแผนนี้?")) return;
+  const r = await api("/api/calendar/remove", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+  if (r.ok) { toast("ลบแล้ว", "good"); loadCalendar(); }
+}
+async function calDone(id) {
+  const r = await api("/api/calendar/status", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status: "done" }) });
+  if (r.ok) { toast("ทำเครื่องหมายปล่อยแล้ว ✅", "good"); loadCalendar(); }
+}
+
 // ---- Chapter Reader (อ่านเนื้อบทในแอป) ----
 const READER = { title: "", ch: 1, total: 1 };
 async function openReader(title, ch) {
@@ -1217,7 +1309,7 @@ async function restoreVersion(vname) {
 
 function loadView(v) {
   ({ overview: loadOverview, ideas: loadIdeas, novels: loadNovels, studio: loadStudio,
-     kanban: loadKanban, analytics: loadAnalytics, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
+     kanban: loadKanban, analytics: loadAnalytics, calendar: loadCalendar, outputs: loadOutputs, usage: loadUsage, config: loadConfig, health: loadHealth }[v] || (() => {}))();
 }
 function refreshAll() {
   const active = $(".nav a.active").dataset.view;
