@@ -116,8 +116,24 @@ _HYBRID_DEFAULT = {
 # Cost / token tracking (Phase 3) — กัน Gemini ค่าบาน + ดู usage ย้อนหลังได้
 # ---------------------------------------------------------------------------
 USAGE_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), "SecondBrain", "llm_usage.jsonl")
-# เพดานค่าใช้จ่าย Gemini ต่อวัน (USD); 0 = ไม่จำกัด. เกินแล้วจะ reroute ไป local อัตโนมัติ
+# เพดานค่าใช้จ่าย Gemini ต่อวัน (USD); 0 = ไม่จำกัด. เกินแล้วจะ reroute ไป local อัตโนมัติ (soft)
 DAILY_USD_CAP = float(os.environ.get("ANSRE_DAILY_USD_CAP", "0") or 0)
+# เพดานแข็ง (hard) ต่อวัน (USD); 0 = ไม่จำกัด. เกินแล้ว pipeline หยุดทั้งรอบ + แจ้งเตือน
+DAILY_HARD_CAP = float(os.environ.get("ANSRE_DAILY_HARD_CAP", "0") or 0)
+
+
+def budget_status() -> dict:
+    """สถานะงบวันนี้: ใช้ไปเท่าไร · เพดาน soft/hard · แตะเพดานหรือยัง"""
+    spent = today_spend_usd()
+    return {
+        "spent": round(spent, 4),
+        "soft_cap": DAILY_USD_CAP,
+        "hard_cap": DAILY_HARD_CAP,
+        "over_soft": bool(DAILY_USD_CAP and spent >= DAILY_USD_CAP),
+        "over_hard": bool(DAILY_HARD_CAP and spent >= DAILY_HARD_CAP),
+        "pct_hard": round(spent / DAILY_HARD_CAP * 100, 1) if DAILY_HARD_CAP else None,
+        "pct_soft": round(spent / DAILY_USD_CAP * 100, 1) if DAILY_USD_CAP else None,
+    }
 
 # ราคาโดยประมาณ (USD ต่อ 1M tokens) = (input, output) — ปรับให้ตรงบิลจริงได้
 PRICING = {

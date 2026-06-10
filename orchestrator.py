@@ -176,6 +176,28 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     state = load_state()
     log("######## ORCHESTRATOR CYCLE START ########")
 
+    # 0) Budget hard-cap guard: ถ้าใช้เกินเพดานแข็งวันนี้ → หยุดทั้งรอบ + แจ้งเตือน (ครั้งเดียว/วัน)
+    if not dry:
+        try:
+            from llm_provider import budget_status
+            bs = budget_status()
+            if bs["over_hard"]:
+                today = time.strftime("%Y-%m-%d")
+                log(f"[budget] ⛔ แตะเพดานแข็ง ${bs['hard_cap']:.2f} (ใช้ไป ${bs['spent']:.2f}) — หยุด pipeline รอบนี้")
+                if state.get("budget_paused_date") != today:
+                    state["budget_paused_date"] = today
+                    save_state(state)
+                    try:
+                        from notify import notify as _notify
+                        _notify(f"ใช้ไป ${bs['spent']:.2f} / เพดานแข็ง ${bs['hard_cap']:.2f} วันนี้ — "
+                                f"หยุด pipeline อัตโนมัติเพื่อกันบิลบาน (เริ่มใหม่พรุ่งนี้ หรือปรับเพดานใน .env)",
+                                "⛔ แตะเพดานงบรายวัน — หยุดอัตโนมัติ", "warn")
+                    except Exception:
+                        pass
+                return
+        except Exception:
+            pass
+
     # 1) ตัดสินใจ scout: เฉพาะเมื่อ pool ร่อยหรอ และเว้นระยะพอ (backpressure)
     if do_scout:
         pending = count_status(["Scouted", "Analyzed"])

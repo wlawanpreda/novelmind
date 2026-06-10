@@ -215,8 +215,10 @@
             <select id="set-mode">
               <option value="premium">premium</option><option value="master">master</option><option value="draft">draft</option>
             </select></label>
-          <label>เพดานค่าใช้จ่าย/วัน (USD, 0=ไม่จำกัด)
+          <label>เพดาน soft/วัน (USD, 0=ไม่จำกัด) — เกินแล้ววิ่ง local ฟรี
             <input id="set-cap" type="number" step="0.5" min="0"></label>
+          <label>เพดานแข็ง (hard)/วัน (USD, 0=ไม่จำกัด) — เกินแล้วหยุด pipeline + แจ้งเตือน
+            <input id="set-hardcap" type="number" step="0.5" min="0"></label>
           <button class="btn primary" onclick="saveSettings()">💾 บันทึก</button>
         </div></div>
       <div class="panel"><h2>🧭 ตารางเส้นทาง LLM (role → backend) <span class="line"></span></h2>

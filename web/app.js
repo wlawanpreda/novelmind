@@ -777,12 +777,32 @@ async function loadUsage() {
   loadCostAdvice();
 }
 
+function budgetBar(b) {
+  if (!b) return "";
+  const soft = b.soft_cap || 0, hard = b.hard_cap || 0;
+  const ceil = hard || soft || Math.max(b.spent * 1.5, 1);
+  const pct = Math.min(b.spent / ceil * 100, 100);
+  const color = b.over_hard ? "#f87171" : b.over_soft ? "#fbbf24" : "#34d399";
+  const marks = [];
+  if (soft && ceil) marks.push(`<span class="bud-mark" style="left:${Math.min(soft / ceil * 100, 100)}%" title="soft cap $${soft}">soft</span>`);
+  if (hard && ceil) marks.push(`<span class="bud-mark hard" style="left:${Math.min(hard / ceil * 100, 100)}%" title="hard cap $${hard}">hard</span>`);
+  const status = b.over_hard ? `⛔ แตะเพดานแข็ง — pipeline หยุดอัตโนมัติ`
+    : b.over_soft ? `🟡 เกิน soft cap — งานใหม่วิ่ง local (ฟรี)` : `🟢 อยู่ในงบ`;
+  return `<div class="card bud-card">
+    <div class="bud-head"><b>🛡️ งบวันนี้</b> <span class="meta">${status}</span></div>
+    <div class="bud-track"><div class="bud-fill" style="width:${pct}%;background:${color}"></div>${marks.join("")}</div>
+    <div class="bud-legend"><span>ใช้ไป <b>$${b.spent.toFixed(3)}</b></span>
+      <span>soft: ${soft ? "$" + soft : "—"} · hard: ${hard ? "$" + hard : "—"}</span></div>
+    ${!hard ? `<div class="meta" style="margin-top:6px">ตั้งเพดานแข็งได้ที่ LLM Routing (ANSRE_DAILY_HARD_CAP) — ถึงแล้ว pipeline หยุดเอง + แจ้ง Discord</div>` : ""}
+  </div>`;
+}
 async function loadCostAdvice() {
   const el = $("#costAdvice");
   if (!el) return;
   const a = await api("/api/cost/advice");
+  const bud = budgetBar(a && a.budget);
   if (!a.ok || !a.advice || !a.advice.length) {
-    el.innerHTML = `<div class="card cost-advice"><b>💡 คำแนะนำลดต้นทุน</b><div class="meta" style="margin-top:8px">ต้นทุนสมดุลดีแล้ว — ไม่มีคำแนะนำเร่งด่วน (หรือยังไม่มีข้อมูลพอ)</div></div>`;
+    el.innerHTML = bud + `<div class="card cost-advice"><b>💡 คำแนะนำลดต้นทุน</b><div class="meta" style="margin-top:8px">ต้นทุนสมดุลดีแล้ว — ไม่มีคำแนะนำเร่งด่วน (หรือยังไม่มีข้อมูลพอ)</div></div>`;
     return;
   }
   const items = a.advice.map(x => `
@@ -791,7 +811,7 @@ async function loadCostAdvice() {
       <div class="ca-save">${x.save ? `~$${x.save.toFixed(2)}` : ""}</div>
       <button class="btn sm primary" data-k="${esc(x.env_key)}" data-v="${esc(x.env_val)}" data-l="${esc(x.label)}" onclick="applyCostAdvice(this)">ปรับ</button>
     </div>`).join("");
-  el.innerHTML = `<div class="card cost-advice">
+  el.innerHTML = bud + `<div class="card cost-advice">
       <div class="ca-head"><b>💡 คำแนะนำลดต้นทุน</b>
         <span class="ca-total">ประหยัดได้ราว <b>$${a.total_save_est.toFixed(2)}</b> / 14 วัน</span></div>
       <div class="ca-list">${items}</div>
@@ -826,11 +846,12 @@ async function loadConfig() {
     <div class="card stat flat"><div class="k">🖥️ Local model</div><div class="v" style="font-size:15px">${esc(c.local_model || "—")}</div></div>
     <div class="card stat flat"><div class="k">🎧 TTS</div><div class="v" style="font-size:16px">${esc(c.tts_engine || "—")}</div></div>
     <div class="card stat flat"><div class="k">✍️ Writing mode</div><div class="v" style="font-size:20px">${c.writing_mode}</div></div>
-    <div class="card stat flat"><div class="k">🧱 เพดาน/วัน</div><div class="v" style="font-size:20px">$${c.daily_cap}</div></div>`;
+    <div class="card stat flat"><div class="k">🧱 soft/วัน</div><div class="v" style="font-size:20px">$${c.daily_cap}</div></div>
+    <div class="card stat flat"><div class="k">⛔ hard/วัน</div><div class="v" style="font-size:20px">$${c.hard_cap || "0"}</div></div>`;
   $("#routingChips").innerHTML = c.routing.map(r =>
     `<div class="route"><b>${r.role}</b><span class="be ${r.backend}">${r.backend}</span></div>`).join("");
   // เติมค่าปัจจุบันลงในฟอร์มตั้งค่า
-  if ($("#set-backend")) { $("#set-backend").value = c.backend; $("#set-mode").value = c.writing_mode; $("#set-cap").value = c.daily_cap; }
+  if ($("#set-backend")) { $("#set-backend").value = c.backend; $("#set-mode").value = c.writing_mode; $("#set-cap").value = c.daily_cap; if ($("#set-hardcap")) $("#set-hardcap").value = c.hard_cap || "0"; }
 }
 
 async function saveSettings() {
@@ -838,6 +859,7 @@ async function saveSettings() {
     LLM_BACKEND: $("#set-backend").value,
     WRITING_MODE: $("#set-mode").value,
     ANSRE_DAILY_USD_CAP: $("#set-cap").value || "0",
+    ANSRE_DAILY_HARD_CAP: ($("#set-hardcap") && $("#set-hardcap").value) || "0",
   };
   const r = await api("/api/env", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (r.ok) { toast("บันทึกแล้ว: " + r.updated.join(", "), "good"); loadConfig(); }

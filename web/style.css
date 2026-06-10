@@ -384,3 +384,12 @@ textarea.dev-body.editing:focus{border-color:var(--acc)}
 .ab-markers{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-size:12.5px;white-space:pre-wrap;margin:8px 0;max-height:180px;overflow:auto}
 .ab-files{list-style:none;padding:0;margin:6px 0}
 .ab-files li{padding:4px 0;font-size:13px;border-bottom:1px solid var(--line)}
+
+/* ---- Budget bar (เพดานงบ) ---- */
+.bud-card{margin-bottom:12px}
+.bud-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.bud-track{position:relative;height:14px;background:var(--bg);border:1px solid var(--line);border-radius:8px;overflow:visible}
+.bud-fill{height:100%;border-radius:7px;transition:width .3s}
+.bud-mark{position:absolute;top:-4px;transform:translateX(-50%);font-size:9px;color:var(--muted);border-left:1px dashed var(--muted);padding-left:2px;height:22px}
+.bud-mark.hard{color:#f87171;border-color:#f87171}
+.bud-legend{display:flex;justify-content:space-between;margin-top:10px;font-size:12.5px;color:var(--muted)}

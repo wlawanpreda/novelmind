@@ -297,8 +297,15 @@ def api_cost_advice():
             })
     advice.sort(key=lambda x: x.get("save", 0), reverse=True)
     total_save = round(sum(a.get("save", 0) for a in advice if a["type"] == "move_local"), 2)
+    budget = None
+    try:
+        import llm_provider
+        budget = llm_provider.budget_status()
+    except Exception:
+        pass
     return {"ok": True, "advice": advice, "total_save_est": total_save,
-            "today": u["today"], "total14": round(sum(v for _, v in u["by_date"]), 3)}
+            "today": u["today"], "total14": round(sum(v for _, v in u["by_date"]), 3),
+            "budget": budget}
 
 
 def api_analytics(days=30):
@@ -454,6 +461,7 @@ def api_config():
             "local_model": os.environ.get("LOCAL_LLM_MODEL", ""),
             "writing_mode": os.environ.get("WRITING_MODE", "premium"),
             "daily_cap": os.environ.get("ANSRE_DAILY_USD_CAP", "0"),
+            "hard_cap": os.environ.get("ANSRE_DAILY_HARD_CAP", "0"),
             "image_backend": os.environ.get("IMAGE_BACKEND", "gemini"),
             "image_url": os.environ.get("LOCAL_IMAGE_BASE_URL", ""),
             "image_model": os.environ.get("LOCAL_IMAGE_MODEL", ""),
@@ -978,7 +986,7 @@ def _worker_running():
     return subprocess.run(["launchctl", "list", LAUNCH_LABEL], capture_output=True).returncode == 0
 
 
-EDITABLE_ENV = {"LLM_BACKEND", "WRITING_MODE", "ANSRE_DAILY_USD_CAP", "ANSRE_CALL_GAP",
+EDITABLE_ENV = {"LLM_BACKEND", "WRITING_MODE", "ANSRE_DAILY_USD_CAP", "ANSRE_DAILY_HARD_CAP", "ANSRE_CALL_GAP",
                 "LOCAL_LLM_BASE_URL", "LOCAL_LLM_MODEL", "TTS_ENGINE",
                 "PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL"} | {
                 f"LLM_ROLE_{r.upper()}" for r in
