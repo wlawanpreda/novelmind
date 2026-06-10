@@ -12,7 +12,7 @@ import re
 import sys
 import glob
 
-from llm_provider import generate_json
+from llm_provider import generate_json, generate
 import image_provider
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -64,10 +64,30 @@ def plan_scenes(base, n, count=5):
   ]
 }}
 (ฉากต้องสื่อเหตุการณ์จริงในบท, {count} ฉากพอดี, PG-13, ไม่มีตัวอักษรในภาพ, ภาษาอังกฤษในช่อง prompt)"""
-    data = generate_json(prompt, role="visual")
-    style = data.get("style", "cinematic, dramatic lighting")
-    scenes = [s.get("prompt", "") for s in data.get("scenes", []) if s.get("prompt")]
-    # ผนวก style เข้าทุก prompt (กันลืม) + เลี่ยงตัวอักษร
+    # 1) ลอง JSON (retry กัน gateway timeout/throttle) — ไม่ให้ทั้ง batch ล่ม
+    style, scenes = "cinematic, dramatic lighting, film still", []
+    for _ in range(3):
+        try:
+            data = generate_json(prompt, role="visual")
+            style = data.get("style") or style
+            scenes = [s.get("prompt", "") for s in data.get("scenes", []) if s.get("prompt")]
+            if scenes:
+                break
+        except Exception:
+            continue
+    # 2) fallback: ขอเป็นข้อความบรรทัดละฉาก (ไม่ต้อง JSON) แล้วแปลงเป็น prompt
+    if not scenes:
+        try:
+            txt = generate(
+                f"""อ่านบทนี้แล้วบรรยายภาพ {count} ฉากสำคัญเรียงตามเรื่อง เป็นภาษาอังกฤษ
+บรรทัดละ 1 ฉาก (detailed cinematic image prompt: who/what/where/mood/lighting) ห้ามมีเลขนำหน้า:
+{chapter[:6000]}""", role="visual")
+            scenes = [re.sub(r"^\s*[\d.\-•*]+\s*", "", l).strip()
+                      for l in txt.splitlines() if len(l.strip()) > 20][:count]
+        except Exception:
+            scenes = []
+    if not scenes:
+        return None
     out = []
     for p in scenes[:count]:
         full = p if style.lower() in p.lower() else f"{p}, {style}"
