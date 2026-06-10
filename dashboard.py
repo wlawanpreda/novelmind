@@ -238,18 +238,38 @@ def api_publish_status():
                   glob.glob(os.path.join(ap, "Teaser_Output", "*.mp4")))
     plat = {p: os.environ.get(p, "0").lower() in ("1", "true", "yes", "on")
             for p in ("PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL")}
-    published = 0
+    published, links = 0, []
     try:
         import publisher
         led = publisher.load_ledger(SB)
-        for e in led.values():
-            if any(str(v).startswith("http") or str(v) in ("queued", "ok", "uploaded")
-                   for v in (e.values() if isinstance(e, dict) else [])):
+        for k, e in led.items():
+            vals = e.values() if isinstance(e, dict) else []
+            if any(str(v).startswith("http") or str(v) in ("queued", "ok", "uploaded") for v in vals):
                 published += 1
+            if isinstance(e, dict):
+                for pf, v in e.items():
+                    if str(v).startswith("http"):
+                        links.append({"title": k, "platform": pf, "url": v})
     except Exception:
         pass
+
+    # ตรวจความพร้อม credential ต่อแพลตฟอร์ม → ready / needs_token / disabled
+    yt_token = os.environ.get("YOUTUBE_TOKEN_FILE", os.path.join(ROOT, "youtube_token.json"))
+    creds = {
+        "PUBLISH_YOUTUBE": {"enabled": plat["PUBLISH_YOUTUBE"], "has_cred": os.path.exists(yt_token),
+                            "cred_hint": "วางไฟล์ OAuth ที่ YOUTUBE_TOKEN_FILE (มี refresh_token)"},
+        "PUBLISH_TIKTOK": {"enabled": plat["PUBLISH_TIKTOK"], "has_cred": bool(os.environ.get("TIKTOK_ACCESS_TOKEN")),
+                           "cred_hint": "ตั้ง TIKTOK_ACCESS_TOKEN ใน .env"},
+        "PUBLISH_NOVEL": {"enabled": plat["PUBLISH_NOVEL"], "has_cred": True,
+                          "cred_hint": "บันทึกไฟล์พร้อมลงเว็บนิยาย (ไม่ต้องใช้ token)"},
+    }
+    for c in creds.values():
+        c["state"] = "ready" if (c["enabled"] and c["has_cred"]) else \
+                     "needs_token" if c["enabled"] else "disabled"
+    ready = any(c["state"] == "ready" for c in creds.values())
     return {"ok": True, "teasers": len(teasers), "platforms": plat,
-            "any_enabled": any(plat.values()), "published": published}
+            "any_enabled": any(plat.values()), "published": published,
+            "creds": creds, "ready": ready, "links": links[:20]}
 
 
 def publish_run(payload):

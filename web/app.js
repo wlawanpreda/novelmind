@@ -694,15 +694,34 @@ async function loadPublish() {
   if (!el) return;
   const p = await api("/api/publish/status");
   if (!p.ok) { el.innerHTML = ""; return; }
-  const tog = (k, lbl) => `<button class="btn sm ${p.platforms[k] ? "primary" : "ghost"}" data-k="${k}" onclick="togglePublish(this,'${k}')">${p.platforms[k] ? "✅" : "⚪"} ${lbl}</button>`;
+  const SICON = { ready: "🟢", needs_token: "🟡", disabled: "⚪" };
+  const STXT = { ready: "พร้อมปล่อยจริง", needs_token: "เปิดแล้วแต่ยังไม่มี credential", disabled: "ปิดอยู่" };
+  const creds = p.creds || {};
+  const tog = (k, lbl) => {
+    const c = creds[k] || { state: p.platforms[k] ? "needs_token" : "disabled" };
+    return `<div class="pp-plat">
+      <button class="btn sm ${p.platforms[k] ? "primary" : "ghost"}" onclick="togglePublish(this,'${k}')">${p.platforms[k] ? "✅" : "⚪"} ${lbl}</button>
+      <span class="pp-state ${c.state}" title="${c.state === 'needs_token' ? esc(c.cred_hint || '') : STXT[c.state]}">${SICON[c.state]} ${STXT[c.state]}</span>
+    </div>`;
+  };
+  const links = (p.links || []).map(l => `<li>${l.platform === 'youtube' ? '▶️' : l.platform === 'tiktok' ? '🎵' : '🔗'} <a href="${esc(l.url)}" target="_blank">${esc(l.title)}</a></li>`).join("");
+  const canReal = p.ready;
   el.innerHTML = `<div class="card publish-panel">
       <div class="pp-head"><b>📤 เผยแพร่</b>
         <span class="meta">🎬 ${p.teasers} teaser พร้อม · เผยแพร่แล้ว ${p.published}</span></div>
       <div class="pp-platforms">${tog("PUBLISH_YOUTUBE", "YouTube")}${tog("PUBLISH_TIKTOK", "TikTok")}${tog("PUBLISH_NOVEL", "คิวนิยาย")}</div>
       <div class="pp-actions">
-        <button class="btn primary" onclick="runPublish()">${p.any_enabled ? "📤 เผยแพร่ทั้งหมด" : "🧪 ทดลอง (dry-run)"}</button>
-        <span class="meta">${p.any_enabled ? "" : "ยังไม่เปิดแพลตฟอร์ม — กดเพื่อทดสอบ · ต้องใส่ credential (ดู PUBLISHING.md)"}</span>
+        <button class="btn ${canReal ? "primary" : "ghost"}" onclick="runPublish(${canReal})">${canReal ? "📤 เผยแพร่จริง" : "🧪 ทดลอง (dry-run)"}</button>
+        ${canReal ? `<button class="btn ghost sm" onclick="runPublish(false)">🧪 ทดลองก่อน (dry-run)</button>` : ""}
+        <span class="meta">${canReal ? "มีแพลตฟอร์มพร้อม — กดเพื่ออัปโหลดจริง" : "ยังไม่มีแพลตฟอร์มพร้อม credential — กดทดลองได้ปลอดภัย"}</span>
       </div>
+      ${!canReal ? `<details class="pp-setup"><summary>⚙️ วิธีเปิดเผยแพร่จริง</summary>
+        <ol class="pp-guide">
+          <li><b>YouTube:</b> เปิด PUBLISH_YOUTUBE=1 + วางไฟล์ OAuth ที่ <code>youtube_token.json</code> (มี refresh_token) — ดู PUBLISHING.md</li>
+          <li><b>TikTok:</b> เปิด PUBLISH_TIKTOK=1 + ตั้ง <code>TIKTOK_ACCESS_TOKEN</code> ใน .env</li>
+          <li><b>นิยาย:</b> เปิด PUBLISH_NOVEL=1 — เตรียมไฟล์พร้อมลงเว็บ (ไม่ต้องใช้ token)</li>
+        </ol></details>` : ""}
+      ${links ? `<div class="pp-links"><b>🔗 เผยแพร่แล้ว</b><ul>${links}</ul></div>` : ""}
     </div>`;
 }
 async function togglePublish(btn, key) {
@@ -712,12 +731,16 @@ async function togglePublish(btn, key) {
   toast(`${key} → ${on ? "ปิด" : "เปิด"}`, "good");
   loadPublish();
 }
-async function runPublish() {
-  if (!confirm("เริ่มเผยแพร่ teaser ทั้งหมด?\n(ถ้ายังไม่เปิดแพลตฟอร์ม/ไม่มี credential จะเป็น dry-run ปลอดภัย)")) return;
-  const r = await api("/api/publish/run", { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+async function runPublish(real) {
+  const msg = real ? "📤 เผยแพร่จริง — อัปโหลด teaser ทั้งหมดขึ้นแพลตฟอร์มที่พร้อม?\n(การอัปโหลดจริงย้อนกลับไม่ได้)"
+    : "🧪 ทดลอง (dry-run) — จำลองการเผยแพร่ ไม่อัปโหลดจริง?";
+  if (!confirm(msg)) return;
+  const body = real ? "{}" : JSON.stringify({ dry: true });
+  const r = await api("/api/publish/run", { method: "POST", headers: { "Content-Type": "application/json" }, body });
   if (r.error) return toast(r.error, "bad");
-  toast(r.dry ? "เริ่ม dry-run 🧪" : "เริ่มเผยแพร่ 📤");
-  openDrawer(r.task, "เผยแพร่" + (r.dry ? " (dry-run)" : ""));
+  toast(r.dry ? "เริ่ม dry-run 🧪" : "เริ่มเผยแพร่จริง 📤", r.dry ? "info" : "good");
+  openDrawer(r.task, "เผยแพร่" + (r.dry ? " (dry-run)" : " (จริง)"));
+  setTimeout(loadPublish, 4000);
 }
 
 async function loadOutputs() {
