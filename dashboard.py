@@ -819,6 +819,84 @@ def calendar_status(payload):
     return {"ok": schedule_plan.set_status(SB, payload.get("id"), payload.get("status", "done"))}
 
 
+def _heuristic_schedule(cands, today, per_week):
+    """ตารางปล่อยแบบกฎ: เริ่มพรุ่งนี้ เว้นจังหวะตาม per_week · podcast→YouTube, teaser→TikTok สลับ"""
+    gap = max(1, round(7 / max(per_week, 1)))
+    d0 = datetime.strptime(today, "%Y-%m-%d")
+    out = []
+    for i, c in enumerate(cands):
+        a = c.get("assets", {})
+        plat = "tiktok" if (a.get("teaser") and i % 3 == 2) else "youtube"
+        out.append({"title": c["title"],
+                    "date": (d0 + timedelta(days=1 + i * gap)).strftime("%Y-%m-%d"),
+                    "platform": plat,
+                    "note": f"AI: fit {c.get('fit', '?')}"})
+    return out
+
+
+def _ai_schedule(cands, today, per_week):
+    """ให้ AI จัดตารางปล่อย — คืน list entry หรือ None ถ้าพลาด"""
+    try:
+        import llm_provider
+        lines = "\n".join(
+            f"- {c['title']} (fit {c.get('fit', '?')}/10, สื่อ: "
+            f"{'ปก' if c.get('assets', {}).get('cover') else ''}"
+            f"{'+เสียง' if c.get('assets', {}).get('audio') else ''}"
+            f"{'+teaser' if c.get('assets', {}).get('teaser') else ''})"
+            for c in cands)
+        prompt = f"""คุณคือผู้จัดการคอนเทนต์ของช่องนิยายเสียง วางแผนตารางปล่อยให้เหมาะสม
+วันนี้คือ {today}. เรื่องที่พร้อมปล่อย (ยังไม่ได้วางแผน):
+{lines}
+
+จัดตารางปล่อย ~{per_week} เรื่อง/สัปดาห์ เริ่มจากพรุ่งนี้ เว้นจังหวะสม่ำเสมอ
+เรียงเรื่องคะแนน fit สูงให้ปล่อยก่อน · เลือกแพลตฟอร์มให้เหมาะ (youtube=คลิปยาว/หนังสือเสียง, tiktok=สั้น)
+ตอบ JSON เท่านั้น:
+{{"plan":[{{"title":"ชื่อเรื่องตรงตามรายการ","date":"YYYY-MM-DD","platform":"youtube|tiktok","note":"เหตุผลสั้นๆ ว่าทำไมปล่อยวันนี้/แพลตฟอร์มนี้"}}]}}"""
+        data = llm_provider.generate_json(prompt, role="researcher")
+        plan = data.get("plan", []) if isinstance(data, dict) else []
+        valid = [e for e in plan if e.get("title") and re.match(r"\d{4}-\d{2}-\d{2}", str(e.get("date", "")))]
+        return valid or None
+    except Exception:
+        return None
+
+
+def calendar_autoplan(payload):
+    """🤖 AI วางแผนปล่อยอัตโนมัติจากเรื่องที่พร้อม (ยังไม่ได้วางแผน)"""
+    import schedule_plan
+    per_week = int(payload.get("per_week", 3) or 3)
+    kb = api_kanban()
+    cols = kb.get("columns", {})
+    cands = []
+    for col in ("ready", "assets"):
+        for c in cols.get(col, []):
+            cands.append({"title": c["title"], "fit": c.get("fit", ""), "assets": c.get("assets", {})})
+    planned = {e.get("title") for e in schedule_plan.list_plan(SB)}
+    cands = [c for c in cands if c["title"] not in planned]
+    if not cands:
+        return {"ok": False, "error": "ไม่มีเรื่องพร้อมปล่อยที่ยังไม่ได้วางแผน (ผลิตสื่อให้ครบก่อน)"}
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    plan = _ai_schedule(cands, today, per_week)
+    used_ai = bool(plan)
+    if not plan:
+        plan = _heuristic_schedule(cands, today, per_week)
+    # จับคู่ชื่อกับ candidate จริง (กัน AI พิมพ์ชื่อเพี้ยน) + กรองวันที่อดีต
+    titles = {c["title"] for c in cands}
+    added = []
+    for e in plan:
+        t = e.get("title", "")
+        if t not in titles:  # match ยืดหยุ่น
+            t = next((x for x in titles if x in e.get("title", "") or e.get("title", "") in x), t)
+        if t not in titles or e.get("date", "") < today:
+            continue
+        r = schedule_plan.add_entry(SB, {"title": t, "date": e["date"],
+                                         "platform": e.get("platform", "youtube"), "note": e.get("note", "")})
+        if r:
+            added.append(r)
+    return {"ok": bool(added), "added": len(added), "used_ai": used_ai,
+            "entries": added, "candidates": len(cands)}
+
+
 def _chapter_path(title, ch):
     _, fm = _find_novel(title)
     base = _base_for(fm, title)
@@ -1424,6 +1502,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, feedback_record(payload))
             if u.path == "/api/calendar/add":
                 return self._send(200, calendar_add(payload))
+            if u.path == "/api/calendar/autoplan":
+                return self._send(200, calendar_autoplan(payload))
             if u.path == "/api/calendar/remove":
                 return self._send(200, calendar_remove(payload))
             if u.path == "/api/calendar/status":

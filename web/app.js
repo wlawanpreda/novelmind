@@ -1304,8 +1304,17 @@ async function loadCalendar() {
         <div class="meta" style="margin-top:8px">คลิกวันว่างเพื่อเพิ่มแผน · คลิกชิปเพื่อลบ</div>
       </div>
       <div class="cal-side">
+        <div class="card cal-ai">
+          <b>🤖 วางแผนอัตโนมัติด้วย AI</b>
+          <div class="meta" style="margin:6px 0 10px">ให้ AI ดูเรื่องที่พร้อมปล่อย แล้วจัดตารางให้เอง (เรียงตามคะแนน · เว้นจังหวะ · เลือกแพลตฟอร์ม)</div>
+          <div class="cal-ai-row">
+            <label>ปล่อย/สัปดาห์
+              <select id="cal-perweek"><option>2</option><option selected>3</option><option>4</option><option>5</option></select></label>
+            <button class="btn primary sm" onclick="calAutoPlan(this)">🤖 ให้ AI วางแผน</button>
+          </div>
+        </div>
         <div class="card">
-          <b>➕ เพิ่มแผนปล่อย</b>
+          <b>➕ เพิ่มแผนเอง</b>
           <div class="cal-form">
             <input id="cal-title" list="cal-stories" placeholder="ชื่อเรื่อง">
             <datalist id="cal-stories">${opts}</datalist>
@@ -1338,6 +1347,16 @@ async function calAdd() {
   const r = await api("/api/calendar/add", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, date, platform, note }) });
   if (r.ok) { toast("เพิ่มแผนแล้ว ✅", "good"); loadCalendar(); }
   else toast(r.error || "เพิ่มไม่สำเร็จ", "bad");
+}
+async function calAutoPlan(btn) {
+  const per_week = parseInt($("#cal-perweek").value) || 3;
+  btn.disabled = true; btn.textContent = "🤖 AI กำลังวางแผน…";
+  const r = await api("/api/calendar/autoplan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ per_week }) });
+  btn.disabled = false; btn.textContent = "🤖 ให้ AI วางแผน";
+  if (r.ok) {
+    toast(`AI วางแผน ${r.added} เรื่องแล้ว ${r.used_ai ? "🤖" : "(กฎ)"} ✅`, "good");
+    loadCalendar();
+  } else toast(r.error || "วางแผนไม่สำเร็จ", "bad");
 }
 async function calRemove(id) {
   if (!confirm("ลบแผนนี้?")) return;
