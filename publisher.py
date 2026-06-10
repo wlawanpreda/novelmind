@@ -83,26 +83,73 @@ def save_ledger(sb: str, ledger: dict):
 # ---------------------------------------------------------------------------
 # Metadata: ดึง title/desc/hashtags จาก outline + ชื่อไฟล์
 # ---------------------------------------------------------------------------
+# คำที่ห้ามหลุดสู่ผู้ชม (เครดิตต้นฉบับ/เมตา) — บรรทัดที่ขึ้นต้นด้วยพวกนี้จะถูกข้าม
+_SKIP_PREFIX = ("inspired by", "original", "source", "based on", "ต้นฉบับ", "แรงบันดาลใจ")
+
+
+def _clean_line(s: str) -> str:
+    """ตัด markdown + ป้ายกำกับนำหน้า (เช่น 'คำโปรย:') ให้เหลือเนื้อสะอาด"""
+    s = re.sub(r"[*_`>#]", "", s).strip()                  # markdown
+    s = re.sub(r"^\s*[-•]\s*", "", s)                       # bullet
+    s = re.sub(r"^\s*\(?[^:：]{1,18}[:：]\s*", "", s)        # ป้ายกำกับสั้นนำหน้า "label:"
+    return s.strip()
+
+
+def _extract_synopsis(fp: str) -> str:
+    """ดึงคำโปรยสะอาดจากไฟล์ — ชอบบรรทัด 'คำโปรย/logline' ก่อน, ข้ามเครดิต/heading/แฮชแท็ก"""
+    try:
+        with open(fp, "r", encoding="utf-8") as f:
+            lines = f.read().splitlines()
+    except Exception:
+        return ""
+    for i, line in enumerate(lines):                       # 1) บรรทัดคำโปรย
+        if "คำโปรย" in line or "logline" in line.lower():
+            # ตัดป้ายกำกับ "คำโปรย...(Logline):" ทิ้ง — เอาเฉพาะเนื้อหลัง ":"
+            after = re.split(r"[:：]", line, 1)
+            inline = _clean_line(after[1]) if len(after) > 1 else ""
+            if len(inline) >= 15:                          # คำโปรยอยู่ inline หลัง ":"
+                return inline[:400]
+            # เป็นแค่หัวข้อ — เนื้อคำโปรยอยู่บรรทัดถัดไป
+            for nxt in lines[i + 1:i + 4]:
+                s = nxt.strip()
+                if not s or s.startswith(("#", "---")):
+                    continue
+                if any(s.lower().startswith(p) for p in _SKIP_PREFIX):
+                    continue
+                cc = _clean_line(s)
+                if len(cc) >= 15:
+                    return cc[:400]
+            break
+    buf = ""                                               # 2) เนื้อแรกๆ ที่สะอาด
+    for line in lines:
+        s = line.strip()
+        if not s or s.startswith(("#", "---")) or s.startswith("#"):
+            continue
+        if any(s.lower().startswith(p) for p in _SKIP_PREFIX):
+            continue
+        c = _clean_line(s)
+        if c and not c.startswith("#"):
+            buf += c + " "
+        if len(buf) > 280:
+            break
+    return buf.strip()[:400]
+
+
 def build_metadata(sb: str, teaser_path: str) -> dict:
     base = os.path.basename(teaser_path)
+    stem = re.sub(r"_Teaser.*$", "", base)
     # ชื่อเรื่อง = ส่วนหน้า _Teaser
-    title = re.sub(r"_Teaser.*$", "", base).replace("_", " ").strip() or "ANSRE Story"
+    title = stem.replace("_", " ").strip() or "ANSRE Story"
 
+    # ใช้ Caption/SEO ที่สร้างไว้ก่อน (สะอาด+ดึงดูดกว่า) ไม่งั้นดึงคำโปรยจาก Outline
     synopsis = ""
-    outline = os.path.join(sb, "02_Concept_Extraction", f"{re.sub(r'_Teaser.*$', '', base)}_Outline.md")
-    if os.path.exists(outline):
-        try:
-            with open(outline, "r", encoding="utf-8") as f:
-                txt = f.read()
-            # เอา 2-3 บรรทัดแรกที่ไม่ใช่ heading เป็น synopsis สั้นๆ
-            for line in txt.splitlines():
-                s = line.strip()
-                if s and not s.startswith("#") and not s.startswith("---"):
-                    synopsis += s + " "
-                if len(synopsis) > 300:
-                    break
-        except Exception:
-            pass
+    cap_fp = os.path.join(sb, "05_Active_Projects", "Captions", f"{stem}_Caption.md")
+    if os.path.exists(cap_fp):
+        synopsis = _extract_synopsis(cap_fp)
+    if not synopsis:
+        outline = os.path.join(sb, "02_Concept_Extraction", f"{stem}_Outline.md")
+        if os.path.exists(outline):
+            synopsis = _extract_synopsis(outline)
 
     hashtags = ["นิยาย", "นิยายเสียง", "audiobook", "เล่าเรื่อง", "shorts"]
     description = (synopsis.strip() or f"ติดตามนิยายเรื่อง {title}") + "\n\n" + " ".join("#" + h for h in hashtags)
