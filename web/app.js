@@ -653,7 +653,7 @@ async function loadNovelDetail(title) {
       <button class="btn sm primary" data-t="${esc(title)}" onclick="writeNovel(this.dataset.t)">✍️ เขียนเรื่องนี้</button>
       <button class="btn sm" data-t="${esc(title)}" onclick="gotoStudio(this.dataset.t)">🎨 ไป Studio</button>
       ${incomplete ? `<button class="btn sm" data-t="${esc(title)}" onclick="finishNovel(this.dataset.t)" title="เติมปก/เสียง/teaser ที่ขาด">✅ เติมสินทรัพย์</button>` : ""}
-      ${a.teaser ? `<button class="btn sm" onclick="loadView('outputs')">🎬 ดูผลผลิต</button>` : ""}</div>`;
+      ${a.teaser ? `<button class="btn sm" data-t="${esc(title)}" onclick="gotoOutputs(this.dataset.t)">🎬 ดูผลผลิต</button>` : ""}</div>`;
   const origNovel = (fm.title && fm.title !== title) ? `<div class="nd-orig">📜 ต้นฉบับที่ดึงมา: <b>${esc(fm.title)}</b>${fm.author ? ` · ${esc(fm.author)}` : ""}${fm.genre ? ` · ${esc(fm.genre)}` : ""} ${transButton((fm.title || "") + (fm.genre ? "\n(แนว: " + fm.genre + ")" : ""), "🌐 แปล")}</div>` : "";
   el.innerHTML = stats + origNovel + assets + healthBox + actions
     + `<div class="md nd-body">${mdToHtml(r.body || "(ยังไม่มีบทวิเคราะห์ — กด “🧠 วิเคราะห์ทั้งหมด” ด้านบน)")}</div>`;
@@ -681,11 +681,28 @@ async function writeNovel(title) {
 }
 
 function gotoStudio(title) {
-  loadView("studio");
+  go("studio");
   setTimeout(() => {
-    const opt = STUDIO_PROJECTS.find(o => o === title || o.includes(title) || title.includes(o));
+    const norm = s => (s || "").replace(/[\s_:：]+/g, "");
+    const key = norm(title);
+    const opt = STUDIO_PROJECTS.find(o => { const n = norm(o); return n === key || n.includes(key) || key.includes(n); });
     if (opt) selectStory(opt); else studioStatus();
   }, 700);
+}
+
+function gotoOutputs(title) {
+  go("outputs");
+  setTimeout(() => {
+    const cards = [...document.querySelectorAll(".story-out")];
+    const norm = s => (s || "").replace(/[\s_:：]+/g, "");
+    const key = norm(title);
+    const hit = cards.find(c => { const t = norm(c.dataset.st); return t === key || t.includes(key) || key.includes(t); });
+    if (hit) {
+      hit.scrollIntoView({ behavior: "smooth", block: "center" });
+      hit.classList.add("flash");
+      setTimeout(() => hit.classList.remove("flash"), 1600);
+    }
+  }, 600);
 }
 
 // ---- outputs (จัดกลุ่มตามเรื่อง) ----
@@ -750,7 +767,7 @@ async function loadOutputs() {
   if (!stories || !stories.length) { el.innerHTML = `<div class="empty">ยังไม่มีผลผลิต — กด “เดิน Pipeline” หรือผลิตจากหน้านิยาย</div>`; return; }
   el.innerHTML = stories.map(s => {
     const done = [s.cover ? "🖼️" : "", s.audio.length ? "🔊" : "", s.teasers.length ? "🎬" : ""].filter(Boolean).join(" ");
-    return `<div class="story-out">
+    return `<div class="story-out" data-st="${esc(s.title)}">
       <div class="story-media">
         ${s.cover ? `<a href="${s.cover}" target="_blank"><img class="story-cover" loading="lazy" src="${s.cover}"></a>`
                   : `<div class="story-cover noimg">ยังไม่มีปก</div>`}

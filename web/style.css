@@ -444,3 +444,7 @@ textarea.dev-body.editing:focus{border-color:var(--acc)}
 .pp-links{margin-top:12px;font-size:13px}
 .pp-links ul{list-style:none;padding:0;margin:6px 0}
 .pp-links li{padding:3px 0}
+
+/* ---- flash highlight (เลื่อนไปเรื่องที่เลือก) ---- */
+.story-out.flash{animation:flashHi 1.6s ease}
+@keyframes flashHi{0%,100%{box-shadow:none}30%{box-shadow:0 0 0 2px var(--acc)}}
