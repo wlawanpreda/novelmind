@@ -737,6 +737,13 @@ def continue_run(payload):
             ["chapter_continuer.py", SB, str(count), "--title", base])}
 
 
+def podcast_run(payload):
+    """เรนเดอร์ + อัป podcast episodes (background). dry=true → ไม่อัปจริง"""
+    title = payload.get("title", "")
+    flag = "--publish-dry" if payload.get("dry") else "--publish"
+    return {"task": start_argv(f"Podcast:{title[:18]}", ["podcast.py", title, flag])}
+
+
 def export_pack_run(payload):
     try:
         import export_pack
@@ -1223,6 +1230,7 @@ MEDIA_DIRS = {
     "trailers": os.path.join(SB, "05_Active_Projects", "Trailers"),
     "audiobooks": os.path.join(SB, "05_Active_Projects", "Audiobooks"),
     "exports": os.path.join(SB, "05_Active_Projects", "Exports"),
+    "podcast": os.path.join(SB, "05_Active_Projects", "Podcast_Episodes"),
 }
 
 
@@ -1408,6 +1416,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, audiobook_run(payload))
             if u.path == "/api/export":
                 return self._send(200, export_pack_run(payload))
+            if u.path == "/api/podcast":
+                return self._send(200, podcast_run(payload))
             if u.path == "/api/continue":
                 return self._send(200, continue_run(payload))
             if u.path == "/api/feedback/record":

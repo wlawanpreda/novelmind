@@ -159,7 +159,7 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
 # ---------------------------------------------------------------------------
 # Adapter: YouTube Shorts
 # ---------------------------------------------------------------------------
-def publish_youtube(teaser_path: str, meta: dict, dry: bool) -> str:
+def publish_youtube(teaser_path: str, meta: dict, dry: bool, as_shorts: bool = True) -> str:
     if not _enabled("PUBLISH_YOUTUBE"):
         return "disabled"
     token_file = os.environ.get("YOUTUBE_TOKEN_FILE", os.path.join(ROOT, "youtube_token.json"))
@@ -167,7 +167,7 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool) -> str:
         log(f"  [youtube] ข้าม — ไม่พบ token file: {token_file} (ดู README การ authorize)")
         return "no_creds"
     if dry:
-        log(f"  [youtube] dry-run: would upload '{meta['title']}' (#Shorts)")
+        log(f"  [youtube] dry-run: would upload '{meta['title']}'" + (" (#Shorts)" if as_shorts else " (long-form)"))
         return "dry"
     try:
         from google.oauth2.credentials import Credentials
@@ -181,8 +181,8 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool) -> str:
             creds.refresh(Request())
         yt = build("youtube", "v3", credentials=creds)
 
-        # บังคับให้เป็น Shorts: ใส่ #Shorts ใน title/description (วิดีโอ 9:16 < 60s)
-        title = (meta["title"] + " #Shorts")[:99]
+        # Shorts: ต่อ #Shorts (9:16 <60s); podcast/long-form: ไม่ต่อ
+        title = ((meta["title"] + " #Shorts") if as_shorts else meta["title"])[:99]
         body = {
             "snippet": {"title": title, "description": meta["description"], "tags": meta["tags"],
                         "categoryId": "24"},

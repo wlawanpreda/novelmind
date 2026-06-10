@@ -502,6 +502,17 @@ async function doAudiobook() {
   }, 3000);
 }
 
+// ---- Podcast episodes (อัปหนังสือเสียงรายตอนเป็น EP) ----
+async function runPodcast() {
+  const title = $("#studioProject").value;
+  if (!title) return toast("เลือกเรื่องก่อน", "bad");
+  const real = confirm("ทำ Podcast EP รายตอน:\n\nOK = อัปขึ้น YouTube จริง (long-form, unlisted)\nCancel = ทดลอง (dry-run) ไม่อัปจริง\n\n(ต้องเปิด PUBLISH_YOUTUBE + มี token)");
+  const r = await api("/api/podcast", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, dry: !real }) });
+  if (!r.task) return toast(r.error || "เริ่มไม่ได้", "bad");
+  toast(real ? "เริ่มทำ + อัป Podcast 🎙️" : "เริ่ม dry-run 🧪");
+  openDrawer(r.task, "🎙️ Podcast: " + title);
+}
+
 // ---- แพ็กพร้อมปล่อย (Export) ----
 async function runExportPack() {
   const title = $("#studioProject").value;
