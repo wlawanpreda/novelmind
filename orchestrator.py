@@ -62,6 +62,10 @@ SCOUT_EVERY_HOURS = _cfg_int("ANSRE_SCOUT_EVERY_HOURS", 12)
 SCOUT_LIMIT = _cfg_int("ANSRE_SCOUT_LIMIT", 2)
 LOOP_SLEEP = _cfg_int("ANSRE_LOOP_SLEEP", 1800)
 TEASER_DURATION = _cfg_int("ANSRE_TEASER_DURATION", 60)
+# ความลึกเป้าหมาย (จำนวนตอน/เรื่อง) + คุมงบ: เขียนต่อกี่ตอน/เรื่อง/รอบ และกี่เรื่อง/รอบ
+TARGET_CHAPTERS = _cfg_int("ANSRE_TARGET_CHAPTERS", 8)
+CONTINUE_PER_RUN = _cfg_int("ANSRE_CONTINUE_PER_RUN", 1)
+CONTINUE_STORIES = _cfg_int("ANSRE_CONTINUE_STORIES", 3)
 
 
 def log(msg: str):
@@ -224,6 +228,12 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     # สรุปเทรนด์จากนิยายที่ analyze แล้ว → ป้อนเข้า ideation รอบถัดไป
     run_stage("trends", [py, "trends.py"], dry)
     run_stage("write",   [py, "agent_writer.py", SECOND_BRAIN], dry)
+    # เขียนต่อให้ลึก: ดันเรื่องที่ยังไม่ถึงเป้า ทีละน้อย/รอบ (audio stage จะตามเก็บตอนใหม่เอง)
+    if TARGET_CHAPTERS > 1:
+        run_stage("continue", [py, "chapter_continuer.py", SECOND_BRAIN,
+                               "--target", str(TARGET_CHAPTERS),
+                               "--max-per-run", str(CONTINUE_PER_RUN),
+                               "--max-stories", str(CONTINUE_STORIES)], dry)
     run_stage("cover",   [py, "cover_generator.py", SECOND_BRAIN], dry)
     run_stage("audio",   [py, "audio_engine.py", SECOND_BRAIN], dry)
     run_stage("teaser",  [py, "teaser_generator.py", SECOND_BRAIN, str(TEASER_DURATION)], dry)

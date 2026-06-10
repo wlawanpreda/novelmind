@@ -649,8 +649,13 @@ async function loadNovelDetail(title) {
     }
   }
   const incomplete = a.chapters && (!a.cover || !a.audio || !a.teaser);
+  const tgt = r.target_chapters || 8;
+  const curCh = a.chapters || 0;
+  const deepenBtn = (curCh >= 1 && curCh < tgt)
+    ? `<button class="btn sm primary" data-t="${esc(title)}" onclick="continueStory(this.dataset.t)" title="เขียนตอนถัดไปต่อจากที่มี">📖 เขียนตอนต่อไป (${curCh}/${tgt})</button>` : "";
   const actions = `<div class="dev-bar">
-      <button class="btn sm primary" data-t="${esc(title)}" onclick="writeNovel(this.dataset.t)">✍️ เขียนเรื่องนี้</button>
+      ${curCh < 1 ? `<button class="btn sm primary" data-t="${esc(title)}" onclick="writeNovel(this.dataset.t)">✍️ เขียนเรื่องนี้</button>` : ""}
+      ${deepenBtn}
       <button class="btn sm" data-t="${esc(title)}" onclick="gotoStudio(this.dataset.t)">🎨 ไป Studio</button>
       ${incomplete ? `<button class="btn sm" data-t="${esc(title)}" onclick="finishNovel(this.dataset.t)" title="เติมปก/เสียง/teaser ที่ขาด">✅ เติมสินทรัพย์</button>` : ""}
       ${a.teaser ? `<button class="btn sm" data-t="${esc(title)}" onclick="gotoOutputs(this.dataset.t)">🎬 ดูผลผลิต</button>` : ""}</div>`;
@@ -678,6 +683,18 @@ async function writeNovel(title) {
   const r = await api("/api/novel/write", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
   if (r.error) return toast(r.error, "bad");
   toast("เริ่มเขียน ✍️"); openDrawer(r.task, "เขียน: " + title);
+}
+
+async function continueStory(title) {
+  const n = prompt("เขียนต่อกี่ตอน?", "1");
+  if (!n) return;
+  const count = Math.max(1, Math.min(5, parseInt(n) || 1));
+  const r = await api("/api/continue", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title, count }) });
+  if (r.error) return toast(r.error, "bad");
+  toast(`เริ่มเขียนต่อ +${count} ตอน 📖`);
+  openDrawer(r.task, "เขียนต่อ: " + title);
+  // รีโหลดรายละเอียดเมื่อเสร็จ
+  setTimeout(() => { if (NOVEL_EXP) loadNovelDetail(NOVEL_EXP); }, 8000);
 }
 
 function gotoStudio(title) {
@@ -918,11 +935,12 @@ async function loadConfig() {
     <div class="card stat flat"><div class="k">🎧 TTS</div><div class="v" style="font-size:16px">${esc(c.tts_engine || "—")}</div></div>
     <div class="card stat flat"><div class="k">✍️ Writing mode</div><div class="v" style="font-size:20px">${c.writing_mode}</div></div>
     <div class="card stat flat"><div class="k">🧱 soft/วัน</div><div class="v" style="font-size:20px">$${c.daily_cap}</div></div>
-    <div class="card stat flat"><div class="k">⛔ hard/วัน</div><div class="v" style="font-size:20px">$${c.hard_cap || "0"}</div></div>`;
+    <div class="card stat flat"><div class="k">⛔ hard/วัน</div><div class="v" style="font-size:20px">$${c.hard_cap || "0"}</div></div>
+    <div class="card stat flat"><div class="k">📖 เป้าตอน/เรื่อง</div><div class="v" style="font-size:20px">${c.target_chapters || "8"}</div></div>`;
   $("#routingChips").innerHTML = c.routing.map(r =>
     `<div class="route"><b>${r.role}</b><span class="be ${r.backend}">${r.backend}</span></div>`).join("");
   // เติมค่าปัจจุบันลงในฟอร์มตั้งค่า
-  if ($("#set-backend")) { $("#set-backend").value = c.backend; $("#set-mode").value = c.writing_mode; $("#set-cap").value = c.daily_cap; if ($("#set-hardcap")) $("#set-hardcap").value = c.hard_cap || "0"; }
+  if ($("#set-backend")) { $("#set-backend").value = c.backend; $("#set-mode").value = c.writing_mode; $("#set-cap").value = c.daily_cap; if ($("#set-hardcap")) $("#set-hardcap").value = c.hard_cap || "0"; if ($("#set-target")) $("#set-target").value = c.target_chapters || "8"; }
 }
 
 async function saveSettings() {
@@ -931,6 +949,7 @@ async function saveSettings() {
     WRITING_MODE: $("#set-mode").value,
     ANSRE_DAILY_USD_CAP: $("#set-cap").value || "0",
     ANSRE_DAILY_HARD_CAP: ($("#set-hardcap") && $("#set-hardcap").value) || "0",
+    ANSRE_TARGET_CHAPTERS: ($("#set-target") && $("#set-target").value) || "8",
   };
   const r = await api("/api/env", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (r.ok) { toast("บันทึกแล้ว: " + r.updated.join(", "), "good"); loadConfig(); }

@@ -144,16 +144,34 @@ def write_next_chapter(sb, title, n):
     return True
 
 
+def _opt(args, name, default=None):
+    if name in args:
+        i = args.index(name)
+        if i + 1 < len(args):
+            return args[i + 1]
+    return default
+
+
 def main():
     args = [a for a in sys.argv[1:]]
     sb = "./SecondBrain"
     count = 1
-    only_title = None
-    if "--title" in args:
-        i = args.index("--title")
-        only_title = args[i + 1] if i + 1 < len(args) else None
-        args = args[:i] + args[i + 2:]
-    pos = [a for a in args if not a.startswith("--")]
+    only_title = _opt(args, "--title")
+    # --target N: เขียนจนแต่ละเรื่องมี N ตอน · --max-per-run: เพิ่มได้สูงสุดกี่ตอน/เรื่อง/รอบ
+    # --max-stories: ทำได้กี่เรื่อง/รอบ (กันงบบาน — เลือกเรื่องที่ "ห่างเป้าสุด" ก่อน)
+    target = _opt(args, "--target")
+    target = int(target) if target and target.isdigit() else None
+    max_per_run = int(_opt(args, "--max-per-run", "99") or 99)
+    max_stories = int(_opt(args, "--max-stories", "999") or 999)
+
+    pos = [a for a in args if not a.startswith("--")
+           and a not in (only_title or "", str(target or ""))]
+    # ระวัง: ค่าตามหลัง flag ไม่ใช่ positional
+    skip = set()
+    for fl in ("--title", "--target", "--max-per-run", "--max-stories"):
+        if fl in args:
+            skip.add(args.index(fl) + 1)
+    pos = [a for idx, a in enumerate(args) if not a.startswith("--") and idx not in skip]
     if pos:
         sb = pos[0]
     if len(pos) > 1:
@@ -167,6 +185,21 @@ def main():
         projects = [t for t in projects if only_title in t]
     if not projects:
         print("[!] ไม่พบเรื่องที่มีบทที่ 1 แล้ว — เขียนบทแรกก่อนด้วย agent_writer")
+        return
+
+    if target:
+        # เขียนเรื่องที่ยังไม่ถึงเป้า เรียงตาม "ห่างเป้าสุด" ก่อน → กระจายความลึกทั่วถึง
+        gaps = [(t, target - (_next_n(sb, t) - 1)) for t in projects]
+        gaps = sorted([g for g in gaps if g[1] > 0], key=lambda x: -x[1])[:max_stories]
+        if not gaps:
+            print(f"[continue] ทุกเรื่องถึงเป้า {target} ตอนแล้ว ✅")
+            return
+        print(f"[continue] เป้า {target} ตอน · ทำ {len(gaps)} เรื่อง (สูงสุด {max_per_run} ตอน/เรื่อง/รอบ)")
+        for title, gap in gaps:
+            for _ in range(min(gap, max_per_run)):
+                n = _next_n(sb, title)
+                if not write_next_chapter(sb, title, n):
+                    break
         return
 
     for title in projects:

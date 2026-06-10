@@ -482,6 +482,7 @@ def api_config():
             "writing_mode": os.environ.get("WRITING_MODE", "premium"),
             "daily_cap": os.environ.get("ANSRE_DAILY_USD_CAP", "0"),
             "hard_cap": os.environ.get("ANSRE_DAILY_HARD_CAP", "0"),
+            "target_chapters": os.environ.get("ANSRE_TARGET_CHAPTERS", "8"),
             "image_backend": os.environ.get("IMAGE_BACKEND", "gemini"),
             "image_url": os.environ.get("LOCAL_IMAGE_BASE_URL", ""),
             "image_model": os.environ.get("LOCAL_IMAGE_MODEL", ""),
@@ -726,6 +727,16 @@ def audiobook_run(payload):
     return {"task": start_argv("Audiobook", ["audiobook.py", title])}
 
 
+def continue_run(payload):
+    """เขียนตอนต่อไปของเรื่อง (background) — เพิ่ม count ตอน"""
+    title = payload.get("title", "")
+    count = int(payload.get("count", 1) or 1)
+    _, fm = _find_novel(title)
+    base = _base_for(fm, title) or title
+    return {"task": start_argv(f"เขียนต่อ:{base[:20]}",
+            ["chapter_continuer.py", SB, str(count), "--title", base])}
+
+
 def export_pack_run(payload):
     try:
         import export_pack
@@ -884,6 +895,7 @@ def api_studio_detail(title):
             os.path.join(SB, "05_Active_Projects", folder, f"{base}{suffix}"))
     return {"ok": True, "base": base, "outline": outline, "characters": chars,
             "chapters": chapters, "studio": studio_st, "assets": _assets_for(base),
+            "target_chapters": int(os.environ.get("ANSRE_TARGET_CHAPTERS", "8") or 8),
             "meta": {"market_fit": fm.get("market_fit_score", ""), "popularity": fm.get("popularity_score", ""),
                      "genre": fm.get("genre", ""), "source": fm.get("source", ""),
                      "original": fm.get("title", ""), "status": fm.get("status", "")}}
@@ -1037,7 +1049,7 @@ def _worker_running():
     return subprocess.run(["launchctl", "list", LAUNCH_LABEL], capture_output=True).returncode == 0
 
 
-EDITABLE_ENV = {"LLM_BACKEND", "WRITING_MODE", "ANSRE_DAILY_USD_CAP", "ANSRE_DAILY_HARD_CAP", "ANSRE_CALL_GAP",
+EDITABLE_ENV = {"LLM_BACKEND", "WRITING_MODE", "ANSRE_DAILY_USD_CAP", "ANSRE_DAILY_HARD_CAP", "ANSRE_TARGET_CHAPTERS", "ANSRE_CALL_GAP",
                 "LOCAL_LLM_BASE_URL", "LOCAL_LLM_MODEL", "TTS_ENGINE",
                 "PUBLISH_YOUTUBE", "PUBLISH_TIKTOK", "PUBLISH_NOVEL"} | {
                 f"LLM_ROLE_{r.upper()}" for r in
@@ -1359,6 +1371,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, audiobook_run(payload))
             if u.path == "/api/export":
                 return self._send(200, export_pack_run(payload))
+            if u.path == "/api/continue":
+                return self._send(200, continue_run(payload))
             if u.path == "/api/calendar/add":
                 return self._send(200, calendar_add(payload))
             if u.path == "/api/calendar/remove":
