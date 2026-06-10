@@ -95,13 +95,59 @@ def plan_scenes(base, n, count=5):
     return out
 
 
+# มุมกล้อง/อารมณ์หลากหลาย — ใช้สร้างรูปหลายแบบจาก anchor เดียว (กรณีวางแผนฉากตามบทไม่ได้)
+_SHOTS = [
+    "wide establishing shot, full scene, golden hour light",
+    "emotional close-up portrait, shallow depth of field, soft light",
+    "medium candid shot, natural daylight",
+    "dramatic low-angle shot, tense cinematic mood, moody light",
+    "over-the-shoulder shot looking into the distance, dusk",
+    "atmospheric environment shot, depth and detail",
+]
+
+# anchor ตัวละคร/ฉาก (อังกฤษ) ต่อเรื่อง — cache กัน gen ซ้ำ
+_ANCHOR_CACHE = {}
+
+
+def _story_anchor(base):
+    if base in _ANCHOR_CACHE:
+        return _ANCHOR_CACHE[base]
+    chars = _read(os.path.join(SB, "04_Character_Database", f"{base}_Characters.md"))
+    anchor = ""
+    try:
+        anchor = generate(
+            "จากข้อมูลตัวละครนี้ บรรยายเป็นภาษาอังกฤษ 2 ประโยค: รูปลักษณ์ตัวละครหลัก + "
+            f"ฉาก/บรรยากาศหลักของเรื่อง สำหรับนักวาดภาพประกอบ (เนื้อหากลางๆ):\n{chars[:1500]}",
+            role="researcher").strip()
+    except Exception:
+        anchor = ""
+    if len(anchor) < 20:
+        anchor = base.replace("_", " ") + ", cinematic Thai setting"
+    _ANCHOR_CACHE[base] = anchor
+    return anchor
+
+
+def _template_scenes(base, count):
+    """fallback: รูปหลากหลายมุมจาก anchor ตัวละคร (ไม่ต้องวางแผนตามบท)"""
+    anchor = _story_anchor(base)
+    out = []
+    for i in range(count):
+        shot = _SHOTS[i % len(_SHOTS)]
+        out.append(f"{anchor}, {shot}, cinematic film still, photorealistic, no text, no watermark")
+    return out
+
+
 def make_scenes(story, n, count=5, base=None):
     base = base or _base(story)
     if not base:
         return {"ok": False, "error": f"ไม่พบบทของ '{story}'"}
     prompts = plan_scenes(base, n, count)
     if not prompts:
-        return {"ok": False, "error": f"วางแผนฉากไม่ได้ (ตอน {n})"}
+        # วางแผนฉากตามบทไม่ได้ (LLM บล็อก/ดับ) → ใช้ template หลายมุมแทน
+        print(f"[scene] ตอน {n}: วางแผนตามบทไม่ได้ → ใช้ template หลายมุม", flush=True)
+        prompts = _template_scenes(base, count)
+    if not prompts:
+        return {"ok": False, "error": f"สร้าง prompt ฉากไม่ได้ (ตอน {n})"}
     out_dir = os.path.join(AP, "Scene_Images")
     os.makedirs(out_dir, exist_ok=True)
     made = []
