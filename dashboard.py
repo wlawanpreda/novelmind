@@ -31,7 +31,7 @@ import time
 import threading
 import subprocess
 from datetime import datetime, timedelta
-from urllib.parse import urlparse, parse_qs, unquote
+from urllib.parse import urlparse, parse_qs, unquote, quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -676,6 +676,39 @@ def api_chapter(title, ch):
             "chars": len(txt)}
 
 
+def api_audiobook_status(title):
+    """สถานะหนังสือเสียงรวมเล่ม: มีกี่ตอน · รวมแล้วหรือยัง · ลิงก์ + markers"""
+    import audiobook
+    base = audiobook._base_from(SB, title)
+    if not base:
+        return {"ok": False, "error": "ไม่พบไฟล์เสียงของเรื่องนี้"}
+    adir = os.path.join(SB, "05_Active_Projects", "Audio_Output")
+    n = len(glob.glob(os.path.join(adir, f"{base}_Audiobook_*.mp3")))
+    full = os.path.join(SB, "05_Active_Projects", "Audiobooks", f"{base}_FULL.mp3")
+    mk = os.path.join(SB, "05_Active_Projects", "Audiobooks", f"{base}_chapters.txt")
+    exists = os.path.exists(full)
+    return {"ok": True, "base": base, "parts": n, "exists": exists,
+            "url": "/media/audiobooks/" + quote(f"{base}_FULL.mp3") if exists else "",
+            "size_mb": round(os.path.getsize(full) / 1e6, 1) if exists else 0,
+            "markers": _read_head(mk, 4000) if os.path.exists(mk) else ""}
+
+
+def audiobook_run(payload):
+    title = payload.get("title", "")
+    return {"task": start_argv("Audiobook", ["audiobook.py", title])}
+
+
+def export_pack_run(payload):
+    try:
+        import export_pack
+        r = export_pack.build_pack(SB, payload.get("title", ""))
+        if r.get("ok"):
+            r["url"] = "/media/exports/" + quote(os.path.basename(r["file"]))
+        return r
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": str(e)}
+
+
 def _chapter_path(title, ch):
     _, fm = _find_novel(title)
     base = _base_for(fm, title)
@@ -1082,6 +1115,8 @@ MEDIA_DIRS = {
     "audio": os.path.join(SB, "05_Active_Projects", "Audio_Output"),
     "teasers": os.path.join(SB, "05_Active_Projects", "Teaser_Output"),
     "trailers": os.path.join(SB, "05_Active_Projects", "Trailers"),
+    "audiobooks": os.path.join(SB, "05_Active_Projects", "Audiobooks"),
+    "exports": os.path.join(SB, "05_Active_Projects", "Exports"),
 }
 
 
@@ -1168,6 +1203,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"enabled": RELOAD, "token": _reload_token()})
             if p == "/api/health/stories":
                 return self._send(200, api_health_stories())
+            if p == "/api/audiobook":
+                qs = parse_qs(u.query)
+                return self._send(200, api_audiobook_status(qs.get("title", [""])[0]))
             if p == "/api/versions":
                 qs = parse_qs(u.query)
                 return self._send(200, api_versions(qs.get("title", [""])[0], qs.get("ch", ["1"])[0]))
@@ -1254,6 +1292,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, backup_run())
             if u.path == "/api/version/restore":
                 return self._send(200, version_restore(payload))
+            if u.path == "/api/audiobook":
+                return self._send(200, audiobook_run(payload))
+            if u.path == "/api/export":
+                return self._send(200, export_pack_run(payload))
             if u.path == "/api/trailer":
                 return self._send(200, {"task": start_argv("Channel Trailer", ["trailer.py", "--clip", "5", "--limit", "6"])})
             if u.path == "/api/studio":

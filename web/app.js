@@ -462,6 +462,61 @@ async function studio(action) {
   if (kind) setTimeout(() => viewStudio(kind), 1500);
 }
 
+// ---- หนังสือเสียงรวมเล่ม ----
+async function runAudiobook() {
+  const title = $("#studioProject").value;
+  if (!title) return toast("เลือกเรื่องก่อน", "bad");
+  const box = $("#audiobookBox");
+  box.style.display = "block";
+  box.innerHTML = `<div class="muted">กำลังตรวจไฟล์เสียง…</div>`;
+  const st = await api(`/api/audiobook?title=${encodeURIComponent(title)}`);
+  if (!st.ok) { box.innerHTML = `<div class="empty">${esc(st.error || "ไม่พบไฟล์เสียง")}</div>`; return; }
+  box.innerHTML = `<div class="ab-head">🎧 หนังสือเสียงรวมเล่ม <span class="meta">(${st.parts} ตอน)</span></div>` +
+    renderAudiobook(st) +
+    `<button class="btn primary sm" onclick="doAudiobook()">${st.exists ? "🔁 รวมใหม่" : "▶ เริ่มรวมเล่ม"}</button>`;
+}
+function renderAudiobook(st) {
+  if (!st.exists) return `<div class="meta">ยังไม่ได้รวม — กดปุ่มด้านล่างเพื่อต่อทุกตอนเป็นไฟล์เดียว + chapter markers</div>`;
+  return `<div class="ab-ready">
+    <audio controls src="${st.url}" style="width:100%;margin:8px 0"></audio>
+    <div class="meta">📦 ${st.size_mb}MB · <a href="${st.url}" download>⬇ ดาวน์โหลด</a></div>
+    ${st.markers ? `<pre class="ab-markers">${esc(st.markers)}</pre>` : ""}</div>`;
+}
+async function doAudiobook() {
+  const title = $("#studioProject").value;
+  const box = $("#audiobookBox");
+  const r = await api("/api/audiobook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  if (!r.task) return toast(r.error || "เริ่มไม่ได้", "bad");
+  openDrawer(r.task, "🎧 รวมหนังสือเสียง");
+  // poll status จนไฟล์โผล่
+  let tries = 0;
+  const chk = setInterval(async () => {
+    tries++;
+    const st = await api(`/api/audiobook?title=${encodeURIComponent(title)}`);
+    if (st.exists || tries > 40) {
+      clearInterval(chk);
+      if (st.exists) { box.innerHTML = `<div class="ab-head">🎧 หนังสือเสียงรวมเล่ม <span class="meta">(${st.parts} ตอน)</span></div>` + renderAudiobook(st) + `<button class="btn primary sm" onclick="doAudiobook()">🔁 รวมใหม่</button>`; toast("รวมหนังสือเสียงแล้ว ✅", "good"); }
+    }
+  }, 3000);
+}
+
+// ---- แพ็กพร้อมปล่อย (Export) ----
+async function runExportPack() {
+  const title = $("#studioProject").value;
+  if (!title) return toast("เลือกเรื่องก่อน", "bad");
+  const box = $("#exportBox");
+  box.style.display = "block";
+  box.innerHTML = `<div class="muted">กำลังรวมไฟล์เป็น zip…</div>`;
+  const r = await api("/api/export", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  if (!r.ok) { box.innerHTML = `<div class="empty">${esc(r.error || "แพ็กไม่สำเร็จ")}</div>`; return; }
+  const grp = Object.entries(r.groups || {}).sort().map(([k, v]) => `<li>${esc(k)} — ${v} ไฟล์</li>`).join("");
+  box.innerHTML = `<div class="ab-head">📦 แพ็กพร้อมปล่อย <span class="meta">(${r.count} ไฟล์ · ${r.size_mb}MB)</span></div>
+    <ul class="ab-files">${grp}</ul>
+    <a class="btn primary sm" href="${r.url}" download>⬇ ดาวน์โหลด zip</a>
+    <div class="meta" style="margin-top:6px">มี README.txt + caption/SEO ในแพ็ก พร้อมลากไปลงแพลตฟอร์มได้เลย</div>`;
+  toast(`แพ็กเสร็จ ${r.size_mb}MB ✅`, "good");
+}
+
 async function viewStudio(kind) {
   const title = $("#studioProject").value;
   if (!title) return;
