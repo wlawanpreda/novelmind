@@ -19,20 +19,13 @@ ANSRE เผยแพร่ teaser/นิยายออกแพลตฟอร
 1. ไปที่ [Google Cloud Console](https://console.cloud.google.com/) → สร้างโปรเจกต์
 2. เปิดใช้ **YouTube Data API v3** (APIs & Services → Library)
 3. สร้าง **OAuth client ID** (ชนิด *Desktop app*) → ดาวน์โหลด `client_secret.json`
-4. authorize ครั้งแรกเพื่อให้ได้ token ที่มี `refresh_token`:
+4. เปลี่ยนชื่อไฟล์ที่ดาวน์โหลดเป็น `client_secret.json` วางในโฟลเดอร์โปรเจกต์
+5. authorize ครั้งเดียว (มีสคริปต์ช่วยแล้ว):
    ```bash
-   pip install google-auth-oauthlib google-api-python-client
-   # สคริปต์เล็กๆ authorize (รันครั้งเดียว):
-   python - <<'PY'
-   from google_auth_oauthlib.flow import InstalledAppFlow
-   flow = InstalledAppFlow.from_client_secrets_file(
-       "client_secret.json", ["https://www.googleapis.com/auth/youtube.upload"])
-   creds = flow.run_local_server(port=0)
-   open("youtube_token.json","w").write(creds.to_json())
-   print("✅ บันทึก youtube_token.json แล้ว")
-   PY
+   .venv/bin/python authorize_youtube.py
    ```
-5. ตั้งใน `.env`:
+   เบราว์เซอร์จะเปิดให้ล็อกอิน + อนุญาต → ได้ `youtube_token.json` (มี `refresh_token`) อัตโนมัติ
+6. ตั้งใน `.env`:
    ```
    PUBLISH_YOUTUBE=1
    YOUTUBE_TOKEN_FILE=youtube_token.json
