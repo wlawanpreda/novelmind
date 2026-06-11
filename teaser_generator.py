@@ -305,7 +305,12 @@ def process_teasers(second_brain_dir: str, max_duration: int = 60):
     os.makedirs(covers_dir, exist_ok=True)
     
     audio_files = glob.glob(os.path.join(audio_dir, "*.mp3"))
-    print(f"[*] Found {len(audio_files)} rendered audiobooks to process into teasers.")
+    # 1 teaser ต่อเรื่อง: ใช้เฉพาะตอนแรก (Audiobook_01) เป็น hook — กัน teaser ซ้ำต่อตอน
+    # (ตั้ง ANSRE_TEASER_PER_CHAPTER=1 ถ้าต้องการ teaser ทุกตอนแบบเดิม)
+    if os.environ.get("ANSRE_TEASER_PER_CHAPTER", "0").lower() not in ("1", "true", "yes", "on"):
+        audio_files = [f for f in audio_files
+                       if re.search(r"_Audiobook_0*1\.mp3$", os.path.basename(f))]
+    print(f"[*] Found {len(audio_files)} audiobooks to process into teasers (1 ต่อเรื่อง).")
     
     processed_count = 0
     for audio_path in audio_files:
