@@ -75,6 +75,13 @@ LOCAL_DIM_SCALE = float(os.environ.get("LOCAL_IMAGE_DIM_SCALE", "1.0"))
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 GEMINI_IMAGE_MODEL = os.environ.get("GEMINI_IMAGE_MODEL", "imagen-4.0-generate-001")
 
+# LAN-first / Tailscale-fallback: resolve URL Mac mini ให้ใช้ตัวที่ต่อได้
+# (เผื่อ entry point เรียก image_provider ตรงๆ โดยไม่ผ่าน llm_provider → gateway/ComfyUI ยัง fallback ได้)
+try:
+    import netcfg as _netcfg  # apply() รันตอน import → เขียน os.environ[*_URL] ที่ต่อได้
+except Exception:
+    _netcfg = None
+
 # --- Phase 2: ถ้าตั้ง ANSRE_GATEWAY_URL จะ route ผ่าน gateway (มี fallback ทำเองในเครื่อง) ---
 # ANSRE_GATEWAY_INTERNAL=1 = กระบวนการ gateway เอง → ต้องทำเองตรง ไม่วนกลับ (กัน recursion)
 GATEWAY_URL = os.environ.get("ANSRE_GATEWAY_URL", "").rstrip("/")
