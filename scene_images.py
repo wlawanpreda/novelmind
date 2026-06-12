@@ -137,10 +137,14 @@ def _template_scenes(base, count):
     return out
 
 
-def make_scenes(story, n, count=5, base=None):
+def make_scenes(story, n, count=5, base=None, resume=True):
     base = base or _base(story)
     if not base:
         return {"ok": False, "error": f"ไม่พบบทของ '{story}'"}
+    # resume: ถ้ามีรูปครบแล้วข้ามทั้งตอน (กันทำซ้ำเวลารันใหม่หลังโดน kill)
+    if resume and len(scene_files(base, n)) >= count:
+        return {"ok": True, "base": base, "ch": int(n), "images": scene_files(base, n),
+                "count": len(scene_files(base, n)), "skipped": True}
     prompts = plan_scenes(base, n, count)
     if not prompts:
         # วางแผนฉากตามบทไม่ได้ (LLM บล็อก/ดับ) → ใช้ template หลายมุมแทน
@@ -153,6 +157,9 @@ def make_scenes(story, n, count=5, base=None):
     made = []
     for i, p in enumerate(prompts, 1):
         fp = os.path.join(out_dir, f"{base}_ch{int(n):02d}_s{i}.png")
+        if resume and os.path.exists(fp):   # ข้ามรูปที่มีแล้ว → resume ระดับรูป
+            made.append(fp)
+            continue
         try:
             ok = image_provider.generate_image(p, fp, aspect_ratio="16:9")
             if ok and os.path.exists(fp):
