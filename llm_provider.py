@@ -31,6 +31,7 @@ CLI ทดสอบ:
 from __future__ import annotations
 
 import os
+import re
 import sys
 import json
 import time
@@ -496,6 +497,31 @@ def _via_gateway_llm(prompt, role, is_json, temperature, system) -> str:
         prompt, role=role, system=system, is_json=is_json, temperature=temperature)
 
 
+# --- Auto-route #34: ตรวจ output ที่ "ควรเป็นไทย" แต่ Gemini drift หลุดเป็นภาษาอื่น ---
+# (เคสจริง: บทเสียงวิญญาณฯ ออกมาเป็นจีน/เกาหลี — non-empty เลยไม่เข้า fallback เดิม)
+_THAI_ROLES = {"writer", "enhancer", "outline", "characters", "audio_script", "audio",
+               "planner", "scene_planner", "reviewer", "editor", "brainstorm",
+               "ideation", "researcher", "evaluator", "default"}
+_CJK_RE = re.compile(r"[一-鿿가-힯぀-ヿ]")   # จีน/เกาหลี/ญี่ปุ่น
+_THAI_RE = re.compile(r"[฀-๿]")
+
+
+def _looks_garbled(text: str, role: str, is_json: bool) -> bool:
+    """ผลลัพธ์เพี้ยนไหม: role ที่ควรเป็นไทย แต่มีอักษร CJK เยอะ/ไทยน้อยผิดปกติ"""
+    if is_json or role not in _THAI_ROLES:
+        return False
+    t = (text or "").strip()
+    if len(t) < 40:
+        return False
+    cjk = len(_CJK_RE.findall(t))
+    thai = len(_THAI_RE.findall(t))
+    if cjk >= 8 and cjk > thai * 0.15:      # CJK โผล่เยอะเทียบกับไทย
+        return True
+    if cjk > 0 and thai < len(t) * 0.2:     # แทบไม่มีไทยเลยทั้งที่ควรเป็นไทย
+        return True
+    return False
+
+
 def _generate_direct(prompt: str, role: str = "default", is_json: bool = False,
                      temperature=None, system: str = None, fallback: bool = True) -> str:
     """เรียก LLM เองในเครื่องนี้ (Gemini/local) — ตรรกะเดิมก่อนมี gateway."""
@@ -519,12 +545,23 @@ def _generate_direct(prompt: str, role: str = "default", is_json: bool = False,
     secondary = _local_generate if backend == "gemini" else _gemini_generate
 
     try:
-        return primary(prompt, role, is_json, temperature, system)
+        out = primary(prompt, role, is_json, temperature, system)
     except Exception as e:  # noqa: BLE001
         if not fallback:
             raise
         print(f"[llm] backend '{backend}' ล้มเหลว ({e}); fallback -> '{secondary_name}'")
         return secondary(prompt, role, is_json, temperature, system)
+
+    # Auto-route #34: ผลลัพธ์เพี้ยน (Gemini หลุดภาษาอื่น) → retry ที่ local อัตโนมัติ
+    if backend == "gemini" and fallback and _looks_garbled(out, role, is_json):
+        print(f"[llm] ⚠️ output เพี้ยน (ภาษาหลุด CJK) จาก gemini role '{role}' → retry '{secondary_name}'")
+        try:
+            alt = secondary(prompt, role, is_json, temperature, system)
+            if alt and not _looks_garbled(alt, role, is_json):
+                return alt
+        except Exception as e:  # noqa: BLE001
+            print(f"[llm] retry local ล้มเหลว ({e}) — คืนผลเดิม")
+    return out
 
 
 def generate_json(prompt: str, role: str = "default", temperature=None, system: str = None):
