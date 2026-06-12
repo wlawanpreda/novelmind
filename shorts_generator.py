@@ -32,7 +32,8 @@ def _base(story):
 
 
 def _cover(base):
-    for name in (f"{base}_Cover_captioned.jpg", f"{base}_Cover.png", f"{base}_Cover.jpg"):
+    # ใช้ปกเปล่าก่อน (caption_cover จะเบิร์นชื่อ+hook เอง) — เลี่ยงปก _captioned ที่มีตัวอักษรซ้อน
+    for name in (f"{base}_Cover.png", f"{base}_Cover.jpg", f"{base}_Cover_captioned.jpg"):
         fp = os.path.join(AP, "Covers", name)
         if os.path.exists(fp):
             return fp
@@ -96,7 +97,7 @@ def make_short(story, n, dur=50, base=None):
     title = base.replace("_", " ")
     # hook เฉพาะตอน (ประโยคเปิดของตอนนั้น) → ดึงคนดู · ตอน 1 ใช้คำโปรยเรื่อง
     ch_hook = _chapter_hook(base, n)
-    hook = (f"🔥 ตอน {int(n)} | {ch_hook}" if ch_hook else f"ตอนที่ {int(n)} · {_logline(base)}") \
+    hook = (f"ตอน {int(n)} | {ch_hook}" if ch_hook else f"ตอนที่ {int(n)} · {_logline(base)}") \
         if int(n) > 1 else (_logline(base) or ch_hook)
     # เบิร์นปก 9:16 (reuse teaser_generator) — ชื่อบน + hook ล่าง
     capped = tg.caption_cover(cover, title, hook) or cover
