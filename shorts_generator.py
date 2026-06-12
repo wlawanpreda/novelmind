@@ -99,8 +99,8 @@ def make_short(story, n, dur=50, base=None):
     ch_hook = _chapter_hook(base, n)
     hook = (f"ตอน {int(n)} | {ch_hook}" if ch_hook else f"ตอนที่ {int(n)} · {_logline(base)}") \
         if int(n) > 1 else (_logline(base) or ch_hook)
-    # เบิร์นปก 9:16 (reuse teaser_generator) — ชื่อบน + hook ล่าง
-    capped = tg.caption_cover(cover, title, hook) or cover
+    # เบิร์นปก 9:16 (reuse teaser_generator) — ชื่อบน + hook โซนปลอดภัย TikTok (เลี่ยง UI ล่างบัง)
+    capped = tg.caption_cover(cover, title, hook, tiktok_safe=True) or cover
 
     out_dir = os.path.join(AP, "Shorts")
     os.makedirs(out_dir, exist_ok=True)

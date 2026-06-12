@@ -210,6 +210,53 @@ def audio_script(title, ch=1):
     return {"ok": True, "file": fp, "chars": len(out)}
 
 
+# อักษรจีน/ญี่ปุ่น/เกาหลีที่ LLM มักหลุดมาในบทเสียง — ต้องตัดทิ้ง
+_NON_THAI_CJK = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿가-힯]")
+
+
+def narration_script(title, ch=1):
+    """สร้างบทเสียง 'ผู้บรรยายล้วน' ตรงจากบทไทย (ไม่ผ่าน LLM = ไม่มีทางหลุดภาษาอื่น/cue)
+    ใช้กู้บทเสียงที่เพี้ยน (เช่น LLM drift เป็นจีน) ให้กลับมาเป็นไทยสะอาด อ่านได้จริง"""
+    base = _match_base(title) or _slug(title)
+    ch_fp = _find("05_Active_Projects/Chapters", f"{base}_Chapter_{int(ch):02d}.md")
+    text = _read(ch_fp)
+    if not text:
+        return {"ok": False, "error": f"ไม่พบบทที่ {ch} ของ '{title}'"}
+    # ล้าง: เครดิต/heading/markdown/CJK ที่หลุด
+    lines = []
+    for ln in text.splitlines():
+        s = ln.strip()
+        if not s or s.startswith("#") or s.startswith(">"):
+            continue
+        if re.match(r"^(inspired by|source|แรงบันดาลใจ|ที่มา|คำโปรย|logline)\b", s, re.IGNORECASE):
+            continue
+        s = re.sub(r"[*_`>#]", "", s)              # markdown
+        s = _NON_THAI_CJK.sub("", s).strip()        # อักษรจีน/เกาหลีที่หลุด
+        if len(s) >= 2:
+            lines.append(s)
+    if not lines:
+        return {"ok": False, "error": "บทว่าง/ไม่มีเนื้อไทย"}
+    # แตกย่อหน้ายาวเป็นช่วง ~220 ตัว (ตามขอบเครื่องหมายวรรค) ให้ SRT ละเอียดขึ้น
+    segs = []
+    for para in lines:
+        if len(para) <= 240:
+            segs.append(para)
+            continue
+        buf = ""
+        for part in re.split(r"(?<=[\.\!\?…”\"])\s+|(?<=[ฯๆ])\s+", para):
+            if len(buf) + len(part) > 220 and buf:
+                segs.append(buf.strip())
+                buf = part
+            else:
+                buf = (buf + " " + part).strip()
+        if buf.strip():
+            segs.append(buf.strip())
+    body = "# บทเสียง (ผู้บรรยายล้วน)\n\n" + "\n\n".join(segs) + "\n"
+    fp = _save("Audio_Scripts", f"{base}_AudioScript_{int(ch):02d}.md", body)
+    print(f"[narration] → {fp} ({len(segs)} ช่วง, {sum(len(s) for s in segs)} ตัวอักษรไทย)")
+    return {"ok": True, "file": fp, "segments": len(segs)}
+
+
 # ---------------------------------------------------------------------------
 # 0. develop → promote → write (คลิกเดียวจบ)
 # ---------------------------------------------------------------------------

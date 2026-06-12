@@ -17,6 +17,7 @@ ANSRE Publisher (Phase 4) — เผยแพร่ teaser/นิยายออ
 
   PUBLISH_TIKTOK=1
   TIKTOK_ACCESS_TOKEN=...
+  TIKTOK_PRIVACY=SELF_ONLY                    # SELF_ONLY|PUBLIC_TO_EVERYONE|FRIENDS — public ได้ต่อเมื่อ App ผ่าน audit
 
   PUBLISH_NOVEL=1                            # เข้าคิว manual (กึ่งอัตโนมัติ)
 
@@ -205,12 +206,56 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool, as_shorts: bool = T
 # ---------------------------------------------------------------------------
 # Adapter: TikTok (Content Posting API — direct post)
 # ---------------------------------------------------------------------------
+_TIKTOK_TOKEN_FILE = os.path.join(ROOT, "tiktok_token.json")
+_TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/"
+
+
+def _tiktok_token() -> str:
+    """หา access_token: ใช้ TIKTOK_ACCESS_TOKEN ก่อน · ไม่งั้นอ่าน tiktok_token.json + refresh ถ้าใกล้หมดอายุ"""
+    env_tok = os.environ.get("TIKTOK_ACCESS_TOKEN")
+    if env_tok:
+        return env_tok
+    if not os.path.exists(_TIKTOK_TOKEN_FILE):
+        return ""
+    try:
+        with open(_TIKTOK_TOKEN_FILE, encoding="utf-8") as f:
+            tok = json.load(f)
+    except Exception:
+        return ""
+    obtained = tok.get("_obtained_at", 0)
+    expires_in = tok.get("expires_in", 0)
+    # รีเฟรชถ้าเหลืออายุ < 5 นาที
+    if obtained and expires_in and time.time() > obtained + expires_in - 300:
+        ck = os.environ.get("TIKTOK_CLIENT_KEY", "")
+        cs = os.environ.get("TIKTOK_CLIENT_SECRET", "")
+        rt = tok.get("refresh_token")
+        if ck and cs and rt:
+            try:
+                import requests
+                r = requests.post(_TIKTOK_TOKEN_URL, data={
+                    "client_key": ck, "client_secret": cs,
+                    "grant_type": "refresh_token", "refresh_token": rt,
+                }, headers={"Content-Type": "application/x-www-form-urlencoded"}, timeout=30)
+                new = r.json()
+                if "access_token" in new:
+                    new["_obtained_at"] = int(time.time())
+                    with open(_TIKTOK_TOKEN_FILE, "w", encoding="utf-8") as f:
+                        json.dump(new, f, ensure_ascii=False, indent=2)
+                    tok = new
+                    log("  [tiktok] รีเฟรช access_token แล้ว")
+                else:
+                    log(f"  [tiktok] รีเฟรช token ไม่สำเร็จ: {str(new)[:120]}")
+            except Exception as e:  # noqa: BLE001
+                log(f"  [tiktok] รีเฟรช token error: {e}")
+    return tok.get("access_token", "")
+
+
 def publish_tiktok(teaser_path: str, meta: dict, dry: bool) -> str:
     if not _enabled("PUBLISH_TIKTOK"):
         return "disabled"
-    token = os.environ.get("TIKTOK_ACCESS_TOKEN")
+    token = _tiktok_token()
     if not token:
-        log("  [tiktok] ข้าม — ไม่มี TIKTOK_ACCESS_TOKEN")
+        log("  [tiktok] ข้าม — ไม่มี token (ตั้ง TIKTOK_ACCESS_TOKEN หรือรัน authorize_tiktok.py)")
         return "no_creds"
     if dry:
         log(f"  [tiktok] dry-run: would upload '{meta['title']}'")
@@ -223,7 +268,9 @@ def publish_tiktok(teaser_path: str, meta: dict, dry: bool) -> str:
             "https://open.tiktokapis.com/v2/post/publish/video/init/",
             headers=headers,
             json={
-                "post_info": {"title": meta["title"][:150], "privacy_level": "SELF_ONLY",
+                # SELF_ONLY ก่อน App ผ่าน audit (TikTok บังคับ) — เปลี่ยนเป็น PUBLIC_TO_EVERYONE ผ่าน .env หลัง audit ผ่าน
+                "post_info": {"title": meta["title"][:150],
+                              "privacy_level": os.environ.get("TIKTOK_PRIVACY", "SELF_ONLY"),
                               "disable_comment": False},
                 "source_info": {"source": "FILE_UPLOAD", "video_size": size,
                                 "chunk_size": size, "total_chunk_count": 1},
