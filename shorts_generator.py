@@ -48,7 +48,7 @@ def _logline(base):
         return ""
     for i, ln in enumerate(lines):
         if "คำโปรย" in ln or "logline" in ln.lower():
-            after = re.split(r"[:：]", ln, 1)
+            after = re.split(r"[:：]", ln, maxsplit=1)
             c = re.sub(r"[*_`>#]", "", after[1]).strip() if len(after) > 1 else ""
             if len(c) >= 15:
                 return c[:140]
@@ -56,6 +56,29 @@ def _logline(base):
                 s = re.sub(r"[*_`>#]", "", nxt).strip()
                 if len(s) >= 15 and not s.lower().startswith(("inspired", "source")):
                     return s[:140]
+    return ""
+
+
+def _chapter_hook(base, n):
+    """hook เฉพาะตอน: ดึงประโยคเปิดจาก .srt ของตอนนั้น (ต่างกันทุกตอน) ตัดให้กระชับ"""
+    srt = os.path.join(AP, "Audio_Output", f"{base}_Audiobook_{int(n):02d}.srt")
+    try:
+        txt = open(srt, encoding="utf-8").read()
+    except Exception:
+        return ""
+    # บล็อกแรกที่เป็นเนื้อ (ข้าม index/timecode)
+    for block in txt.split("\n\n"):
+        body = "\n".join(l for l in block.splitlines()
+                         if l.strip() and not l.strip().isdigit() and "-->" not in l)
+        body = body.strip()
+        if len(body) < 15:
+            continue
+        # เอาประโยคแรก ~14 คำ ให้เป็น hook สั้นกระชับ
+        first = re.split(r"[.。!?\n]", body)[0]
+        words = first.split()
+        hook = " ".join(words[:16])
+        if len(hook) > 8:
+            return hook[:120] + ("…" if len(words) > 16 else "")
     return ""
 
 
@@ -71,7 +94,10 @@ def make_short(story, n, dur=50, base=None):
         return {"ok": False, "error": "ไม่พบปก"}
 
     title = base.replace("_", " ")
-    hook = f"ตอนที่ {int(n)} · {_logline(base)}" if int(n) > 1 else _logline(base)
+    # hook เฉพาะตอน (ประโยคเปิดของตอนนั้น) → ดึงคนดู · ตอน 1 ใช้คำโปรยเรื่อง
+    ch_hook = _chapter_hook(base, n)
+    hook = (f"🔥 ตอน {int(n)} | {ch_hook}" if ch_hook else f"ตอนที่ {int(n)} · {_logline(base)}") \
+        if int(n) > 1 else (_logline(base) or ch_hook)
     # เบิร์นปก 9:16 (reuse teaser_generator) — ชื่อบน + hook ล่าง
     capped = tg.caption_cover(cover, title, hook) or cover
 
