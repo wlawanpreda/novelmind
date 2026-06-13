@@ -513,6 +513,16 @@ async function runPodcast() {
   openDrawer(r.task, "🎙️ Podcast: " + title);
 }
 
+// ---- Shorts 9:16 (TikTok-safe — YouTube Shorts + TikTok) ----
+async function runShorts() {
+  const title = $("#studioProject").value;
+  if (!title) return toast("เลือกเรื่องก่อน", "bad");
+  const r = await api("/api/shorts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+  if (!r.task) return toast(r.error || "เริ่มไม่ได้", "bad");
+  toast("เริ่มทำ Shorts 📱 (9:16 ทุกตอน)");
+  openDrawer(r.task, "📱 Shorts: " + title);
+}
+
 // ---- แพ็กพร้อมปล่อย (Export) ----
 async function runExportPack() {
   const title = $("#studioProject").value;

@@ -331,6 +331,126 @@ def _gemini_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
 
 
 # ===========================================================================
+# Free backend: Pollinations.ai + AI Horde (ไม่ต้อง key/Mac mini) — fallback สุดท้าย
+# ===========================================================================
+_FREE_FALLBACK = os.environ.get("ANSRE_IMAGE_FREE_FALLBACK", "1").lower() in ("1", "true", "yes", "on")
+_POLLINATIONS_MODELS = os.environ.get("ANSRE_POLLINATIONS_MODELS", "flux,turbo").split(",")
+_POLLINATIONS_TOKEN = os.environ.get("ANSRE_POLLINATIONS_TOKEN", "")  # ว่าง = ข้าม (anonymous โดน 402 แล้ว)
+_HORDE_KEY = os.environ.get("ANSRE_HORDE_KEY", "0000000000")  # 0000000000 = anonymous (ฟรี, ช้า) · สมัครฟรีที่ stablehorde.net/register → เร็วขึ้นมาก
+_HORDE_TIMEOUT = int(os.environ.get("ANSRE_HORDE_TIMEOUT", "900") or 900)  # anonymous คิวช้า ~5-19 นาที/รูป
+_HF_TOKEN = os.environ.get("ANSRE_HF_TOKEN", "")  # HuggingFace token ฟรี (huggingface.co/settings/tokens) → FLUX เร็ว
+_HF_MODEL = os.environ.get("ANSRE_HF_MODEL", "black-forest-labs/FLUX.1-schnell")
+
+
+def _seed_for(prompt: str, output_path: str) -> int:
+    """seed คงที่ต่อฉาก (กันรูปซ้ำข้ามฉาก) — ไม่พึ่ง random ทั่วโลก"""
+    return abs(hash(prompt + os.path.basename(output_path))) % 1_000_000
+
+
+def _pollinations_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
+    """Pollinations — anonymous โดน 402 แล้ว ใช้ได้เมื่อตั้ง ANSRE_POLLINATIONS_TOKEN (มีฟรีทเทียร์)"""
+    if not _POLLINATIONS_TOKEN:
+        return False  # ไม่มี token → ข้ามไป Horde (กันยิงเปล่าโดน 402)
+    w, h = _SDXL_DIMS.get(aspect_ratio, _SDXL_DIMS["1:1"])
+    seed = _seed_for(prompt, output_path)
+    enc = urllib.parse.quote(prompt[:1500], safe="")
+    for model in _POLLINATIONS_MODELS:
+        model = model.strip()
+        url = (f"https://image.pollinations.ai/prompt/{enc}"
+               f"?width={w}&height={h}&nologo=true&model={model}&seed={seed}&token={_POLLINATIONS_TOKEN}")
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "ANSRE/1.0"})
+            with urllib.request.urlopen(req, timeout=180) as r:
+                data = r.read()
+            if data and len(data) > 5000 and data[:10] not in (b"<!DOCTYPE ", b"<html>"):
+                _save_image_bytes(data, output_path)
+                print(f"    [+] บันทึกรูป (ฟรี/Pollinations:{model}) -> {output_path}")
+                return True
+            print(f"    [~] Pollinations:{model} คืนข้อมูลไม่ใช่รูป — ลองตัวถัดไป")
+        except Exception as e:  # noqa: BLE001
+            print(f"    [~] Pollinations:{model} ล้มเหลว ({e}) — ลองตัวถัดไป")
+    return False
+
+
+def _horde_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
+    """ฟรี (crowd-sourced) — stablehorde.net · anonymous key ได้ แต่คิวช้า"""
+    w, h = _SDXL_DIMS.get(aspect_ratio, _SDXL_DIMS["1:1"])
+    # Horde รับขนาดหาร 64 ลงตัว + ≤ 1024 ต่อด้าน (anon)
+    w = min(1024, (w // 64) * 64); h = min(1024, (h // 64) * 64)
+    hdr = {"apikey": _HORDE_KEY, "Content-Type": "application/json", "Client-Agent": "ANSRE:1.0"}
+    body = json.dumps({"prompt": prompt[:1500],
+                       "params": {"width": w, "height": h, "steps": 20, "n": 1,
+                                  "sampler_name": "k_euler_a"},
+                       "nsfw": False, "models": ["AlbedoBase XL (SDXL)"]}).encode()
+    try:
+        req = urllib.request.Request("https://stablehorde.net/api/v2/generate/async",
+                                     data=body, headers=hdr)
+        with urllib.request.urlopen(req, timeout=30) as r:
+            jid = json.loads(r.read()).get("id")
+        if not jid:
+            return False
+        deadline = time.time() + _HORDE_TIMEOUT
+        while time.time() < deadline:
+            time.sleep(8)
+            chk = urllib.request.Request(f"https://stablehorde.net/api/v2/generate/check/{jid}",
+                                         headers={"Client-Agent": "ANSRE:1.0"})
+            with urllib.request.urlopen(chk, timeout=30) as r:
+                st = json.loads(r.read())
+            if st.get("done"):
+                res = urllib.request.Request(f"https://stablehorde.net/api/v2/generate/status/{jid}",
+                                             headers={"Client-Agent": "ANSRE:1.0"})
+                with urllib.request.urlopen(res, timeout=30) as r:
+                    gens = json.loads(r.read()).get("generations", [])
+                if not gens:
+                    return False
+                img_url = gens[0].get("img", "")
+                with urllib.request.urlopen(img_url, timeout=60) as r:
+                    _save_image_bytes(r.read(), output_path)
+                print(f"    [+] บันทึกรูป (ฟรี/AI Horde) -> {output_path}")
+                return True
+            if not st.get("is_possible", True):
+                print("    [~] AI Horde: ไม่มี worker รองรับ — ข้าม")
+                return False
+    except Exception as e:  # noqa: BLE001
+        print(f"    [~] AI Horde ล้มเหลว ({e})")
+    return False
+
+
+def _hf_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
+    """HuggingFace Inference (ฟรีทเทียร์, เร็ว) — ต้องตั้ง ANSRE_HF_TOKEN (สมัครฟรี)"""
+    if not _HF_TOKEN:
+        return False
+    # HF ย้ายเป็น Inference Providers: api-inference.huggingface.co เลิกใช้แล้ว → router.huggingface.co
+    url = f"https://router.huggingface.co/hf-inference/models/{_HF_MODEL}"
+    body = json.dumps({"inputs": prompt[:1500],
+                       "parameters": {"seed": _seed_for(prompt, output_path)}}).encode()
+    hdr = {"Authorization": f"Bearer {_HF_TOKEN}", "Content-Type": "application/json",
+           "Accept": "image/png"}
+    try:
+        req = urllib.request.Request(url, data=body, headers=hdr)
+        with urllib.request.urlopen(req, timeout=120) as r:
+            data = r.read()
+        if data and len(data) > 5000 and data[:1] != b"{":
+            _save_image_bytes(data, output_path)
+            print(f"    [+] บันทึกรูป (ฟรี/HuggingFace) -> {output_path}")
+            return True
+        print(f"    [~] HuggingFace คืน non-image ({data[:120]!r})")
+    except Exception as e:  # noqa: BLE001
+        print(f"    [~] HuggingFace ล้มเหลว ({e})")
+    return False
+
+
+def _free_generate(prompt: str, output_path: str, aspect_ratio: str) -> bool:
+    """แหล่งรูปฟรี (ไม่ต้อง Mac mini/Imagen):
+    HuggingFace (เร็ว ถ้ามี token) → AI Horde (ฟรีจริง anonymous ก็ได้ แต่ช้า) → Pollinations (ถ้ามี token)"""
+    if _hf_generate(prompt, output_path, aspect_ratio):
+        return True
+    if _horde_generate(prompt, output_path, aspect_ratio):
+        return True
+    return _pollinations_generate(prompt, output_path, aspect_ratio)
+
+
+# ===========================================================================
 # Public API
 # ===========================================================================
 def generate_image(prompt: str, output_path: str, aspect_ratio: str = "1:1",
@@ -343,13 +463,21 @@ def generate_image(prompt: str, output_path: str, aspect_ratio: str = "1:1",
       hybrid -> ลอง ComfyUI ก่อน, ดับ/พัง -> fallback Imagen
 
     ถ้าตั้ง ANSRE_GATEWAY_URL: ส่งงานผ่าน gateway ก่อน, ล่ม -> fallback ทำเองในเครื่อง
+    ชั้นสุดท้าย: ถ้าทุก backend หลักล้มเหลว -> แหล่งฟรี (Pollinations/AI Horde) ไม่ต้อง key/Mac mini
     """
     if _USE_GATEWAY:
         try:
-            return _via_gateway_image(prompt, output_path, aspect_ratio, backend)
+            if _via_gateway_image(prompt, output_path, aspect_ratio, backend):
+                return True
         except Exception as e:  # noqa: BLE001
             print(f"    [~] gateway สร้างรูปล้มเหลว ({e}) — fallback ทำเองในเครื่อง")
-    return _generate_image_direct(prompt, output_path, aspect_ratio, backend)
+    if _generate_image_direct(prompt, output_path, aspect_ratio, backend):
+        return True
+    # ทุก backend หลักล้ม (Mac mini ดับ + key หมด) -> แหล่งฟรี
+    if _FREE_FALLBACK:
+        print("    [~] backend หลักล้มทั้งหมด — ลองแหล่งรูปฟรี (Pollinations/AI Horde)")
+        return _free_generate(prompt, output_path, aspect_ratio)
+    return False
 
 
 def _via_gateway_image(prompt, output_path, aspect_ratio, backend) -> bool:

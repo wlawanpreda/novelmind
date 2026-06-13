@@ -744,6 +744,15 @@ def podcast_run(payload):
     return {"task": start_argv(f"Podcast:{title[:18]}", ["podcast.py", title, flag])}
 
 
+def shorts_run(payload):
+    """สร้าง Shorts 9:16 ต่อตอน (background) — TikTok-safe สำหรับ YouTube Shorts + TikTok"""
+    title = payload.get("title", "")
+    if not title:
+        return {"ok": False, "error": "ต้องระบุชื่อเรื่อง"}
+    dur = str(int(payload.get("dur", 50) or 50))
+    return {"task": start_argv(f"Shorts:{title[:18]}", ["shorts_generator.py", title, dur])}
+
+
 def export_pack_run(payload):
     try:
         import export_pack
@@ -1496,6 +1505,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, export_pack_run(payload))
             if u.path == "/api/podcast":
                 return self._send(200, podcast_run(payload))
+            if u.path == "/api/shorts":
+                return self._send(200, shorts_run(payload))
             if u.path == "/api/continue":
                 return self._send(200, continue_run(payload))
             if u.path == "/api/feedback/record":

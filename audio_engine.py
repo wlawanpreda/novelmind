@@ -37,72 +37,76 @@ VOICE_MAP = {
     "default": "pNInz6obpgqjVWtJ45xs"      # Lily (default helper)
 }
 
+# --- มาร์กเกอร์ที่ "ห้ามอ่านออกเสียง" (cue/stage direction ที่ปนเนื้อ) ---
+_SFX_INLINE = re.compile(r"\[\s*SFX\s*:[^\]]*\]", re.IGNORECASE)        # [SFX: ...] ที่ไหนก็ได้ในบรรทัด
+_TONE_INLINE = re.compile(r"\[[^\]]*โทน\s*:[^\]]*\]")                    # [ชื่อ, โทน: ...] แบบ inline
+_CJK = re.compile(r"[　-〿㐀-䶿一-鿿豈-﫿]")  # อักษรจีน/ญี่ปุ่นที่หลุดมา
+# speaker label แบบ "ชื่อ:" (ไม่มีวงเล็บ) ที่ต้นบรรทัด — ชื่อสั้น ไม่มีช่องว่าง
+_SPEAKER_PREFIX = re.compile(r"^([^\s:：\[\]]{1,20})\s*[:：]\s+")
+# tag แบบวงเล็บ [ชื่อ, โทน: x] ที่ต้นบรรทัด
+_SPEAKER_BRACKET = re.compile(r"^\[([^,\]]+)(?:,\s*โทน\s*:\s*([^\]]+))?\]\s*(.*)$")
+
+
+def _clean_narration(text: str) -> str:
+    """ลบ cue/มาร์กเกอร์ที่ไม่ควรอ่านออกเสียงออกจากข้อความบรรยาย"""
+    text = _SFX_INLINE.sub(" ", text)
+    text = _TONE_INLINE.sub(" ", text)
+    text = _CJK.sub("", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    return text
+
+
 def parse_audio_script(filepath: str) -> List[Dict[str, Any]]:
-    """Parse Markdown audio script and return a list of segments with speaker, tone, and text."""
+    """แตกบทเสียง Markdown เป็น segment (speaker/tone/text) โดย "ล้าง cue ทุกชนิด" ไม่ให้ TTS อ่าน
+    ครอบ: [SFX:...] กลางบรรทัด, speaker แบบ 'ชื่อ:' (ไม่มีวงเล็บ), [ชื่อ, โทน:...], อักษรจีนหลุด"""
     segments = []
-    
     with open(filepath, "r", encoding="utf-8") as f:
         lines = f.readlines()
-        
-    sfx_pattern = r"^\[SFX:\s*(.*?)\]"
-    speaker_pattern = r"^\[([^,\]]+)(?:,\s*โทน:\s*([^\]]+))?\]\s*(.*)$"
-    
+
     current_speaker = "ผู้บรรยาย"
     current_tone = "ปกติ"
-    
-    for line in lines:
-        line = line.strip()
+
+    for raw in lines:
+        line = raw.strip()
         if not line or line.startswith("---"):
-            # Reset speaker to narrator on blank lines or dividers
             current_speaker = "ผู้บรรยาย"
             current_tone = "ปกติ"
             continue
-            
         if line.startswith("#"):
             continue
-            
-        # 1. Parse SFX
-        sfx_match = re.match(sfx_pattern, line, re.IGNORECASE)
-        if sfx_match:
-            segments.append({
-                "type": "sfx",
-                "speaker": "SFX",
-                "tone": "",
-                "text": sfx_match.group(1).strip()
-            })
+
+        # 1) SFX ที่ "ต้นบรรทัด" และทั้งบรรทัดเป็น SFX → พอส (placeholder เสียงประกอบ)
+        if re.match(r"^\[\s*SFX\s*:", line, re.IGNORECASE) and _clean_narration(line) == "":
+            segments.append({"type": "sfx", "speaker": "SFX", "tone": "", "text": line})
             continue
-            
-        # 2. Parse Speaker Dialog Tag
-        speaker_match = re.match(speaker_pattern, line)
-        if speaker_match:
-            speaker = speaker_match.group(1).strip()
-            tone = (speaker_match.group(2) or "ปกติ").strip()
-            text = speaker_match.group(3).strip()
-            
-            # Update state
-            current_speaker = speaker
-            current_tone = tone
-            
-            # If there is dialogue text on the same line, append it
-            if text:
-                segments.append({
-                    "type": "dialog",
-                    "speaker": current_speaker,
-                    "tone": current_tone,
-                    "text": text
-                })
+
+        # 2) speaker tag แบบวงเล็บ [ชื่อ, โทน: x] ที่ต้นบรรทัด
+        mb = _SPEAKER_BRACKET.match(line)
+        if mb and "SFX" not in mb.group(1).upper():
+            current_speaker = mb.group(1).strip()
+            current_tone = (mb.group(2) or "ปกติ").strip()
+            line = mb.group(3).strip()
+
+        # 3) speaker label แบบ 'ชื่อ:' (ไม่มีวงเล็บ) ที่ต้นบรรทัด → เปลี่ยนผู้พูด ไม่อ่านชื่อ
+        ms = _SPEAKER_PREFIX.match(line)
+        if ms:
+            current_speaker = ms.group(1).strip()
+            current_tone = "ปกติ"
+            line = line[ms.end():].strip()
+
+        # ข้าม bullet/quote markdown
+        if line.startswith(("-", "*", ">")):
             continue
-            
-        # 3. Plain Text Line: Use the current state (inherited speaker/tone)
-        # Avoid markdown lists, quotes, or headers
-        if not (line.startswith("-") or line.startswith("*") or line.startswith(">")):
-            segments.append({
-                "type": "dialog",
-                "speaker": current_speaker,
-                "tone": current_tone,
-                "text": line
-            })
-            
+
+        # 4) ถ้ามี [SFX:...] แทรกกลางบรรทัด → ใส่พอสไว้ ก่อนล้างออกจากข้อความ
+        had_inline_sfx = bool(_SFX_INLINE.search(line))
+        clean = _clean_narration(line)
+        if had_inline_sfx:
+            segments.append({"type": "sfx", "speaker": "SFX", "tone": "", "text": "(pause)"})
+        if clean:
+            segments.append({"type": "dialog", "speaker": current_speaker,
+                             "tone": current_tone, "text": clean})
+
     return segments
 
 def generate_tts_gtts(text: str, temp_dir: str) -> AudioSegment:

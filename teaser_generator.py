@@ -36,9 +36,10 @@ def _wrap(draw, text, font, max_w):
     return lines
 
 
-def caption_cover(cover_path: str, title: str, hook: str = "") -> str:
+def caption_cover(cover_path: str, title: str, hook: str = "", tiktok_safe: bool = False) -> str:
     """เบิร์นชื่อเรื่อง (บน) + hook (ล่าง) ลงปกเป็นภาพแนวตั้ง 9:16 (1080x1920)
     รองรับปกทุกอัตราส่วน: เติมพื้นหลังด้วยปกที่เบลอ+มืด แล้ววางปกคมชัดกลางเฟรม (ไม่บีบเพี้ยน)
+    tiktok_safe=True: ดัน hook ขึ้นโซนปลอดภัย (~66% ของจอ) เลี่ยง UI TikTok ล่าง (caption/ปุ่ม) บัง
     คืน path ภาพใหม่ (.jpg) — ไม่ง้อ libass"""
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -83,13 +84,14 @@ def caption_cover(cover_path: str, title: str, hook: str = "") -> str:
         # ชื่อเรื่อง (บน)
         tlines = _wrap(draw, title, title_f, W - 100)[:3]
         band_text(tlines, title_f, 70, fill="#FFFFFF")
-        # hook (ล่าง)
+        # hook: ปกติวางล่างสุด · tiktok_safe ดันขึ้นโซนปลอดภัย (~66% จอ) เลี่ยง UI TikTok ล่างบัง
         if hook:
             hlines = _wrap(draw, hook, hook_f, W - 100)[:3]
             line_h = hook_f.size + 16
-            band_text(hlines, hook_f, H - line_h * len(hlines) - 90, fill="#22D3EE")
+            y_hook = int(H * 0.66) if tiktok_safe else (H - line_h * len(hlines) - 90)
+            band_text(hlines, hook_f, y_hook, fill="#22D3EE")
 
-        out = os.path.splitext(cover_path)[0] + "_captioned.jpg"
+        out = os.path.splitext(cover_path)[0] + ("_tt.jpg" if tiktok_safe else "_captioned.jpg")
         canvas.save(out, "JPEG", quality=90)
         return out
     except Exception as e:
