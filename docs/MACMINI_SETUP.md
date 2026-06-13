@@ -248,24 +248,37 @@ LLM_BACKEND=gemini
 
 ---
 
-## 8. ทำให้ Mac mini ทำงาน "เรื่อยๆ" (เชื่อมกับ roadmap Phase 1–2)
+## 8. ทำให้ Mac mini ทำงาน "เรื่อยๆ" อัตโนมัติ (รันอัตโนมัติทุกครั้ง/บน startup)
 
-Mac mini ไม่ได้เป็นแค่ LLM server — ให้มันเป็น **worker host** ของทั้ง pipeline ได้เลย:
+เพื่อให้เครื่อง Mac mini รันงาน pipeline ตรวจสอบนิยาย และเขียนตอนใหม่แบบอัตโนมัติตลอดทั้งวัน:
 
-1. ติดตั้ง ANSRE repo บน Mac mini ด้วย
-2. ตั้ง launchd อีกตัว (`com.ansre.worker`) เรียก `orchestrator.py --once` ทุก 15–30 นาที
-   (orchestrator จะสร้างใน Phase 1 — ดู `ROADMAP.md`)
-3. ผล: Mac mini รัน **ทั้ง LLM และ pipeline** ในเครื่องเดียว เน็ตในบ้านไม่ต้องวิ่งข้ามเครื่องด้วยซ้ำ
-   → `LOCAL_LLM_BASE_URL=http://localhost:11434/v1`
+1. **ติดตั้งและรัน worker อัตโนมัติ (ผ่าน launchd)**
+   รันคำสั่งด้านล่างนี้บน Mac mini:
+   ```bash
+   ./ansre start      # หรือ make start
+   ```
+   *หมายเหตุ: คำสั่งนี้จะสร้างและโหลดไฟล์ plist ไปยัง LaunchAgents ของผู้ใช้ เพื่อสั่งรัน `orchestrator.py` ทุกๆ 20 นาทีโดยอัตโนมัติ*
 
-นี่คือสถาปัตยกรรมที่ถูกที่สุด + ทนที่สุด: คอมพิวเตอร์เปิดทิ้งไว้ที่บ้าน 1 เครื่อง ผลิตคอนเทนต์เองทั้งวัน
+2. **ดูประวัติการทำงานแบบ Real-time (Logs)**
+   ```bash
+   tail -f /tmp/ansre.worker.log
+   ```
+
+3. **ตรวจสอบสถานะระบบ**
+   ```bash
+   ./ansre status     # หรือ make status
+   ```
+
+4. **หยุดการทำงานอัตโนมัติ**
+   ```bash
+   ./ansre stop       # หรือ make stop
+   ```
 
 ---
 
 ## สรุปขั้นตอนสั้นๆ
-1. `brew install ollama` + `ollama pull` โมเดลตาม RAM
-2. ตั้ง launchd ให้ Ollama เป็น service (`OLLAMA_HOST=0.0.0.0`)
-3. `pmset` กันเครื่องหลับ
-4. แก้ `.env`: `LLM_BACKEND=hybrid` + ชี้ `LOCAL_LLM_BASE_URL`
-5. `python3 llm_provider.py --selftest` ให้ผ่านทั้งคู่
-6. (Phase 1) ติดตั้ง worker บน Mac mini ให้ผลิตเองทั้งวัน
+1. รัน `bash macmini_setup.sh` (บน Mac mini) เพื่อลง Ollama, โมเดล และตั้งค่าปิดโหมด Sleep
+2. แก้ `.env`: ตั้ง `LLM_BACKEND=hybrid` และชี้ URL/Model ไปยัง Mac mini
+3. รัน `./ansre local` (หรือ `make local`) เพื่อทดสอบการต่อกับ Local LLM
+4. รัน `./ansre start` (หรือ `make start`) บน Mac mini เพื่อตั้งให้รันอัตโนมัติแบบต่อเนื่องทุก 20 นาที
+

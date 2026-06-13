@@ -136,8 +136,31 @@ tree: ## แสดงโครงสร้างไฟล์ (ไม่รวม
 
 # ---------- Mac mini (รันสคริปต์นี้บน Mac mini) ----------
 .PHONY: macmini
-macmini: ## พิมพ์วิธีตั้ง Mac mini (รันบนเครื่อง Mac mini เอง)
-	@echo "บน Mac mini รัน:  bash macmini_setup.sh   (ดู docs/MACMINI_SETUP.md)"
+macmini: ## พิมพ์วิธีตั้งค่าและรัน Mac mini อัตโนมัติ (รันบน Mac mini)
+	@echo ""
+	@echo "🖥️  คู่มือตั้งค่าและใช้งาน ANSRE บน Mac mini"
+	@echo "=========================================="
+	@echo "1. เริ่มต้นติดตั้ง (Ollama + Models + Power config):"
+	@echo "   bash macmini_setup.sh"
+	@echo ""
+	@echo "2. ตรวจสอบการเชื่อมต่อ Local LLM จากเครื่อง ANSRE:"
+	@echo "   make local"
+	@echo ""
+	@echo "3. สั่งให้ระบบรันอัตโนมัติแบบต่อเนื่อง (ทุก 20 นาที):"
+	@echo "   make start"
+	@echo ""
+	@echo "4. ตรวจสอบสถานะการทำงานภาพรวม:"
+	@echo "   make status"
+	@echo ""
+	@echo "5. ติดตามความเคลื่อนไหว Real-time (Logs):"
+	@echo "   tail -f /tmp/ansre.worker.log"
+	@echo ""
+	@echo "6. หยุดการทำงานอัตโนมัติ:"
+	@echo "   make stop"
+	@echo ""
+	@echo "รายละเอียดเพิ่มเติม ดูคู่มือฉบับเต็มได้ที่ docs/MACMINI_SETUP.md"
+	@echo ""
+
 
 # ---------- Help ----------
 .PHONY: help
