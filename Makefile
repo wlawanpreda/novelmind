@@ -109,8 +109,20 @@ audio: ## ทำหนังสือเสียง (TTS)
 	@$(ANSRE) audio
 teaser: ## ตัดวิดีโอ teaser (FFmpeg)
 	@$(ANSRE) teaser
-publish: ## เผยแพร่ teaser → YouTube/TikTok/คิวนิยาย
+publish: ## เผยแพร่ teaser → YouTube/TikTok/Bilibili/คิวนิยาย
 	@$(ANSRE) publish
+epub: ## 📚 รวมบทเป็นไฟล์ .epub พร้อมขายบน Meb / ReadAWrite — make epub ARGS="--all"
+	@$(PY) epub_packager.py $(if $(ARGS),$(ARGS),--all)
+audiobook: ## 🎧 รวมไฟล์เสียงเป็นนิยายเสียงยาว (Long-Form) สำหรับ YouTube/Podcast — make audiobook ARGS="--all"
+	@$(PY) audiobook_packager.py $(if $(ARGS),$(ARGS),--all)
+bilibili: ## 📺 แปลและเตรียมชุดเผยแพร่สำหรับ Bilibili — make bilibili
+	@$(PY) bilibili_publisher.py $(ARGS)
+portfolio: ## 📊 วิเคราะห์พอร์ตโฟลิโอและเรื่องเรือธง (Flagship vs Test) — make portfolio
+	@$(PY) portfolio_manager.py
+sync: ## 🔄 ดึงสถิติจริงจาก YouTube อัตโนมัติและวิเคราะห์สูตรปัง — make sync
+	@$(PY) feedback.py sync
+qa: ## 🛡️ ตรวจรับรองคุณภาพผลงานก่อนเผยแพร่ (Quality Gate >= 80) — make qa ARGS="--all"
+	@$(PY) quality_gate.py $(if $(ARGS),$(ARGS),--all)
 
 # ---------- Dev / ดูแลโค้ด ----------
 .PHONY: check test clean clean-tasks tree
@@ -120,7 +132,7 @@ check: ## compile-check ทุกไฟล์ .py (root + legacy + scraper)
 	echo "✅ ทุกไฟล์ compile ผ่าน"
 
 test: ## รัน test ทั้งหมด (hermetic, ศูนย์ค่าใช้จ่าย)
-	@for t in test_gateway_e2e.py test_phase2_routing.py test_gateway_http_e2e.py test_gateway_hardening.py test_singleflight.py; do \
+	@for t in test_gateway_e2e.py test_phase2_routing.py test_gateway_http_e2e.py test_gateway_hardening.py test_singleflight.py test_multi_reviewer.py test_global_scout.py; do \
 		$(PY) $$t >/tmp/_ansre_test.out 2>&1 && echo "✅ $$t" || { echo "❌ $$t"; tail -8 /tmp/_ansre_test.out; }; \
 	done; rm -f /tmp/_ansre_test.out
 

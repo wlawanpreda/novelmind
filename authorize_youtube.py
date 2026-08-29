@@ -20,10 +20,11 @@ import sys
 ROOT = os.path.dirname(os.path.abspath(__file__))
 CLIENT_SECRET = os.path.join(ROOT, "client_secret.json")
 TOKEN_OUT = os.path.join(ROOT, "youtube_token.json")
-# upload (อัปคลิป) + readonly (อ่านสถิติ views/likes/comments เพื่อวางแผน)
+# upload (อัปคลิป) + readonly (อ่านสถิติ) + youtube (จัดการสถานะ/privacy ของคลิป)
 SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
+    "https://www.googleapis.com/auth/youtube",
 ]
 
 

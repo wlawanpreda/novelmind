@@ -46,7 +46,7 @@ def fetch_stats(rows):
     ids = [r["vid"] for r in rows]
     for i in range(0, len(ids), 50):
         chunk = ids[i:i + 50]
-        resp = yt.videos().list(part="statistics,snippet,contentDetails",
+        resp = yt.videos().list(part="statistics,snippet,contentDetails,status",
                                 id=",".join(chunk)).execute()
         for it in resp.get("items", []):
             s = it.get("statistics", {})
@@ -60,6 +60,27 @@ def fetch_stats(rows):
                 "comments": int(s.get("commentCount", 0) or 0),
             })
     return out
+
+
+def get_channel_overview(sb_dir: str = None) -> dict:
+    """ดึงภาพรวมสถิติช่อง YouTube สำหรับทำ Daily Digest หรือ Analytics"""
+    target_sb = sb_dir or SB
+    rows = collect()
+    if not rows:
+        return {"total_videos": 0, "total_views": 0, "total_likes": 0, "total_comments": 0, "top_videos": []}
+    try:
+        stats = fetch_stats(rows)
+        stats.sort(key=lambda x: x["views"], reverse=True)
+        return {
+            "total_videos": len(stats),
+            "total_views": sum(s["views"] for s in stats),
+            "total_likes": sum(s["likes"] for s in stats),
+            "total_comments": sum(s["comments"] for s in stats),
+            "top_videos": stats[:5],
+            "all_videos": stats
+        }
+    except Exception as e:
+        return {"error": str(e), "total_videos": len(rows), "total_views": 0, "total_likes": 0, "total_comments": 0, "top_videos": []}
 
 
 if __name__ == "__main__":
@@ -86,3 +107,4 @@ if __name__ == "__main__":
     print(f"\n=== สถิติรวม: {tot_v} views · {sum(s['likes'] for s in stats)} likes · {sum(s['comments'] for s in stats)} comments ===\n")
     for s in stats:
         print(f"  👁{s['views']:>5} ❤{s['likes']:>3} 💬{s['comments']:>2} [{s['privacy']}] {s['title'][:45]}")
+

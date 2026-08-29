@@ -336,6 +336,8 @@ def main():
         return run([py, "orchestrator.py"] + (rest if rest else ["--once"]))
     if cmd == "scout":
         return run([py, "scout.py", "--source", "all", "--limit", "3", "--outdir", SB] + rest)
+    if cmd in ("scout-global", "global"):
+        return run([py, "global_scout.py"] + rest)
     if cmd == "analyze":
         need_gem_or_exit(); return run([py, "agent_analyzer.py", SB] + rest)
     if cmd == "trends":
@@ -348,6 +350,15 @@ def main():
         need_gem_or_exit(); return run([py, "cover_generator.py", SB])
     if cmd == "audio":
         return run([py, "audio_engine.py", SB])
+    if cmd == "review":
+        need_gem_or_exit()
+        return run([py, "multi_reviewer.py"] + rest)
+    if cmd in ("bot", "listen"):
+        return run([py, "discord_bot_listener.py"] + rest)
+    if cmd in ("epub", "export"):
+        return run([py, "epub_packager.py"] + rest)
+    if cmd == "discord":
+        return run([py, "discord_reporter.py"] + rest)
     if cmd == "teaser":
         return run([py, "teaser_generator.py", SB, os.environ.get("ANSRE_TEASER_DURATION", "60")])
     if cmd == "publish":

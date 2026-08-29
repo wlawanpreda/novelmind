@@ -320,6 +320,10 @@ def process_teasers(second_brain_dir: str, max_duration: int = 60):
         out_filename = filename.replace(".mp3", ".mp4").replace("Audiobook_", "Teaser_")
         output_filepath = os.path.join(output_dir, out_filename)
         
+        # ข้ามถ้ามีวิดีโอ Teaser อยู่แล้ว (Idempotent)
+        if os.path.exists(output_filepath):
+            continue
+            
         cover_path = find_cover_image(filename, covers_dir)
         if not cover_path:
             print(f"[!] Cover image for {filename} not found. Skipping teaser generation.")

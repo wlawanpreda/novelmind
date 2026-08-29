@@ -168,10 +168,20 @@ def main():
                         help="Path to Second Brain directory (default: ./SecondBrain)")
     parser.add_argument("--json-out", type=str, default=None,
                         help="Path to output merged JSON data file")
+    parser.add_argument("--global-scout", "--global", dest="global_scout", action="store_true",
+                        help="ใช้ Playwright Browser ท่องเว็บนิยายหลากหลายประเทศ (JP, CN, KR, US)")
+    parser.add_argument("--country", type=str, default="JP,US,KR,CN",
+                        help="ประเทศเป้าหมายสำหรับ global scout เช่น JP,US,KR,CN (default: all)")
     
     args = parser.parse_args()
     
     ensure_dirs(args.outdir)
+    
+    if args.global_scout:
+        from global_scout import run_global_scout
+        countries = args.country.split(",")
+        run_global_scout(countries=countries, limit_per_country=args.limit)
+        return
     
     # 1. ดึงทุกแหล่งพร้อมกัน (concurrent — เร็วกว่าทีละแหล่ง)
     jobs = []

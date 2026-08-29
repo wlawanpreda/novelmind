@@ -77,10 +77,13 @@ def process_covers(second_brain_dir: str):
         with open(filepath, "r", encoding="utf-8") as f:
             outline_content = f.read()
             
-        image_prompt = generate_cover_prompt(outline_content)
-        success = generate_book_cover(image_prompt, cover_path)
-        if success:
-            processed_count += 1
+        try:
+            image_prompt = generate_cover_prompt(outline_content)
+            success = generate_book_cover(image_prompt, cover_path)
+            if success:
+                processed_count += 1
+        except Exception as e:
+            print(f"    [!] ข้อผิดพลาดในการสร้างปก {clean_title}: {e}")
             
     print(f"\n[+] Cover generation process finished. Created {processed_count} covers.")
 

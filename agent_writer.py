@@ -7,6 +7,16 @@ from typing import Dict, Any, Tuple, List
 from datetime import datetime
 from llm_provider import generate, resolve_backend
 
+try:
+    from multi_reviewer import run_multi_agent_review_loop
+except Exception:
+    run_multi_agent_review_loop = None
+
+try:
+    from discord_reporter import send_review_summary_to_discord
+except Exception:
+    send_review_summary_to_discord = None
+
 # Load environment variables from .env file if it exists
 env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 if os.path.exists(env_path):
@@ -388,8 +398,28 @@ def process_analyzed_novels(second_brain_dir: str, only: str = None, limit: int 
 
             compiled_draft = "\n\n".join(chapter_scenes)
 
-            # Stage 5: Editor Polishing & Enhancements
-            final_chapter = run_stage_5_prose_enhancer(novel_title, compiled_draft, characters, world=outline)
+            # Stage 5: Multi-Agent Editorial Review Board (>= 3 Iteration Rounds & Discord Reporting)
+            min_rev_rounds = int(os.environ.get("ANSRE_REVIEW_MIN_ROUNDS", "3"))
+            max_rev_rounds = int(os.environ.get("ANSRE_REVIEW_MAX_ROUNDS", "5"))
+            target_rev_score = float(os.environ.get("ANSRE_REVIEW_TARGET_SCORE", "8.5"))
+            
+            review_report = None
+            if run_multi_agent_review_loop:
+                final_chapter, review_report = run_multi_agent_review_loop(
+                    title=thai_title,
+                    chapter_text=compiled_draft,
+                    outline=outline,
+                    characters=characters,
+                    world=outline,
+                    min_rounds=min_rev_rounds,
+                    max_rounds=max_rev_rounds,
+                    target_score=target_rev_score,
+                    verbose=True
+                )
+                if send_review_summary_to_discord and review_report:
+                    send_review_summary_to_discord(thai_title, 1, review_report)
+            else:
+                final_chapter = run_stage_5_prose_enhancer(novel_title, compiled_draft, characters, world=outline)
             
             # Stage 6: Audio Script Formatting
             final_audio_script = run_stage_6_audio_script(novel_title, final_chapter)
@@ -436,6 +466,9 @@ def process_analyzed_novels(second_brain_dir: str, only: str = None, limit: int 
             frontmatter["recreation_date"] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
             frontmatter["recreation_outline_ref"] = f"[[{clean_title}_Outline]]"
             frontmatter["recreation_chars_ref"] = f"[[{clean_title}_Characters]]"
+            if review_report:
+                frontmatter["review_score"] = str(review_report.get("final_score", 0.0))
+                frontmatter["review_rounds"] = str(review_report.get("total_rounds", 1))
             
             # Append log in original md body
             body_append = f"\n\n## 🚀 ผลงานสร้างสรรค์ใหม่ (Re-creation Output)\n- **โครงร่างและบทนิยายเสียงถูกสร้างด้วยระบบ Multi-Stage Engine:** {thai_title}\n- **ไฟล์พล็อต:** [[{clean_title}_Outline]]\n- **ไฟล์ตัวละคร:** [[{clean_title}_Characters]]\n- **ไฟล์ตอนแรก:** [[{clean_title}_Chapter_01]]\n- **ไฟล์บทนิยายเสียงตอนแรก:** [[{clean_title}_AudioScript_01]]\n"

@@ -35,6 +35,11 @@ import json
 import time
 from datetime import datetime
 
+try:
+    from discord_reporter import send_media_and_publish_report
+except Exception:
+    send_media_and_publish_report = None
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
 # ---- load .env ----
@@ -82,18 +87,30 @@ def save_ledger(sb: str, ledger: dict):
 
 
 # ---------------------------------------------------------------------------
-# Metadata: ดึง title/desc/hashtags จาก outline + ชื่อไฟล์
+# Metadata: ดึง title/desc/hashtags จาก audioscript/srt/outline + ชื่อไฟล์
 # ---------------------------------------------------------------------------
-# คำที่ห้ามหลุดสู่ผู้ชม (เครดิตต้นฉบับ/เมตา) — บรรทัดที่ขึ้นต้นด้วยพวกนี้จะถูกข้าม
-_SKIP_PREFIX = ("inspired by", "original", "source", "based on", "ต้นฉบับ", "แรงบันดาลใจ")
+# คำที่ห้ามหลุดสู่ผู้ชม (เครดิตต้นฉบับ/เมตา/บทสนทนา AI) — บรรทัดหรือข้อความที่มีพวกนี้จะถูกข้าม/ตัดทิ้ง
+_SKIP_PREFIX = (
+    "inspired by", "original", "source", "based on", "ต้นฉบับ", "แรงบันดาลใจ",
+    "ในฐานะ", "audio production director", "chief literary editor", "ยอดเยี่ยม",
+    "แน่นอนครับ", "โอเคครับ", "เอาล่ะ", "ท่านผู้แต่ง", "ผู้กำกับ", "แปลงบท",
+    "บทนิยายเสียง", "บทพากย์", "voice actor", "narrator", "sound effect", "sfx:"
+)
 
 
 def _clean_line(s: str) -> str:
     """ตัด markdown + ป้ายกำกับนำหน้า (เช่น 'คำโปรย:') ให้เหลือเนื้อสะอาด"""
-    s = re.sub(r"[*_`>#]", "", s).strip()                  # markdown
-    s = re.sub(r"^\s*[-•]\s*", "", s)                       # bullet
-    s = re.sub(r"^\s*\(?[^:：]{1,18}[:：]\s*", "", s)        # ป้ายกำกับสั้นนำหน้า "label:"
+    s = re.sub(r"[*_`>#\[\]\(\)]", "", s).strip()                  # markdown + brackets
+    s = re.sub(r"^\s*[-•]\s*", "", s)                             # bullet
+    s = re.sub(r"^\s*\(?[^:：]{1,18}[:：]\s*", "", s)              # ป้ายกำกับสั้นนำหน้า "label:"
+    s = re.sub(r"\s+", " ", s)
     return s.strip()
+
+
+def _is_meta_talk(text: str) -> bool:
+    """ตรวจสอบว่าเป็นข้อความคุย meta ของ AI หรือไม่"""
+    t = text.lower()
+    return any(p in t for p in _SKIP_PREFIX)
 
 
 def _extract_synopsis(fp: str) -> str:
@@ -108,17 +125,17 @@ def _extract_synopsis(fp: str) -> str:
             # ตัดป้ายกำกับ "คำโปรย...(Logline):" ทิ้ง — เอาเฉพาะเนื้อหลัง ":"
             after = re.split(r"[:：]", line, 1)
             inline = _clean_line(after[1]) if len(after) > 1 else ""
-            if len(inline) >= 15:                          # คำโปรยอยู่ inline หลัง ":"
+            if len(inline) >= 15 and not _is_meta_talk(inline):
                 return inline[:400]
             # เป็นแค่หัวข้อ — เนื้อคำโปรยอยู่บรรทัดถัดไป
             for nxt in lines[i + 1:i + 4]:
                 s = nxt.strip()
                 if not s or s.startswith(("#", "---")):
                     continue
-                if any(s.lower().startswith(p) for p in _SKIP_PREFIX):
+                if _is_meta_talk(s):
                     continue
                 cc = _clean_line(s)
-                if len(cc) >= 15:
+                if len(cc) >= 15 and not _is_meta_talk(cc):
                     return cc[:400]
             break
     buf = ""                                               # 2) เนื้อแรกๆ ที่สะอาด
@@ -126,23 +143,125 @@ def _extract_synopsis(fp: str) -> str:
         s = line.strip()
         if not s or s.startswith(("#", "---")) or s.startswith("#"):
             continue
-        if any(s.lower().startswith(p) for p in _SKIP_PREFIX):
+        if _is_meta_talk(s):
             continue
         c = _clean_line(s)
-        if c and not c.startswith("#"):
+        if c and not _is_meta_talk(c):
             buf += c + " "
         if len(buf) > 280:
             break
     return buf.strip()[:400]
 
 
+def _extract_chapter_info(sb: str, stem: str, ep: int) -> dict:
+    """ดึงชื่อตอนและ hook สั้นๆ จาก AudioScript หรือ Chapter หรือ SRT"""
+    ap = os.path.join(sb, "05_Active_Projects")
+    ch_title = ""
+    hook = ""
+
+    # 1. ลองหาจาก Chapter ต้นฉบับก่อน (มักจะสะอาดที่สุด)
+    ch_candidates = [
+        os.path.join(ap, "Chapters", f"{stem}_Chapter_{ep:02d}.md"),
+        os.path.join(ap, "Chapters", f"{stem}_Chapter_{ep}.md"),
+    ]
+    for cp in ch_candidates:
+        if os.path.exists(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    content = f.read()
+                # หาชื่อตอนจาก heading เช่น "# ตอนที่ 1: ..." หรือ "## ตอนที่ 1 ..."
+                m_title = re.search(r"ตอนที่\s*\d+\s*[:：\s]\s*([^\n\r#\(\)]+)", content)
+                if m_title:
+                    raw_sub = _clean_line(m_title.group(1))
+                    if raw_sub and not _is_meta_talk(raw_sub) and len(raw_sub) <= 40:
+                        ch_title = raw_sub
+                # หาประโยคเปิดบรรทัดแรกที่สะอาด
+                for ln in content.splitlines():
+                    cln = _clean_line(ln)
+                    if len(cln) >= 20 and not _is_meta_talk(cln):
+                        hook = cln[:55]
+                        break
+            except Exception:
+                pass
+            if ch_title or hook:
+                break
+
+    # 2. ถ้ายังไม่ได้ ให้หาจาก AudioScript
+    if not ch_title or not hook:
+        script_candidates = [
+            os.path.join(ap, "Audio_Scripts", f"{stem}_AudioScript_{ep:02d}.md"),
+            os.path.join(ap, "Audio_Scripts", f"{stem}_AudioScript_{ep}.md"),
+        ]
+        for sc_p in script_candidates:
+            if os.path.exists(sc_p):
+                try:
+                    with open(sc_p, "r", encoding="utf-8") as f:
+                        content = f.read()
+                    if not ch_title:
+                        m_title = re.search(r"ตอนที่\s*\d+\s*[:：\s]\s*([^\n\r#\(\)]+)", content)
+                        if m_title:
+                            raw_sub = _clean_line(m_title.group(1))
+                            if raw_sub and not _is_meta_talk(raw_sub) and len(raw_sub) <= 40:
+                                ch_title = raw_sub
+                    if not hook:
+                        lines = [ln.strip() for ln in content.splitlines() if ln.strip() and not ln.strip().startswith(("#", "*", "["))]
+                        for ln in lines:
+                            cleaned = _clean_line(ln)
+                            if len(cleaned) >= 20 and not _is_meta_talk(cleaned):
+                                hook = cleaned[:55]
+                                break
+                except Exception:
+                    pass
+                if ch_title and hook:
+                    break
+
+    # 3. ถ้ายังไม่ได้ hook ลองหาจาก SRT
+    if not hook:
+        srt_candidates = [
+            os.path.join(ap, "Audio_Output", f"{stem}_Audiobook_{ep:02d}.srt"),
+            os.path.join(ap, "Audio_Output", f"{stem}_{ep:02d}.srt"),
+            os.path.join(ap, "Teaser_Output", f"{stem}_Teaser_{ep:02d}.srt"),
+        ]
+        for srt_p in srt_candidates:
+            if os.path.exists(srt_p):
+                try:
+                    with open(srt_p, "r", encoding="utf-8") as f:
+                        lines = [ln.strip() for ln in f if ln.strip() and not ln.strip().isdigit() and "-->" not in ln]
+                    for ln in lines:
+                        cln = _clean_line(ln)
+                        if len(cln) >= 15 and not _is_meta_talk(cln):
+                            hook = cln[:55]
+                            break
+                except Exception:
+                    pass
+                if hook:
+                    break
+
+    return {"chapter_title": ch_title, "hook": hook}
+
+
 def build_metadata(sb: str, teaser_path: str) -> dict:
     base = os.path.basename(teaser_path)
     stem = re.sub(r"_Teaser.*$", "", base)
-    # ชื่อเรื่อง = ส่วนหน้า _Teaser
-    title = stem.replace("_", " ").strip() or "ANSRE Story"
+    story_name = stem.replace("_", " ").strip() or "ANSRE Story"
 
-    # ใช้ Caption/SEO ที่สร้างไว้ก่อน (สะอาด+ดึงดูดกว่า) ไม่งั้นดึงคำโปรยจาก Outline
+    # ดึงหมายเลขตอนถ้ามี
+    m_ep = re.search(r"Teaser_(\d+)", base)
+    ep = int(m_ep.group(1)) if m_ep else 1
+
+    ch_info = _extract_chapter_info(sb, stem, ep)
+    chapter_subtitle = ch_info.get("chapter_title", "")
+    hook = ch_info.get("hook", "")
+
+    # สร้าง Title ที่ดึงดูดและมี SEO
+    if chapter_subtitle:
+        raw_title = f"{story_name} ตอนที่ {ep}: {chapter_subtitle}"
+    elif hook:
+        raw_title = f"{story_name} ตอนที่ {ep} | {hook}"
+    else:
+        raw_title = f"{story_name} ตอนที่ {ep} (นิยายเสียง)"
+
+    # ใช้ Caption/SEO ที่สร้างไว้ก่อน ไม่งั้นดึงคำโปรยจาก Outline
     synopsis = ""
     cap_fp = os.path.join(sb, "05_Active_Projects", "Captions", f"{stem}_Caption.md")
     if os.path.exists(cap_fp):
@@ -152,9 +271,25 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
         if os.path.exists(outline):
             synopsis = _extract_synopsis(outline)
 
-    hashtags = ["นิยาย", "นิยายเสียง", "audiobook", "เล่าเรื่อง", "shorts"]
-    description = (synopsis.strip() or f"ติดตามนิยายเรื่อง {title}") + "\n\n" + " ".join("#" + h for h in hashtags)
-    return {"title": title[:95], "description": description[:4900], "tags": hashtags}
+    hashtags = ["Shorts", "นิยายเสียง", "นิยาย", "audiobook", "เล่าเรื่อง", "เรื่องเล่า", "นิยายแปล", "สปีดรัน"]
+    desc_lines = [
+        f"🎧 {raw_title}",
+        "",
+        f"📖 เรื่องย่อ: {synopsis.strip() or f'ติดตามความสนุกของนิยายเรื่อง {story_name}'}",
+        "",
+        "⚡ ฝากกด Like & กด Subscribe เพื่อติดตามตอนใหม่ทุกวันครับ!",
+        "",
+        " ".join("#" + h for h in hashtags)
+    ]
+    description = "\n".join(desc_lines)
+
+    return {
+        "title": raw_title[:90],
+        "description": description[:4900],
+        "tags": [h.lower() for h in hashtags] + [story_name, f"ตอนที่ {ep}"],
+        "episode": ep,
+        "story_name": story_name,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -296,13 +431,38 @@ def publish_tiktok(teaser_path: str, meta: dict, dry: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Adapter: นิยาย Dek-D/Fictionlog (ไม่มี API → เข้าคิว manual + แพ็กไฟล์)
+# Adapter: Bilibili (B站 / Bilibili Global — Localization & Publishing)
+# ---------------------------------------------------------------------------
+def publish_bilibili(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
+    if not _enabled("PUBLISH_BILIBILI"):
+        return "disabled"
+    try:
+        import bilibili_publisher
+        res = bilibili_publisher.publish_to_bilibili(teaser_path, meta, dry)
+        if res.startswith("queued"):
+            log(f"  [bilibili] ✅ เข้าคิวเผยแพร่พร้อมแปลจีน: {os.path.basename(teaser_path)}")
+        elif res.startswith("error"):
+            log(f"  [bilibili] ❌ error: {res}")
+        return res
+    except Exception as e:  # noqa: BLE001
+        log(f"  [bilibili] ❌ error: {e}")
+        return f"error: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Adapter: นิยาย Dek-D/Fictionlog/Meb (แพ็กไฟล์ EPUB + Web Publish Kit)
 # ---------------------------------------------------------------------------
 def publish_novel(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
     if not _enabled("PUBLISH_NOVEL"):
         return "disabled"
     queue_dir = os.path.join(sb, "05_Active_Projects", "Publish_Queue")
     title_key = re.sub(r"_Teaser.*$", "", os.path.basename(teaser_path))
+    # สร้าง EPUB พร้อมขายลง Meb และชุดเว็บนิยายสำหรับ Dek-D / ReadAWrite
+    try:
+        import epub_packager
+        epub_packager.create_epub(title_key)
+    except Exception:
+        pass
     # หาบทนิยายที่เกี่ยวข้องเพื่อแพ็กให้พร้อมก๊อปวาง
     chapters = sorted(glob.glob(os.path.join(sb, "05_Active_Projects", "Chapters", f"{title_key}*")))
     if dry:
@@ -331,6 +491,20 @@ def publish_novel(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
 
 
 # ---------------------------------------------------------------------------
+def count_published_today(ledger: dict, platform: str = "youtube", target_date: str = None) -> int:
+    """นับจำนวนชิ้นงานที่เผยแพร่สำเร็จในวันนี้"""
+    target = target_date or datetime.now().strftime("%Y-%m-%d")
+    count = 0
+    for key, data in ledger.items():
+        if isinstance(data, dict):
+            pub_val = data.get(platform, "")
+            pub_at = data.get(f"{platform}_published_at") or data.get("published_at", "")
+            if pub_val and not str(pub_val).startswith(("error", "no_creds", "disabled", "dry")) and pub_at.startswith(target):
+                count += 1
+    return count
+
+
+# ---------------------------------------------------------------------------
 # Orchestration
 # ---------------------------------------------------------------------------
 def run(sb: str, dry: bool = False):
@@ -341,32 +515,81 @@ def run(sb: str, dry: bool = False):
     if not teasers:
         log(f"[publisher] ไม่พบ teaser ใน Teasers/ หรือ Teaser_Output/")
         return
+
+    daily_yt_limit = int(os.environ.get("ANSRE_DAILY_PUBLISH_LIMIT", "2"))
+    daily_tt_limit = int(os.environ.get("ANSRE_DAILY_TIKTOK_LIMIT", "2"))
+
     log(f"[publisher] พบ {len(teasers)} teaser | enabled: "
-        f"YT={_enabled('PUBLISH_YOUTUBE')} TT={_enabled('PUBLISH_TIKTOK')} Novel={_enabled('PUBLISH_NOVEL')}")
+        f"YT={_enabled('PUBLISH_YOUTUBE')} (โควตาวันละ {daily_yt_limit} คลิป) | "
+        f"TT={_enabled('PUBLISH_TIKTOK')} | Bilibili={_enabled('PUBLISH_BILIBILI')} | Novel={_enabled('PUBLISH_NOVEL')}")
 
     ledger = load_ledger(sb)
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_yt = count_published_today(ledger, "youtube", today_str)
+
+    log(f"[publisher] วันนี้ ({today_str}) ปล่อย YouTube ไปแล้ว {today_yt}/{daily_yt_limit} คลิป")
+
     for tpath in teasers:
         key = os.path.basename(tpath)
         entry = ledger.get(key, {})
         meta = build_metadata(sb, tpath)
-        log(f"--- {meta['title']} ---")
+
+        # Quality Gate Check: ตรวจสอบความสมบูรณ์ของวิดีโอก่อนปล่อยจริง
+        try:
+            import quality_gate
+            q_res = quality_gate.check_teaser_quality(tpath)
+            if not q_res["passed"]:
+                log(f"  [qa] ⚠️ ข้าม {key} — คุณภาพคลิปไม่ผ่านเกณฑ์ ({q_res['score']}/100): {q_res['issues']}")
+                continue
+        except Exception:
+            pass
 
         targets = [
             ("youtube", lambda: publish_youtube(tpath, meta, dry)),
             ("tiktok", lambda: publish_tiktok(tpath, meta, dry)),
+            ("bilibili", lambda: publish_bilibili(sb, tpath, meta, dry)),
             ("novel", lambda: publish_novel(sb, tpath, meta, dry)),
         ]
+        
+        has_action = False
         for name, fn in targets:
             prev = entry.get(name, "")
             # ข้ามเฉพาะที่สำเร็จจริงแล้ว (ไม่ลองซ้ำ); ส่วนที่ error/no_creds ลองใหม่รอบหน้าได้
             if prev and not prev.startswith(("error", "no_creds", "disabled", "dry")):
-                log(f"  [{name}] ข้าม — เผยแพร่แล้ว ({prev[:48]})")
                 continue
+
+            # เช็กโควต้ารายวันสำหรับ YouTube
+            if name == "youtube" and _enabled("PUBLISH_YOUTUBE") and daily_yt_limit > 0:
+                current_yt = count_published_today(ledger, "youtube", today_str)
+                if current_yt >= daily_yt_limit:
+                    log(f"  [youtube] ⏸️ ครบโควต้าประจำวันนี้แล้ว ({current_yt}/{daily_yt_limit} คลิป) — ข้าม {meta['title']} ไว้ปล่อยวันถัดไป")
+                    continue
+
+            if not has_action:
+                log(f"--- {meta['title']} ---")
+                has_action = True
+
             result = fn()
             entry[name] = result
-        if not dry:
+
+            if not dry and (result.startswith("http") or result.startswith("publish_id:")):
+                now_iso = datetime.now().isoformat()
+                entry[f"{name}_published_at"] = now_iso
+                entry["published_at"] = now_iso
+                entry["title"] = meta.get("title", "")
+
+            if not dry and name == "youtube" and result.startswith("http") and send_media_and_publish_report:
+                send_media_and_publish_report(
+                    title=meta.get("title", ""),
+                    chapter_num=meta.get("episode", 1),
+                    teaser_file=tpath,
+                    youtube_url=result
+                )
+
+        if not dry and has_action:
             ledger[key] = entry
             save_ledger(sb, ledger)
+            
     log("[publisher] เสร็จสิ้น")
 
 

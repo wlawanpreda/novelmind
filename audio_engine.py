@@ -107,7 +107,46 @@ def parse_audio_script(filepath: str) -> List[Dict[str, Any]]:
             segments.append({"type": "dialog", "speaker": current_speaker,
                              "tone": current_tone, "text": clean})
 
-    return segments
+from pydub.generators import Sine, WhiteNoise, Pulse
+
+
+def generate_sfx_cue(cue_text: str) -> AudioSegment:
+    """สร้างเสียงประกอบ (SFX) อัตโนมัติสำหรับคิวเสียงต่าง ๆ เช่น หัวใจเต้น, นาฬิกา, เสียงระบบ, ลม"""
+    low = cue_text.lower()
+    try:
+        if any(k in low for k in ["heart", "หัวใจ", "เต้น", "pulse", "thump"]):
+            # Heartbeat: double low thump (55Hz)
+            t1 = Sine(55).to_audio_segment(duration=140).fade_in(20).fade_out(70) - 4
+            gap = AudioSegment.silent(duration=110)
+            t2 = Sine(50).to_audio_segment(duration=160).fade_in(20).fade_out(80) - 6
+            rest = AudioSegment.silent(duration=450)
+            return t1 + gap + t2 + rest
+        elif any(k in low for k in ["clock", "นาฬิกา", "นับถอยหลัง", "tick", "ticking", "เวลา"]):
+            # Clock ticking: sharp clicks
+            click1 = Pulse(1400).to_audio_segment(duration=35).fade_out(25) - 8
+            pause = AudioSegment.silent(duration=450)
+            click2 = Pulse(1200).to_audio_segment(duration=35).fade_out(25) - 9
+            return click1 + pause + click2 + pause
+        elif any(k in low for k in ["system", "ระบบ", "ding", "chime", "ping", "เตือน"]):
+            # System notification: 2-tone harmonic chime
+            chime1 = Sine(880).to_audio_segment(duration=160).fade_in(15).fade_out(60) - 10
+            chime2 = Sine(1760).to_audio_segment(duration=380).fade_in(15).fade_out(150) - 12
+            return chime1 + chime2 + AudioSegment.silent(duration=200)
+        elif any(k in low for k in ["boom", "thunder", "ระเบิด", "ฟ้าผ่า", "คำราม"]):
+            # Low rumble boom
+            rumble = Sine(45).to_audio_segment(duration=800).fade_in(40).fade_out(400) - 3
+            return rumble
+        elif any(k in low for k in ["whoosh", "wind", "ลม", "สวบ", "วูบ"]):
+            # Sweeping air whoosh
+            air = WhiteNoise().to_audio_segment(duration=450).fade_in(150).fade_out(250) - 16
+            return air
+        else:
+            # Default dramatic pause with subtle bass ambient tone
+            subtle = Sine(70).to_audio_segment(duration=500).fade_in(100).fade_out(250) - 18
+            return subtle + AudioSegment.silent(duration=300)
+    except Exception:
+        return AudioSegment.silent(duration=800)
+
 
 def generate_tts_gtts(text: str, temp_dir: str) -> AudioSegment:
     """Generate free Thai speech using gTTS and return as AudioSegment."""
@@ -329,9 +368,10 @@ def render_script_to_audio(script_path: str, output_path: str) -> bool:
             print(f"    [{idx+1}/{len(segments_data)}] Processing [{speaker}]: {text[:40]}...")
             
             if seg_type == "sfx":
-                print(f"    [SFX] Adding pause placeholder for sound effect: {text}")
-                stitched_audio += pause_sfx
-                current_ms += len(pause_sfx)
+                print(f"    [SFX] 🔊 Synthesizing real sound effect: {text}")
+                sfx_audio = generate_sfx_cue(text)
+                stitched_audio += sfx_audio
+                current_ms += len(sfx_audio)
             else:
                 # Dialog / Narration
                 try:
@@ -409,10 +449,14 @@ def process_audio_scripts(second_brain_dir: str):
         out_filename = filename.replace(".md", ".mp3").replace("AudioScript_", "Audiobook_")
         output_filepath = os.path.join(output_dir, out_filename)
         
-        print(f"\n[*] Rendering: {filename} -> {out_filename}")
+        # ข้ามถ้ามีไฟล์เสียงอยู่แล้ว (Idempotent)
+        if os.path.exists(output_filepath):
+            continue
+            
+        print(f"\n[*] Rendering: {filename} -> {out_filename}", flush=True)
         success = render_script_to_audio(filepath, output_filepath)
         if success:
-            print(f"[+] Render completed for {filename}")
+            print(f"[+] Render completed for {filename}", flush=True)
 
 if __name__ == "__main__":
     second_brain_path = "./SecondBrain"

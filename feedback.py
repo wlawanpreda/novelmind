@@ -312,6 +312,35 @@ def _list():
               f"{r.get('platform','?'):<8} · {r.get('story')}")
 
 
+def sync_youtube(use_ai: bool = False) -> dict:
+    """ดึงสถิติคลิปจริงจาก YouTube Data API เข้า ledger และสั่ง learn อัตโนมัติ"""
+    try:
+        import youtube_stats
+        rows = youtube_stats.collect()
+        if not rows:
+            print("[*] ไม่พบคลิป YouTube ใน ledger")
+            return {"synced": 0, "error": "No videos in ledger"}
+        stats = youtube_stats.fetch_stats(rows)
+        synced_count = 0
+        for s in stats:
+            title = s.get("title", "")
+            # ตัด ตอนที่... และ #Shorts ออกเพื่อให้ match กับ story title ใน Scouting Pool
+            clean_story = re.sub(r"\s*ตอนที่.*$", "", title)
+            clean_story = re.sub(r"\s*#Shorts.*$", "", clean_story).strip()
+            if not clean_story:
+                clean_story = title
+            record(clean_story, views=s.get("views", 0), likes=s.get("likes", 0),
+                   comments=s.get("comments", 0), shares=0, platform="youtube",
+                   url=f"https://youtu.be/{s.get('vid')}")
+            synced_count += 1
+        print(f"[+] Sync ข้อมูล {synced_count} คลิปจาก YouTube เรียบร้อย")
+        brief = learn(use_ai=use_ai)
+        return {"synced": synced_count, "brief": brief, "stats": stats}
+    except Exception as e:
+        print(f"[!] YouTube sync error: {e}")
+        return {"synced": 0, "error": str(e)}
+
+
 def main():
     ap = argparse.ArgumentParser(description="ANSRE feedback loop (Phase 5)")
     sub = ap.add_subparsers(dest="cmd")
@@ -328,6 +357,7 @@ def main():
     lrn = sub.add_parser("learn", help="สังเคราะห์ brief จาก ledger")
     lrn.add_argument("--ai", action="store_true", help="ให้ AI ช่วยสรุปคำแนะนำ (มีค่า token)")
 
+    sub.add_parser("sync", help="ดึงสถิติจริงจาก YouTube อัตโนมัติ")
     sub.add_parser("list", help="ดูผลงานที่บันทึก")
     sub.add_parser("brief", help="พิมพ์ brief ที่ป้อนเข้า ideation")
     sub.add_parser("roi", help="ROI ต่อเรื่อง (engagement เทียบต้นทุน)")
@@ -335,6 +365,8 @@ def main():
     a = ap.parse_args()
     if a.cmd == "record":
         record(a.story, a.views, a.likes, a.comments, a.shares, a.platform, a.url)
+    elif a.cmd == "sync":
+        sync_youtube()
     elif a.cmd == "learn":
         learn(use_ai=a.ai)
     elif a.cmd == "list":

@@ -494,7 +494,14 @@ def _via_gateway_image(prompt, output_path, aspect_ratio, backend) -> bool:
 def _generate_image_direct(prompt: str, output_path: str, aspect_ratio: str = "1:1",
                            backend: str | None = None) -> bool:
     """สร้างรูปเองในเครื่องนี้ (ComfyUI/Imagen) — ตรรกะเดิมก่อนมี gateway."""
-    be = (backend or IMAGE_BACKEND).lower()
+    be = (backend or IMAGE_BACKEND or "gemini").lower()
+    if be == "labs_flow":
+        try:
+            import labs_flow_client
+            return labs_flow_client.generate_image_via_flow(prompt, output_path)
+        except Exception as e:
+            print(f"    [!] Labs Flow error: {e}")
+            return False
 
     if be == "local":
         return _comfy_generate(prompt, output_path, aspect_ratio)

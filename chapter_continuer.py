@@ -21,6 +21,16 @@ import json
 
 from agent_writer import generate_content_safe, strip_meta, NO_META, run_stage_6_audio_script
 
+try:
+    from multi_reviewer import run_multi_agent_review_loop
+except Exception:
+    run_multi_agent_review_loop = None
+
+try:
+    from discord_reporter import send_review_summary_to_discord
+except Exception:
+    send_review_summary_to_discord = None
+
 THAI = "฀-๿"
 
 
@@ -82,7 +92,12 @@ def write_next_chapter(sb, title, n):
 จงวาง 4 ฉากย่อย (beats) สำหรับ "ตอนที่ {n}" ให้ต่อเนื่องจากตอนก่อนอย่างสมเหตุผล เดินเรื่องคืบหน้า
 ตอบ JSON เท่านั้น: [{{"scene_number":"1","setting":"...","goal":"...","action":"...","climax":"..."}}, ... 4 ฉาก]"""
     try:
-        beats = json.loads(generate_content_safe("planner", beat_prompt, is_json=True))
+        raw_beats = generate_content_safe("planner", beat_prompt, is_json=True)
+        beats = json.loads(raw_beats)
+        if isinstance(beats, dict):
+            beats = beats.get("scenes") or beats.get("beats") or list(beats.values())
+        if not isinstance(beats, list):
+            raise ValueError("beats is not a list")
     except Exception:
         beats = [{"scene_number": str(i + 1), "setting": f"ฉาก {i+1}", "goal": "เดินเรื่อง",
                   "action": "เหตุการณ์ต่อเนื่อง", "climax": "ปมตอน"} for i in range(4)]
@@ -111,18 +126,51 @@ def write_next_chapter(sb, title, n):
 
     draft = "\n\n".join(scenes)
 
-    # C) เกลา + cliffhanger
-    polish = f"""คุณคือ Chief Literary Editor เกลานิยายไทยตอนที่ {n} ของเรื่อง {title}:
+    # C) Multi-Agent Editorial Review Board (>= 3 Iteration Rounds & Discord Reporting)
+    min_rev_rounds = int(os.environ.get("ANSRE_REVIEW_MIN_ROUNDS", "3"))
+    max_rev_rounds = int(os.environ.get("ANSRE_REVIEW_MAX_ROUNDS", "5"))
+    target_rev_score = float(os.environ.get("ANSRE_REVIEW_TARGET_SCORE", "8.5"))
+    
+    review_report = None
+    if run_multi_agent_review_loop:
+        try:
+            final, review_report = run_multi_agent_review_loop(
+                title=f"{title} ตอนที่ {n}",
+                chapter_text=draft,
+                outline=outline,
+                characters=characters,
+                world=outline,
+                min_rounds=min_rev_rounds,
+                max_rounds=max_rev_rounds,
+                target_score=target_rev_score,
+                verbose=True
+            )
+            if send_review_summary_to_discord and review_report:
+                try:
+                    send_review_summary_to_discord(title, n, review_report)
+                except Exception as de:
+                    print(f"    [!] Discord reporter warning: {de}")
+        except Exception as e:
+            print(f"    [!] Multi-agent review loop error: {e} — กำลัง fallback สู่ standard editor...")
+            polish = f"""คุณคือ Chief Literary Editor เกลานิยายไทยตอนที่ {n} ของเรื่อง {title}:
 {draft}
 
 กฎของโลก/ระบบ (แก้จุดที่ขัดแย้งให้ถูก): {outline[:2000]}
 
 เกลาสำนวนให้คม ลื่นไหล แก้จุดขัดแย้งกฎ/ตัวเลข ปิดท้ายด้วย cliffhanger ชวนอ่านต่อ
 **ห้ามขยายความยาว** คงความยาวใกล้เคียงเดิม"""
-    final = strip_meta(generate_content_safe("enhancer", polish + NO_META))
+            final = strip_meta(generate_content_safe("enhancer", polish + NO_META))
+    else:
+        polish = f"""คุณคือ Chief Literary Editor เกลานิยายไทยตอนที่ {n} ของเรื่อง {title}:
+{draft}
+
+กฎของโลก/ระบบ (แก้จุดที่ขัดแย้งให้ถูก): {outline[:2000]}
+
+เกลาสำนวนให้คม ลื่นไหล แก้จุดขัดแย้งกฎ/ตัวเลข ปิดท้ายด้วย cliffhanger ชวนอ่านต่อ
+**ห้ามขยายความยาว** คงความยาวใกล้เคียงเดิม"""
+        final = strip_meta(generate_content_safe("enhancer", polish + NO_META))
 
     # ป้องกัน silent-fail: ถ้าบทสั้นผิดปกติ (LLM ล่ม/หลุดกลางคัน) อย่าบันทึกทับเป็น garbage
-    # ใช้ draft (ก่อนเกลา) แทนถ้ายาวกว่า แล้วถ้ายังสั้นมากก็ข้ามไป (กันไฟล์ 300 ตัวอักษร)
     min_chars = int(os.environ.get("ANSRE_MIN_CHAPTER_CHARS", "1500"))
     if len(final) < min_chars and len(draft) > len(final):
         print(f"    [!] บทเกลาสั้นผิดปกติ ({len(final)}) — ใช้ draft ก่อนเกลา ({len(draft)}) แทน")
@@ -198,14 +246,22 @@ def main():
         for title, gap in gaps:
             for _ in range(min(gap, max_per_run)):
                 n = _next_n(sb, title)
-                if not write_next_chapter(sb, title, n):
+                try:
+                    if not write_next_chapter(sb, title, n):
+                        break
+                except Exception as e:
+                    print(f"[!] เกิดข้อผิดพลาดในการเขียน {title} ตอนที่ {n}: {e}")
                     break
         return
 
     for title in projects:
         for _ in range(count):
             n = _next_n(sb, title)
-            if not write_next_chapter(sb, title, n):
+            try:
+                if not write_next_chapter(sb, title, n):
+                    break
+            except Exception as e:
+                print(f"[!] เกิดข้อผิดพลาดในการเขียน {title} ตอนที่ {n}: {e}")
                 break
 
 
