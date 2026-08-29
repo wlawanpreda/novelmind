@@ -123,6 +123,16 @@ sync: ## 🔄 ดึงสถิติจริงจาก YouTube อัตโ
 	@$(PY) feedback.py sync
 qa: ## 🛡️ ตรวจรับรองคุณภาพผลงานก่อนเผยแพร่ (Quality Gate >= 80) — make qa ARGS="--all"
 	@$(PY) quality_gate.py $(if $(ARGS),$(ARGS),--all)
+portal: ## 🌐 สร้างหน้าเว็บพอร์ทัลสำหรับคนอ่าน (Web Reader Showcase) — make portal
+	@$(PY) web_catalog.py
+portal-serve: ## 🚀 เปิดเว็บพอร์ทัลคนอ่านบนเบราว์เซอร์ (localhost:8080) — make portal-serve
+	@$(PY) web_catalog.py --serve 8080
+podcast-feed: ## 🎙️ สร้าง Podcast RSS Feed (Spotify & Apple Podcasts) — make podcast-feed
+	@$(PY) podcast_rss.py
+cliffhanger: ## 🪝 เสริม Cliffhanger ปมทิ้งท้ายและตัวอย่างตอนต่อไป — make cliffhanger ARGS="--all"
+	@$(PY) cliffhanger_engine.py $(if $(ARGS),$(ARGS),--all)
+web-upload: ## 🤖 ส่งนิยายขึ้น ReadAWrite/Dek-D อัตโนมัติ — make web-upload ARGS="--status"
+	@$(PY) web_novel_uploader.py $(if $(ARGS),$(ARGS),--status)
 
 # ---------- Dev / ดูแลโค้ด ----------
 .PHONY: check test clean clean-tasks tree
