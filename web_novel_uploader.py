@@ -25,6 +25,13 @@ import time
 from typing import Dict, Any, List, Optional
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+_VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
+if os.path.exists(_VENV_PY) and sys.executable != _VENV_PY:
+    try:
+        import playwright
+    except ImportError:
+        os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
 SB = os.environ.get("ANSRE_SB", os.path.join(ROOT, "SecondBrain"))
 QUEUE_DIR = os.path.join(SB, "05_Active_Projects", "Publish_Queue")
 AUTH_DIR = os.path.join(ROOT, ".auth_sessions")

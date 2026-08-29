@@ -363,6 +363,14 @@ def main():
         return run([py, "teaser_generator.py", SB, os.environ.get("ANSRE_TEASER_DURATION", "60")])
     if cmd == "publish":
         return run([py, "publisher.py", SB] + rest)
+    if cmd in ("web-upload", "upload"):
+        return run([py, "web_novel_uploader.py"] + rest)
+    if cmd == "portal":
+        return run([py, "web_catalog.py"] + rest)
+    if cmd in ("podcast-feed", "podcast_rss"):
+        return run([py, "podcast_rss.py"] + rest)
+    if cmd in ("cliffhanger", "hook"):
+        return run([py, "cliffhanger_engine.py"] + rest)
     if cmd == "usage":
         return run([py, "llm_provider.py", "--usage"])
     if cmd == "selftest":
