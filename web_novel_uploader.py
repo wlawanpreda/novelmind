@@ -84,14 +84,24 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
     }
 
 
+def normalize_platform(name: str) -> str:
+    cleaned = (name or "").lower().strip().replace("-", "").replace("_", "")
+    if any(k in cleaned for k in ("read", "raw", "meb", "write")):
+        return "readawrite"
+    if any(k in cleaned for k in ("dek", "dd", "dekd")):
+        return "dekd"
+    return "readawrite"
+
+
 def save_browser_session(platform: str = "readawrite"):
     """เปิดเบราว์เซอร์ให้ผู้ใช้ล็อกอินเพื่อบันทึก Session Storage / Cookies"""
     from playwright.sync_api import sync_playwright
 
-    target_url = "https://app.readawrite.com/?action=login" if platform == "readawrite" else "https://www.dek-d.com/writer/"
-    state_file = RAW_AUTH_FILE if platform == "readawrite" else DEKD_AUTH_FILE
+    plat = normalize_platform(platform)
+    target_url = "https://www.readawrite.com/?action=login" if plat == "readawrite" else "https://www.dek-d.com/writer/"
+    state_file = RAW_AUTH_FILE if plat == "readawrite" else DEKD_AUTH_FILE
 
-    print(f"\n🔑 กำลังเปิดเบราว์เซอร์สำหรับล็อกอิน {platform.upper()} ...")
+    print(f"\n🔑 กำลังเปิดเบราว์เซอร์สำหรับล็อกอิน {plat.upper()} ...")
     print("   👉 เมื่อล็อกอินเสร็จเรียบร้อยและอยู่ในหน้าระบบนักเขียนแล้ว ให้ปิดหน้าต่างเบราว์เซอร์ได้เลย")
 
     with sync_playwright() as p:
