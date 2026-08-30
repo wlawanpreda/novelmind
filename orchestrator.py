@@ -248,6 +248,9 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     else:
         log("[publish] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE/PUBLISH_TIKTOK/PUBLISH_NOVEL")
 
+    # 3.1) Web Novel Drip Publishing (ปล่อยตอนใหม่อัตโนมัติตามเวลา Golden Hours)
+    run_stage("drip_release", [py, "auto_release_scheduler.py", "--cron-tick"], dry)
+
     # 3.5) แพ็กเกจ E-Book (.epub) และ Master Audiobook (Long-Form 1080p)
     run_stage("epub", [py, "epub_packager.py", "--all", "--min-chapters", "4"], dry)
     run_stage("audiobook", [py, "audiobook_packager.py", "--all"], dry)

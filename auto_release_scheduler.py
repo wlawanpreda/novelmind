@@ -150,6 +150,67 @@ def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]
         return None
 
 
+def notify_discord_release(story_title: str, ch_title: str, ch_guid: str, remaining_count: int):
+    """แจ้งเตือนความคืบหน้าการปล่อยตอนใหม่เข้าห้อง Discord"""
+    try:
+        from discord_reporter import send_discord_message
+        embed = {
+            "title": f"📖 [Auto-Release] ปล่อยตอนใหม่สู่สาธารณะแล้ว!",
+            "description": f"ผลงานจากนามปากกา **เงาพันจันทร์** อัปเดตเนื้อหาใหม่ล่าสุดบน **ReadAWrite** เรียบร้อยครับ",
+            "color": 0x3B82F6,
+            "fields": [
+                {"name": "📚 เรื่อง", "value": f"**{story_title}**", "inline": True},
+                {"name": "🔖 ตอนที่ปล่อย", "value": f"`{ch_title}`", "inline": True},
+                {"name": "⏳ ตอนคงเหลือในคลัง", "value": f"`{remaining_count} ตอน`", "inline": True},
+                {"name": "🔗 ลิงก์อ่านสด", "value": f"[คลิกเพื่ออ่านบทนี้](https://www.readawrite.com/c/{ch_guid})", "inline": False}
+            ],
+            "footer": {"text": f"Drip Publishing Engine • {datetime.datetime.now().strftime('%Y-%m-%d %H:%M')}"}
+        }
+        send_discord_message({"embeds": [embed]})
+    except Exception as e:
+        print(f"   [!] ส่งแจ้งเตือน Discord: {e}")
+
+
+def cron_tick(force: bool = False) -> None:
+    """ประเมินเวลาและทำการ Drip Release อัตโนมัติในแต่ละรอบของ Orchestrator"""
+    now = datetime.datetime.now()
+    hour = now.hour
+    today_str = now.strftime("%Y-%m-%d")
+    ledger = load_ledger()
+    releases_today = [r for r in ledger.get("scheduled_releases", []) if r.get("published_at", "").startswith(today_str)]
+
+    is_midday = (11 <= hour <= 13)
+    is_evening = (19 <= hour <= 22)
+
+    # เช็คว่ารอบนี้ควรปล่อยไหม
+    should_release = force
+    if not should_release:
+        if is_midday and len(releases_today) == 0:
+            should_release = True
+            print(f"\n☀️ [Cron Tick] เข้าสู่ช่วงเวลาทองรอบเที่ยง ({now.strftime('%H:%M น.')}) — ปล่อยตอนใหม่")
+        elif is_evening and len(releases_today) < 2:
+            should_release = True
+            print(f"\n🌙 [Cron Tick] เข้าสู่ช่วงเวลาทองรอบค่ำ ({now.strftime('%H:%M น.')}) — ปล่อยตอนใหม่")
+
+    if not should_release:
+        return
+
+    # ค้นหาเรื่องที่กำลัง On-Air
+    active_stories = [
+        ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
+        ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ")
+    ]
+
+    for art_id, title in active_stories:
+        released = release_next_chapter(art_id, title)
+        if released:
+            # ดึงจำนวนตอนที่ยังเหลือ
+            all_chs = get_article_chapters(art_id)
+            unpub_count = sum(1 for c in all_chs if not c.get("isPublished", False))
+            notify_discord_release(title, released["title"], released["guid"], unpub_count)
+            break
+
+
 def show_publishing_dashboard():
     """แสดงแดชบอร์ดตารางการปล่อยนิยายและวิดีโอ"""
     print("\n" + "=" * 65)
@@ -165,8 +226,8 @@ def show_publishing_dashboard():
     print("      • สถานะ: ตอนที่ 1–3 เผยแพร่แล้ว (Free Hook)")
     print("      • คิวปล่อย: ตอนที่ 4–10 ปล่อยวันละ 1 ตอน (รอบ 19:30 น.)")
     print("   2. สมาคมประกันภัยลี้ลับ (8 ตอน)")
-    print("      • สถานะ: อัปโหลดเข้าสู่ระบบแล้ว")
-    print("      • คิวเปิดตัว: สัปดาห์ถัดไป (เปิดตัวตอนที่ 1–3 ทันที)")
+    print("      • สถานะ: อัปโหลดครบทั้ง 8 ตอนแล้วใน Studio")
+    print("      • คิวเปิดตัว: ซีรีส์ถัดไป (เปิดตัวตอนที่ 1–3 ทันที)")
     print("   3. ร้านค้าเหนือโลก: สตรีมดันเจียนล่าเทพ (20 ตอน)")
     print("      • สถานะ: พร้อมใน Publish_Queue")
     print("=" * 65 + "\n")
@@ -175,9 +236,15 @@ def show_publishing_dashboard():
 if __name__ == "__main__":
     import re
     args = sys.argv[1:]
-    if "--status" in args or not args:
+    if "--status" in args:
         show_publishing_dashboard()
     elif "--publish-next" in args:
         article_id = "084947f5c23530e03094cc84bb1364b5"
         title = "ยอดนักสืบสปีดรัน"
-        release_next_chapter(article_id, title)
+        res = release_next_chapter(article_id, title)
+        if res:
+            notify_discord_release(title, res["title"], res["guid"], 6)
+    elif "--cron-tick" in args:
+        cron_tick(force=("--force" in args))
+    else:
+        show_publishing_dashboard()

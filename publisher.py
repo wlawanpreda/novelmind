@@ -472,7 +472,7 @@ def publish_novel(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
     pkg = os.path.join(queue_dir, f"{title_key}_PUBLISH.md")
     try:
         body = [f"# 📤 พร้อมเผยแพร่: {meta['title']}", "",
-                "> ⚠️ Dek-D/Fictionlog ไม่มี public API — ก๊อปเนื้อหาด้านล่างไปโพสต์เอง",
+                "> 🌐 ReadAWrite Auto-Upload: ทำงานผ่าน web_novel_uploader.py อัตโนมัติ",
                 "", "## คำโปรย", meta["description"], "", "## บทนิยาย", ""]
         for ch in chapters:
             try:
@@ -483,7 +483,20 @@ def publish_novel(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
                 continue
         with open(pkg, "w", encoding="utf-8") as f:
             f.write("\n".join(body))
-        log(f"  [novel] ✅ queued for manual post: {pkg}")
+        log(f"  [novel] ✅ queued for publish kit: {pkg}")
+
+        # รันการอัปโหลดขึ้น ReadAWrite อัตโนมัติ (ถ้ามีเซสชัน)
+        try:
+            import web_novel_uploader
+            if web_novel_uploader.check_auth_status().get("readawrite"):
+                log(f"  [novel] 🚀 เริ่มต้นส่งนิยาย '{title_key}' ขึ้น ReadAWrite อัตโนมัติ...")
+                res = web_novel_uploader.upload_story(title_key, platform="readawrite", dry_run=False)
+                if res:
+                    log(f"  [novel] 🎉 อัปโหลด '{title_key}' ขึ้น ReadAWrite สำเร็จ!")
+                    return f"readawrite:uploaded:{pkg}"
+        except Exception as err:
+            log(f"  [novel] ⚠️ auto-upload to readawrite: {err}")
+
         return f"queued:{pkg}"
     except Exception as e:  # noqa: BLE001
         log(f"  [novel] ❌ error: {e}")

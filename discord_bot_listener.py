@@ -95,6 +95,16 @@ def handle_command(cmd_text: str, author: str, channel_id: str = DEFAULT_CHANNEL
                     "inline": True
                 },
                 {
+                    "name": "🌐 `!novel [ชื่อเรื่อง]`",
+                    "value": "ส่งนิยายขึ้น ReadAWrite (โดย เงาพันจันทร์)",
+                    "inline": True
+                },
+                {
+                    "name": "⚡ `!release`",
+                    "value": "ปล่อยตอนถัดไปบน ReadAWrite สู่สาธารณะทันที",
+                    "inline": True
+                },
+                {
                     "name": "📊 `!status`",
                     "value": "ดูคลังไอเดีย ยอดนิยาย และสถานะระบบวันนี้",
                     "inline": True
@@ -173,6 +183,39 @@ def handle_command(cmd_text: str, author: str, channel_id: str = DEFAULT_CHANNEL
                 send_discord_message({"content": f"❌ การเผยแพร่เกิดข้อผิดพลาด: `{e}`"}, channel_id)
 
         threading.Thread(target=_run_pub, daemon=True).start()
+
+    elif main_cmd == "!novel":
+        title = " ".join(args).strip()
+        if not title:
+            send_discord_message({"content": "⚠️ กรุณาระบุชื่อเรื่อง เช่น `!novel ยอดนักสืบสปีดรัน`"}, channel_id)
+            return
+
+        send_discord_message({"content": f"🌐 กำลังนำเข้านิยาย **'{title}'** ขึ้นระบบ ReadAWrite (โดย เงาพันจันทร์)... ⏳"}, channel_id)
+
+        def _run_novel():
+            try:
+                import web_novel_uploader
+                res = web_novel_uploader.upload_story(title, platform="readawrite")
+                if res:
+                    send_discord_message({"content": f"🎉 อัปโหลดนิยาย **'{title}'** ขึ้น ReadAWrite สำเร็จครบถ้วนแล้วครับ!"}, channel_id)
+                else:
+                    send_discord_message({"content": f"❌ ไม่พบชุดเผยแพร่หรือเกิดข้อผิดพลาดในการอัปโหลด '{title}'"}, channel_id)
+            except Exception as e:
+                send_discord_message({"content": f"❌ เกิดข้อผิดพลาด: `{e}`"}, channel_id)
+
+        threading.Thread(target=_run_novel, daemon=True).start()
+
+    elif main_cmd == "!release":
+        send_discord_message({"content": "⚡ กำลังสั่งการปล่อยตอนใหม่ (Drip Release) บน ReadAWrite สู่สาธารณะทันที... ⏳"}, channel_id)
+
+        def _run_rel():
+            try:
+                import auto_release_scheduler
+                auto_release_scheduler.cron_tick(force=True)
+            except Exception as e:
+                send_discord_message({"content": f"❌ การปล่อยตอนล้มเหลว: `{e}`"}, channel_id)
+
+        threading.Thread(target=_run_rel, daemon=True).start()
 
 
 def start_listening_loop(poll_interval: int = 4):
