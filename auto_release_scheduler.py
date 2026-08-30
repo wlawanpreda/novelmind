@@ -28,7 +28,14 @@ def load_ledger() -> Dict[str, Any]:
     if os.path.exists(LEDGER_FILE):
         try:
             with open(LEDGER_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                data = json.load(f)
+                if not isinstance(data, dict):
+                    data = {}
+                if "scheduled_releases" not in data:
+                    data["scheduled_releases"] = []
+                if "published_stories" not in data:
+                    data["published_stories"] = {}
+                return data
         except Exception:
             pass
     return {"published_stories": {}, "scheduled_releases": []}
