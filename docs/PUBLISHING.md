@@ -49,17 +49,26 @@
 
 ---
 
-## 3. นิยาย Dek-D / Fictionlog
+## 3. นิยาย ReadAWrite & Dek-D (Web Novel Auto-Publishing)
 
-ทั้งสองเว็บ **ไม่มี public API** → publisher จะแพ็กบทนิยาย + คำโปรยเป็นไฟล์เดียวใส่
-`SecondBrain/05_Active_Projects/Publish_Queue/{เรื่อง}_PUBLISH.md` ให้ก๊อปไปวางโพสต์เอง
+ระบบมีสคริปต์ **Playwright Automation** เต็มรูปแบบใน `web_novel_uploader.py` รองรับการเผยแพร่แบบอัตโนมัติ:
+- **Session Auth:** จัดเก็บ Cookie การล็อกอินไว้ใน `.auth_sessions/`
+- **Markdown to Semantic HTML:** แปลง `.md` เป็น Rich-Text HTML พร้อมกำจัดหัวข้อซ้ำซ้อนสำหรับ CKEditor 5
+- **Auto-Cropping & Metadata:** จัดการภาพปก, คำโปรย, หมวดหมู่, Rating, และนามปากกาอัตโนมัติ
+- **Deduplication:** ตรวจสอบสารบัญก่อนส่งเพื่อป้องกันบทซ้ำ
 
 ```bash
-PUBLISH_NOVEL=1
+# ตรวจสอบสถานะการเชื่อมต่อ
+python3 web_novel_uploader.py --status
+
+# ตรวจสอบความถูกต้องของบทนิยาย (Dry Run)
+python3 web_novel_uploader.py "ยอดนักสืบสปีดรัน" --dry
+
+# เผยแพร่จริงขึ้น ReadAWrite อัตโนมัติ
+python3 web_novel_uploader.py "ยอดนักสืบสปีดรัน"
 ```
 
-> ถ้าต้องการอัตโนมัติเต็มรูปแบบในอนาคต ต้องใช้ browser automation (Playwright/Selenium)
-> ซึ่งเปราะและเสี่ยงผิด ToS — แนะนำคงเป็นกึ่งอัตโนมัติ (คิว manual) ไว้ก่อน
+> 📖 อ่านคู่มือแก้ปัญหาและพฤติกรรมทางเทคนิคเชิงลึกได้ที่ [docs/READAWRITE_AUTOMATION_PLAYBOOK.md](file:///Users/pj/workflows🤖/writer/docs/READAWRITE_AUTOMATION_PLAYBOOK.md)
 
 ---
 
@@ -68,3 +77,4 @@ PUBLISH_NOVEL=1
 .venv/bin/python publisher.py --dry-run ./SecondBrain   # ดูว่าจะทำอะไร ไม่อัปจริง
 ```
 ทุกการเผยแพร่บันทึกใน `SecondBrain/05_Active_Projects/publish_ledger.json` (กันโพสต์ซ้ำ)
+
