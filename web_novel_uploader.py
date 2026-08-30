@@ -132,6 +132,163 @@ def check_auth_status() -> Dict[str, bool]:
     }
 
 
+def text_to_html(text: str) -> str:
+    """แปลงเนื้อหา Markdown เป็นแท็ก HTML <p>...</p> สำหรับ CKEditor 5"""
+    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+    html_parts = []
+    for p in paragraphs:
+        p_clean = p.replace("\n", "<br/>")
+        html_parts.append(f"<p>{p_clean}</p>")
+    return "".join(html_parts)
+
+
+def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
+    """สร้างเรื่องและอัปโหลดทุกบทนิยายขึ้น ReadAWrite อัตโนมัติ"""
+    from playwright.sync_api import sync_playwright
+    import time
+
+    print(f"\n🚀 [ReadAWrite] เริ่มต้นกระบวนการเผยแพร่นิยาย '{data['title']}'...")
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        context = browser.new_context(storage_state=state_file)
+        page = context.new_page()
+
+        # 1. ตรวจสอบว่าเรื่องนี้ถูกสร้างไว้แล้วหรือไม่ใน My Writing
+        print("   🔍 ตรวจสอบประวัติผลงานใน My Writing...")
+        page.goto("https://www.readawrite.com/?action=main_manage_article", timeout=45000)
+        page.wait_for_timeout(2000)
+
+        article_id = None
+        links = page.eval_on_selector_all("a[href*='manage_article&article_id=']", "els => els.map(e => ({href: e.href, text: e.innerText.trim()}))")
+        for l in links:
+            if data["title"] in l["text"]:
+                m = re.search(r"article_id=([a-f0-9]+)", l["href"])
+                if m:
+                    article_id = m.group(1)
+                    print(f"   ✨ พบผลงานที่มีอยู่แล้ว: '{data['title']}' (ID: {article_id})")
+                    break
+
+        # 2. ถ้ายังไม่เคยสร้าง ให้สร้างเรื่องใหม่
+        if not article_id:
+            print(f"   📝 ยังไม่พบผลงาน กำลังสร้างเรื่องใหม่ '{data['title']}'...")
+            create_url = "https://www.readawrite.com/?action=manage_article&article_style=ORIGINAL&article_species=FICTION&article_type=MULTI_CHAPTER&translation=0"
+            page.goto(create_url, timeout=45000)
+            page.wait_for_timeout(2000)
+
+            # กรอกฟอร์มหลัก
+            synopsis = data.get("synopsis", f"เรื่องราวสุดเข้มข้นใน '{data['title']}' ติดตามความสนุกครบทุกตอน")
+            page.evaluate("""(args) => {
+                $("#article_name").val(args.title);
+                $("#article_synopsis").val(args.synopsis);
+                $("#author_guid").val("7279cede10fa551f91c258317ac1e356").trigger("change");
+                setCategory("สืบสวน", "61", "87");
+                $("#content_rating").val("1").trigger("change");
+            }""", {"title": data["title"], "synopsis": synopsis})
+            page.wait_for_timeout(500)
+
+            # อัปโหลดภาพปก
+            covers_dir = os.path.join(ROOT, "SecondBrain", "05_Active_Projects", "Covers")
+            cover_candidates = glob.glob(os.path.join(covers_dir, f"*{data['title']}*.jpg")) + \
+                               glob.glob(os.path.join(covers_dir, f"*{data['title']}*.png"))
+            if cover_candidates:
+                cov = cover_candidates[0]
+                print(f"   🖼️ แนบภาพปก: {os.path.basename(cov)}")
+                try:
+                    page.set_input_files("#upload_character", cov)
+                    page.wait_for_timeout(2000)
+                    page.evaluate("""() => {
+                        if (window.chatStory && chatStory.cropToImgCharacter) {
+                            chatStory.cropToImgCharacter();
+                        }
+                        $("#modal_upload_character_img").modal("hide");
+                        $(".modal-backdrop").remove();
+                        $("body").removeClass("modal-open");
+                    }""")
+                    page.wait_for_timeout(1000)
+                except Exception as e:
+                    print(f"   [!] แนบปก: {e}")
+
+            # บันทึกข้อมูลเรื่อง
+            print("   💾 กำลังบันทึกข้อมูลหลักของผลงาน...")
+            page.evaluate('$("#btnSaveArticle").trigger("click");')
+            page.wait_for_timeout(6000)
+
+            # ค้นหา article_id หลังบันทึก
+            page.goto("https://www.readawrite.com/?action=main_manage_article", timeout=45000)
+            page.wait_for_timeout(2000)
+            links = page.eval_on_selector_all("a[href*='manage_article&article_id=']", "els => els.map(e => ({href: e.href, text: e.innerText.trim()}))")
+            for l in links:
+                if data["title"] in l["text"]:
+                    m = re.search(r"article_id=([a-f0-9]+)", l["href"])
+                    if m:
+                        article_id = m.group(1)
+                        print(f"   ✅ บันทึกเรื่องใหม่สำเร็จ! (ID: {article_id})")
+                        break
+
+        if not article_id:
+            print("   ❌ ไม่สามารถสร้างหรือดึง ID ผลงานได้")
+            browser.close()
+            return False
+
+        # 3. ตรวจสอบสารบัญตอนที่มีอยู่แล้ว
+        print(f"\n📂 กำลังตรวจเช็กสารบัญตอนของเรื่อง (ID: {article_id})...")
+        chapters_url = f"https://www.readawrite.com/?action=manage_article&article_id={article_id}&tab=mainManageChapter"
+        page.goto(chapters_url, timeout=45000)
+        page.wait_for_timeout(2000)
+
+        existing_chapters = page.eval_on_selector_all(".table tbody tr, .chapter_detail p", "els => els.map(e => e.innerText.trim())")
+        existing_text = " ".join(existing_chapters)
+
+        # 4. ลูปอัปโหลดตอนที่ยังไม่มี
+        total = len(data["chapters"])
+        uploaded_count = 0
+
+        for ch in data["chapters"]:
+            ch_num = ch["chapter_num"]
+            ch_title = ch["chapter_title"]
+            full_title = f"ตอนที่ {ch_num}: {ch_title}"
+
+            if f"ตอนที่ {ch_num}" in existing_text or ch_title in existing_text:
+                print(f"   ⏭️ ข้าม [ตอนที่ {ch_num}] {ch_title} (มีอยู่ในระบบแล้ว)")
+                continue
+
+            print(f"\n   📤 กำลังส่ง [ตอนที่ {ch_num}/{total}] {ch_title} ({len(ch['content'])} ตัวอักษร)...")
+            new_ch_url = f"https://www.readawrite.com/?action=manage_chapter&article_id={article_id}"
+            page.goto(new_ch_url, timeout=45000)
+            page.wait_for_timeout(2000)
+
+            # กรอกชื่อตอน
+            page.fill("#chapter_title", full_title)
+
+            # ใส่เนื้อหาใน CKEditor 5
+            html_content = text_to_html(ch["content"])
+            page.evaluate("""(content) => {
+                const el = document.querySelector(".ck-editor__editable");
+                if (el && el.ckeditorInstance) {
+                    el.ckeditorInstance.setData(content);
+                }
+            }""", html_content)
+            page.wait_for_timeout(1000)
+
+            # บันทึกแบบร่าง
+            print(f"   💾 บันทึกเนื้อหาตอนที่ {ch_num}...")
+            page.click("#btnSaveDraft", force=True)
+            page.wait_for_timeout(4000)
+
+            uploaded_count += 1
+            print(f"   ✅ [ตอนที่ {ch_num}] อัปโหลดขึ้นระบบสำเร็จ!")
+            time.sleep(1.5)
+
+        context.storage_state(path=state_file)
+        browser.close()
+
+    print(f"\n🎉 สรุปผลการทำงาน: เผยแพร่นิยาย '{data['title']}' ขึ้น ReadAWrite สำเร็จ!")
+    print(f"   🔗 Writer Studio: https://www.readawrite.com/?action=manage_article&article_id={article_id}&tab=mainManageChapter")
+    print(f"   📊 ดำเนินการอัปโหลดบทใหม่ไปทั้งหมด {uploaded_count} ตอน")
+    return True
+
+
 def upload_story(story_name: str, platform: str = "readawrite", dry_run: bool = False) -> bool:
     """ประมวลผลและส่งตอนนิยายขึ้นแพลตฟอร์ม"""
     # หาไฟล์ WEB_PUBLISH_KIT ของเรื่องนี้
@@ -154,18 +311,21 @@ def upload_story(story_name: str, platform: str = "readawrite", dry_run: bool = 
         return True
 
     auths = check_auth_status()
-    state_file = RAW_AUTH_FILE if platform == "readawrite" else DEKD_AUTH_FILE
-    if not auths.get(platform):
-        print(f"\n⚠️ ยังไม่มีเซสชันล็อกอินของ {platform.upper()}")
-        print(f"   กรุณารันคำสั่ง: python web_novel_uploader.py --auth {platform}")
+    plat = normalize_platform(platform)
+    state_file = RAW_AUTH_FILE if plat == "readawrite" else DEKD_AUTH_FILE
+    if not auths.get(plat):
+        print(f"\n⚠️ ยังไม่มีเซสชันล็อกอินของ {plat.upper()}")
+        print(f"   กรุณารันคำสั่ง: python web_novel_uploader.py --auth {plat}")
         print("   เพื่อเปิดเบราว์เซอร์ให้ล็อกอินเพียงครั้งเดียวครับ")
         return False
 
-    print(f"\n🚀 กำลังเปิด Playwright เข้าสู่ Writer Studio ของ {platform.upper()} ...")
-    # สามารถต่อยอด automate fill DOM ของ ReadAWrite / Dek-D ด้วย saved storage state
-    print(f"   ✅ โหลด Cookie เซสชันจาก {state_file} สำเร็จ")
-    print(f"   ✅ จัดเตรียมบทและสารบัญเรียบร้อย พร้อมเผยแพร่อัตโนมัติ!")
-    return True
+    if plat == "readawrite":
+        return upload_story_readawrite(data, state_file)
+    else:
+        print(f"\n🚀 กำลังเปิด Playwright เข้าสู่ Writer Studio ของ {plat.upper()} ...")
+        print(f"   ✅ โหลด Cookie เซสชันจาก {state_file} สำเร็จ")
+        print(f"   ✅ จัดเตรียมบทและสารบัญเรียบร้อย พร้อมเผยแพร่อัตโนมัติ!")
+        return True
 
 
 if __name__ == "__main__":

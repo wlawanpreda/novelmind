@@ -62,3 +62,4 @@ tiktok_token.json
 .labs_flow_profile/
 flow_*.png
 test_*.jpg
+.auth_sessions/
