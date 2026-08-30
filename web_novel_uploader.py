@@ -314,6 +314,22 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
         context.storage_state(path=state_file)
         browser.close()
 
+        # บันทึกสถานะและ article_id ลง ledger เพื่อให้ release_scheduler รับช่วงต่ออัตโนมัติ
+        try:
+            from auto_release_scheduler import load_ledger, save_ledger
+            ledger = load_ledger()
+            if "published_stories" not in ledger:
+                ledger["published_stories"] = {}
+            ledger["published_stories"][data["title"]] = {
+                "article_id": article_id,
+                "platform": "readawrite",
+                "chapters_uploaded": uploaded_count,
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")
+            }
+            save_ledger(ledger)
+        except Exception:
+            pass
+
     print(f"\n🎉 สรุปผลการทำงาน: เผยแพร่นิยาย '{data['title']}' ขึ้น ReadAWrite สำเร็จ!")
     print(f"   🔗 Writer Studio: https://www.readawrite.com/?action=manage_article&article_id={article_id}&tab=mainManageChapter")
     print(f"   📊 ดำเนินการอัปโหลดบทใหม่ไปทั้งหมด {uploaded_count} ตอน")

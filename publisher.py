@@ -602,8 +602,73 @@ def run(sb: str, dry: bool = False):
         if not dry and has_action:
             ledger[key] = entry
             save_ledger(sb, ledger)
+
+    # เผยแพร่ Long-Form Audiobook Video สู่ YouTube (ถ้าเปิดใช้งาน)
+    publish_audiobooks(sb, dry=dry)
             
     log("[publisher] เสร็จสิ้น")
+
+
+def publish_audiobooks(sb: str, dry: bool = False):
+    """เผยแพร่ Long-Form Audiobook Video สู่ YouTube (ถ้าเปิดใช้งาน)"""
+    if not _enabled("PUBLISH_YOUTUBE") or os.environ.get("PUBLISH_LONG_AUDIOBOOK", "1").lower() not in ("1", "true", "yes"):
+        return
+
+    ab_dir = os.path.join(sb, "05_Active_Projects", "Exports", "Audiobooks")
+    videos = sorted(glob.glob(os.path.join(ab_dir, "*_Audiobook_Video.mp4")))
+    if not videos:
+        return
+
+    ledger = load_ledger(sb)
+    daily_ab_limit = int(os.environ.get("ANSRE_DAILY_AUDIOBOOK_LIMIT", "1"))
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_ab = sum(1 for k, v in ledger.items() if k.endswith("_Audiobook_Video.mp4") and isinstance(v, dict) and v.get("youtube_published_at", "").startswith(today_str))
+
+    if today_ab >= daily_ab_limit:
+        return
+
+    for vpath in videos:
+        key = os.path.basename(vpath)
+        entry = ledger.get(key, {})
+        if not isinstance(entry, dict):
+            entry = {}
+        prev = entry.get("youtube", "")
+        if prev and not prev.startswith(("error", "no_creds", "disabled", "dry")):
+            continue
+
+        title_raw = key.replace("_Audiobook_Video.mp4", "")
+        clean_t = title_raw.replace("_", " ")
+        desc_file = vpath.replace("_Audiobook_Video.mp4", "_YouTube_Description.txt")
+        desc = ""
+        if os.path.exists(desc_file):
+            try:
+                with open(desc_file, "r", encoding="utf-8") as df:
+                    desc = df.read()
+            except Exception:
+                pass
+        if not desc:
+            desc = f"🎧 นิยายเสียง {clean_t} รวมทุกตอนจบภาค ฟังต่อเนื่องจุใจ โดย NovelMind"
+
+        meta = {
+            "title": f"นิยายเสียง: {clean_t} (รวมทุกตอนจบภาค)",
+            "description": desc,
+            "tags": ["นิยายเสียง", "audiobook", "นิยายแฟนตาซี", clean_t]
+        }
+
+        log(f"🎙️ [Long-Form Audiobook] กำลังอัปโหลด '{meta['title']}' ขึ้น YouTube...")
+        yt_url = publish_youtube(vpath, meta, dry=dry, as_shorts=False)
+        entry["youtube"] = yt_url
+        if not dry and yt_url.startswith("http"):
+            now_iso = datetime.now().isoformat()
+            entry["youtube_published_at"] = now_iso
+            entry["published_at"] = now_iso
+            entry["title"] = meta["title"]
+            ledger[key] = entry
+            save_ledger(sb, ledger)
+            log(f"  ✅ [Long-Form Audiobook] เผยแพร่สำเร็จ: {yt_url}")
+            today_ab += 1
+            if today_ab >= daily_ab_limit:
+                break
 
 
 def main():

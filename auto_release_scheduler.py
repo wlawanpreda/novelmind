@@ -186,6 +186,22 @@ def notify_discord_release(story_title: str, ch_title: str, ch_guid: str, remain
         print(f"   [!] ส่งแจ้งเตือน Discord: {e}")
 
 
+def get_active_stories() -> List[tuple[str, str]]:
+    """ดึงรายการเรื่องที่กำลังออนแอร์จาก Ledger และค่าเริ่มต้น"""
+    base = [
+        ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
+        ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ")
+    ]
+    ledger = load_ledger()
+    known_ids = {s[0] for s in base}
+    for title, info in ledger.get("published_stories", {}).items():
+        art_id = info.get("article_id")
+        if art_id and art_id not in known_ids:
+            base.append((art_id, title))
+            known_ids.add(art_id)
+    return base
+
+
 def cron_tick(force: bool = False) -> None:
     """ประเมินเวลาและทำการ Drip Release อัตโนมัติในแต่ละรอบของ Orchestrator"""
     now = datetime.datetime.now()
@@ -210,11 +226,8 @@ def cron_tick(force: bool = False) -> None:
     if not should_release:
         return
 
-    # ค้นหาเรื่องที่กำลัง On-Air
-    active_stories = [
-        ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
-        ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ")
-    ]
+    # ค้นหาเรื่องที่กำลัง On-Air ทั้งหมด
+    active_stories = get_active_stories()
 
     for art_id, title in active_stories:
         released = release_next_chapter(art_id, title)
