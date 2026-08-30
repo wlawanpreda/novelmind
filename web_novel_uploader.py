@@ -76,8 +76,30 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
                 "content": body
             })
 
+    # ดึงคำโปรย/Logline ถ้ามี
+    synopsis = ""
+    m_syn = re.search(r"(?:คำโปรย|Logline|เรื่องย่อ)\s*[:：]\s*([^\n\r]+(?:\n[^\n\r#]+)?)", content, re.IGNORECASE)
+    if m_syn:
+        synopsis = m_syn.group(1).strip()
+    else:
+        # ลองค้นจากไฟล์ Outline ใน 02_Concept_Extraction
+        outline_candidates = glob.glob(os.path.join(SB, "02_Concept_Extraction", f"*{title}*_Outline.md"))
+        if outline_candidates:
+            try:
+                with open(outline_candidates[0], "r", encoding="utf-8") as of:
+                    otxt = of.read()
+                    m_ot = re.search(r"\*\*Logline:\*\*\s*([^\n\r]+)", otxt)
+                    if m_ot:
+                        synopsis = m_ot.group(1).strip()
+            except Exception:
+                pass
+
+    if not synopsis:
+        synopsis = f"เรื่องราวสุดเข้มข้นใน '{title}' ติดตามความสนุกครบทุกตอน โดย เงาพันจันทร์"
+
     return {
         "title": title,
+        "synopsis": synopsis,
         "kit_path": kit_path,
         "chapters_count": len(chapters),
         "chapters": chapters
