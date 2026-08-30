@@ -133,13 +133,22 @@ def check_auth_status() -> Dict[str, bool]:
 
 
 def text_to_html(text: str) -> str:
-    """แปลงเนื้อหา Markdown เป็นแท็ก HTML <p>...</p> สำหรับ CKEditor 5"""
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    html_parts = []
-    for p in paragraphs:
-        p_clean = p.replace("\n", "<br/>")
-        html_parts.append(f"<p>{p_clean}</p>")
-    return "".join(html_parts)
+    """แปลงเนื้อหา Markdown เป็นแท็ก HTML สำหรับ CKEditor 5 (ลบ heading ซ้ำซ้อนและแปลง bold/italic/quote)"""
+    try:
+        import markdown
+        raw_text = text.strip()
+        lines = raw_text.split("\n")
+        if lines and lines[0].startswith("#"):
+            lines = lines[1:]
+        clean_text = "\n".join(lines).strip()
+        return markdown.markdown(clean_text, extensions=["extra", "nl2br"])
+    except Exception:
+        paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+        html_parts = []
+        for p in paragraphs:
+            p_clean = p.replace("\n", "<br/>")
+            html_parts.append(f"<p>{p_clean}</p>")
+        return "".join(html_parts)
 
 
 def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
