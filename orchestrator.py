@@ -49,6 +49,11 @@ if os.path.exists(_ENV):
                 _k, _v = _l.split("=", 1)
                 os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
+# Ensure standard binary paths are in PATH (critical for ffmpeg, ffprobe, playwright under launchd / cron)
+for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
+    if os.path.exists(_p) and _p not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = _p + os.pathsep + os.environ.get("PATH", "")
+
 
 def _cfg_int(name, default):
     try:

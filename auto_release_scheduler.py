@@ -16,9 +16,17 @@ import json
 import time
 import datetime
 from typing import Dict, Any, List, Optional
-from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
+_VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
+if os.path.exists(_VENV_PY) and sys.executable != _VENV_PY:
+    try:
+        import playwright
+    except ImportError:
+        os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
+from playwright.sync_api import sync_playwright
+
 SB = os.environ.get("ANSRE_SB", os.path.join(ROOT, "SecondBrain"))
 AUTH_FILE = os.path.join(ROOT, ".auth_sessions", "readawrite_state.json")
 LEDGER_FILE = os.path.join(SB, "05_Active_Projects", "publish_ledger.json")

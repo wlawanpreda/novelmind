@@ -23,6 +23,12 @@
     <string>cd "&lt;REPO_PATH&gt;" &amp;&amp; .venv/bin/python orchestrator.py --once</string>
   </array>
 
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+
   <!-- ยิงทุก 1200 วินาที (20 นาที) -->
   <key>StartInterval</key>
   <integer>1200</integer>

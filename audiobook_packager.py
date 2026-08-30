@@ -27,6 +27,11 @@ AUDIO_DIR = os.path.join(SB, "05_Active_Projects", "Audio_Output")
 COVERS_DIR = os.path.join(SB, "05_Active_Projects", "Covers")
 EXPORTS_DIR = os.path.join(SB, "05_Active_Projects", "Exports", "Audiobooks")
 
+# Ensure standard binary paths are in PATH (for ffmpeg / ffprobe)
+for _p in ["/opt/homebrew/bin", "/usr/local/bin"]:
+    if os.path.exists(_p) and _p not in os.environ.get("PATH", "").split(os.pathsep):
+        os.environ["PATH"] = _p + os.pathsep + os.environ.get("PATH", "")
+
 os.makedirs(EXPORTS_DIR, exist_ok=True)
 
 

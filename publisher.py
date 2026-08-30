@@ -123,7 +123,7 @@ def _extract_synopsis(fp: str) -> str:
     for i, line in enumerate(lines):                       # 1) บรรทัดคำโปรย
         if "คำโปรย" in line or "logline" in line.lower():
             # ตัดป้ายกำกับ "คำโปรย...(Logline):" ทิ้ง — เอาเฉพาะเนื้อหลัง ":"
-            after = re.split(r"[:：]", line, 1)
+            after = re.split(r"[:：]", line, maxsplit=1)
             inline = _clean_line(after[1]) if len(after) > 1 else ""
             if len(inline) >= 15 and not _is_meta_talk(inline):
                 return inline[:400]
