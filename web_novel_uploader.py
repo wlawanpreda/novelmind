@@ -79,9 +79,18 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
             num = int(raw_chapters[i])
             body = raw_chapters[i + 1].strip() if i + 1 < len(raw_chapters) else ""
             
+            # ล้าง AI meta-talk ออกจากเนื้อหาตอน
+            try:
+                from agent_auditor import sanitize_meta_talk
+                body = sanitize_meta_talk(body)
+            except Exception:
+                pass
+
             # สกัดชื่อตอนย่อยถ้ามี
             m_sub = re.search(r"^##?\s*ตอนที่\s*\d+\s*[:：\s]\s*([^\n\r]+)", body)
             ch_title = m_sub.group(1).strip() if m_sub else f"ตอนที่ {num}"
+            # ตัดวงเล็บ meta ในชื่อตอน เช่น (ฉบับ Chief...)
+            ch_title = re.sub(r"\s*\(?(?:ฉบับขัดเกลาโดย|ฉบับปรับปรุงโดย|ฉบับ)\s*Chief[^\)]*\)?", "", ch_title, flags=re.IGNORECASE).strip()
 
             chapters.append({
                 "chapter_num": num,
@@ -106,6 +115,12 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
                         synopsis = m_ot.group(1).strip()
             except Exception:
                 pass
+
+    try:
+        from agent_auditor import sanitize_meta_talk
+        synopsis = sanitize_meta_talk(synopsis).strip()
+    except Exception:
+        pass
 
     if not synopsis:
         synopsis = f"เรื่องราวสุดเข้มข้นใน '{title}' ติดตามความสนุกครบทุกตอน โดย เงาพันจันทร์"

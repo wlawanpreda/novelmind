@@ -81,14 +81,14 @@ def caption_cover(cover_path: str, title: str, hook: str = "", tiktok_safe: bool
                           stroke_width=5, stroke_fill="black")
                 y += line_h
 
-        # ชื่อเรื่อง (บน)
+        # ชื่อเรื่อง (บน) — วางในโซนปลอดภัย y=160 (ไม่โดน UI บนบัง และไม่หลุดจอเมื่อ zoom)
         tlines = _wrap(draw, title, title_f, W - 100)[:3]
-        band_text(tlines, title_f, 70, fill="#FFFFFF")
-        # hook: ปกติวางล่างสุด · tiktok_safe ดันขึ้นโซนปลอดภัย (~66% จอ) เลี่ยง UI TikTok ล่างบัง
+        band_text(tlines, title_f, 160, fill="#FFFFFF")
+        # hook: ปกติวางล่างสุดในโซนปลอดภัย (เหนือ waveform y=1520) · tiktok_safe ดันขึ้น (~66% จอ)
         if hook:
             hlines = _wrap(draw, hook, hook_f, W - 100)[:3]
             line_h = hook_f.size + 16
-            y_hook = int(H * 0.66) if tiktok_safe else (H - line_h * len(hlines) - 90)
+            y_hook = int(H * 0.66) if tiktok_safe else (1500 - line_h * len(hlines) - 20)
             band_text(hlines, hook_f, y_hook, fill="#22D3EE")
 
         out = os.path.splitext(cover_path)[0] + ("_tt.jpg" if tiktok_safe else "_captioned.jpg")
@@ -101,43 +101,43 @@ def caption_cover(cover_path: str, title: str, hook: str = "", tiktok_safe: bool
 
 def find_cover_image(audio_filename: str, covers_dir: str) -> Optional[str]:
     """
-    Search for a matching cover image in the covers directory.
-    If 'Mock_Audiobook_01.mp3' is provided, it searches for:
-    - Mock_Audiobook_01.png/jpg
-    - Mock_Cover.png/jpg
-    - Any image with 'Mock' in its name
-    - Default_Cover.png
+    ค้นหาภาพปกที่ตรงกับเรื่องและตอนอย่างแม่นยำ:
+    - ตัด _Audiobook_NN ออกเพื่อหา stem ชื่อเรื่องที่แท้จริง (รองรับชื่อเรื่องที่มี _)
+    - ตรวจสอบ {stem}_Cover, {stem}_Chapter_NN_Cover, {base_name}
+    - หากไม่พบ จะไม่สุ่มภาพอื่นเด็ดขาด (ป้องกันการจับคู่ปกข้ามเรื่อง)
     """
-    # Try exact name matches (different extensions)
-    base_name = os.path.splitext(audio_filename)[0] # e.g. Mock_Audiobook_01
-    prefix = base_name.split("_")[0] if "_" in base_name else base_name # e.g. Mock
-    
+    base_name = os.path.splitext(audio_filename)[0]
+    # สกัด stem ชื่อเรื่องโดยตัด suffix เกี่ยวกับเสียงออกอย่างแม่นยำ
+    stem = re.sub(r"_(?:Audiobook|AudioScript|Audio|Teaser)_\d+.*$", "", base_name)
+    stem = re.sub(r"_(?:Audiobook|AudioScript|Audio|Teaser).*$", "", stem)
+
     extensions = ["png", "jpg", "jpeg", "webp"]
-    
-    # 1. Check exact match: Mock_Audiobook_01.png
+
+    # 1. ตรวจสอบชื่อไฟล์ตรงเผง
     for ext in extensions:
-        path = os.path.join(covers_dir, f"{base_name}.{ext}")
-        if os.path.exists(path):
-            return path
-            
-    # 2. Check prefix cover: Mock_Cover.png
+        p = os.path.join(covers_dir, f"{base_name}.{ext}")
+        if os.path.exists(p):
+            return p
+
+    # 2. ตรวจสอบ {stem}_Cover
     for ext in extensions:
-        path = os.path.join(covers_dir, f"{prefix}_Cover.{ext}")
-        if os.path.exists(path):
-            return path
-            
-    # 3. Check generic name match in folder
+        p = os.path.join(covers_dir, f"{stem}_Cover.{ext}")
+        if os.path.exists(p):
+            return p
+
+    # 3. ตรวจสอบ {stem}.{ext}
+    for ext in extensions:
+        p = os.path.join(covers_dir, f"{stem}.{ext}")
+        if os.path.exists(p):
+            return p
+
+    # 4. ตรวจสอบไฟล์ที่มี stem เต็มอยู่ในชื่อ
+    clean_stem = stem.lower().replace("_", "")
     for file in os.listdir(covers_dir):
-        if prefix.lower() in file.lower() and file.split(".")[-1].lower() in extensions:
+        fl = file.lower().replace("_", "")
+        if clean_stem in fl and file.split(".")[-1].lower() in extensions:
             return os.path.join(covers_dir, file)
-            
-    # 4. Check if there is any image in covers folder
-    for ext in extensions:
-        pattern = os.path.join(covers_dir, f"*.{ext}")
-        matches = glob.glob(pattern)
-        if matches:
-            return matches[0]
-            
+
     return None
 
 def generate_teaser(
@@ -196,7 +196,7 @@ def generate_teaser(
     if kenburns:
         bg_chain = (
             "[0:v]scale=2160:3840:force_original_aspect_ratio=increase,crop=2160:3840,"
-            f"zoompan=z='min(zoom+0.0006,1.18)':d={frames}:"
+            f"zoompan=z='min(zoom+0.0002,1.06)':d={frames}:"
             "x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':"
             f"s=1080x1920:fps={fps},"
             f"fade=t=in:st=0:d=0.8,fade=t=out:st={fade_out_st}:d=0.8[bg]"

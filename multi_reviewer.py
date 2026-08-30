@@ -40,12 +40,17 @@ _META_MARK = ("ในฐานะ", "chief", "ข้าพเจ้า", "ผม
 
 
 def strip_meta(text: str) -> str:
-    """ตัด meta-talk ของ AI ที่หัว/ท้ายออก"""
+    """ตัด meta-talk ของ AI ที่หัว/ท้าย/กลาง/ในหัวข้อออกทั้งหมดอย่างเด็ดขาด"""
     if not text:
         return text
+    try:
+        from agent_auditor import sanitize_meta_talk
+        text = sanitize_meta_talk(text)
+    except Exception:
+        pass
     lines = text.split("\n")
     popped = 0
-    while lines and popped < 8:
+    while lines and popped < 15:
         s = lines[0].strip()
         if s == "" or s == "---" or any(m in s.lower() for m in _META_MARK):
             lines.pop(0)
@@ -53,7 +58,7 @@ def strip_meta(text: str) -> str:
         else:
             break
     popped = 0
-    while lines and popped < 5:
+    while lines and popped < 10:
         s = lines[-1].strip()
         if s == "" or s == "---" or any(m in s.lower() for m in _META_MARK):
             lines.pop()

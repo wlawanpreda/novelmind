@@ -103,13 +103,18 @@ def _tone_note() -> str:
 
 
 def strip_meta(text: str) -> str:
-    """ตัด meta-talk ของ AI ที่หัว/ท้ายออก (เช่น 'ในฐานะ Chief Editor ข้าพเจ้า...')"""
+    """ตัด meta-talk ของ AI ที่หัว/ท้าย/กลาง/ในหัวข้อออกทั้งหมดอย่างเด็ดขาด"""
     if not text:
         return text
+    try:
+        from agent_auditor import sanitize_meta_talk
+        text = sanitize_meta_talk(text)
+    except Exception:
+        pass
     lines = text.split("\n")
-    # ตัดหัว: ลบบรรทัดว่าง / meta / '---' เดี่ยวๆ (สูงสุด 8 บรรทัดแรก เพื่อความปลอดภัย)
+    # ตัดหัว: ลบบรรทัดว่าง / meta / '---' เดี่ยวๆ
     popped = 0
-    while lines and popped < 8:
+    while lines and popped < 15:
         s = lines[0].strip()
         if s == "" or s == "---" or any(m in s.lower() for m in _META_MARK):
             lines.pop(0)
@@ -118,7 +123,7 @@ def strip_meta(text: str) -> str:
             break
     # ตัดท้าย: ลบบรรทัดว่าง / meta / '---' เดี่ยวๆ ท้ายไฟล์
     popped = 0
-    while lines and popped < 5:
+    while lines and popped < 10:
         s = lines[-1].strip()
         if s == "" or s == "---" or any(m in s.lower() for m in _META_MARK):
             lines.pop()

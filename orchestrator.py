@@ -244,8 +244,9 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     run_stage("audio",   [py, "audio_engine.py", SECOND_BRAIN], dry)
     run_stage("teaser",  [py, "teaser_generator.py", SECOND_BRAIN, str(TEASER_DURATION)], dry)
 
-    # 2.5) Quality Gate: ตรวจรับรองคุณภาพสื่อและเนื้อหาก่อนปล่อย
-    run_stage("qa", [py, "quality_gate.py", "--all"], dry)
+    # 2.5) QA & Subagent Leak Auditor: สแกนและทำความสะอาดคำหลุด AI ทั่วระบบก่อนเข้า Quality Gate
+    run_stage("auditor", [py, "agent_auditor.py", "--fix"], dry)
+    run_stage("qa",      [py, "quality_gate.py", "--all"], dry)
 
     # 3) เผยแพร่ (Phase 4) — publisher จะข้ามแพลตฟอร์มที่ยังไม่เปิด/ไม่มี creds เอง
     if _publish_enabled():

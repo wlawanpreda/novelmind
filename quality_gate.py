@@ -59,11 +59,20 @@ def check_chapter_quality(file_path: str) -> Dict[str, Any]:
         score -= 10
         issues.append(f"บทยาวเกินไปสำหรับตอนสั้น ({word_count} คำ)")
 
-    # 2. ตรวจสอบข้อความ AI รั่วไหล (Meta-talk)
-    for bad in AI_LEAK_WORDS:
-        if bad in body.lower():
-            score -= 20
-            issues.append(f"ตรวจพบข้อความ AI: '{bad}'")
+    # 2. ตรวจสอบข้อความ AI รั่วไหล (Meta-talk) — Zero Tolerance
+    meta_leaks = []
+    try:
+        from agent_auditor import detect_meta_talk
+        meta_leaks = detect_meta_talk(body)
+    except Exception:
+        for bad in AI_LEAK_WORDS:
+            if bad in body.lower():
+                meta_leaks.append({"matched": bad})
+
+    if meta_leaks:
+        score -= 40 * len(meta_leaks)
+        for ml in meta_leaks[:3]:
+            issues.append(f"ตรวจพบข้อความ AI หลุด: '{ml.get('matched', '')}'")
 
     # 3. โครงสร้างย่อหน้าและบทสนทนา
     paragraphs = [p for p in body.split("\n\n") if p.strip()]
@@ -77,12 +86,14 @@ def check_chapter_quality(file_path: str) -> Dict[str, Any]:
         issues.append("ไม่มีบทสนทนาของตัวละคร")
 
     final_score = max(0, min(100, score))
+    passed = final_score >= 80 and len(meta_leaks) == 0
     return {
         "score": final_score,
-        "passed": final_score >= 80,
+        "passed": passed,
         "word_count": word_count,
         "paragraphs_count": len(paragraphs),
-        "issues": issues
+        "issues": issues,
+        "file": file_path
     }
 
 

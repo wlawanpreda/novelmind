@@ -353,6 +353,10 @@ def main():
     if cmd == "review":
         need_gem_or_exit()
         return run([py, "multi_reviewer.py"] + rest)
+    if cmd in ("audit", "inspector"):
+        return run([py, "agent_auditor.py"] + rest)
+    if cmd == "qa":
+        return run([py, "quality_gate.py"] + rest)
     if cmd in ("bot", "listen"):
         return run([py, "discord_bot_listener.py"] + rest)
     if cmd in ("epub", "export"):

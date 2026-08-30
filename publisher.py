@@ -271,6 +271,14 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
         if os.path.exists(outline):
             synopsis = _extract_synopsis(outline)
 
+    # ล้าง AI meta-talk ออกจาก title และ description ป้องกันคำหลุดลง YouTube / TikTok
+    try:
+        from agent_auditor import sanitize_meta_talk
+        raw_title = sanitize_meta_talk(raw_title).replace("\n", " ").strip()
+        synopsis = sanitize_meta_talk(synopsis).strip()
+    except Exception:
+        pass
+
     hashtags = ["Shorts", "นิยายเสียง", "นิยาย", "audiobook", "เล่าเรื่อง", "เรื่องเล่า", "นิยายแปล", "สปีดรัน"]
     desc_lines = [
         f"🎧 {raw_title}",
@@ -282,6 +290,11 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
         " ".join("#" + h for h in hashtags)
     ]
     description = "\n".join(desc_lines)
+    try:
+        from agent_auditor import sanitize_meta_talk
+        description = sanitize_meta_talk(description).strip()
+    except Exception:
+        pass
 
     return {
         "title": raw_title[:90],
@@ -289,6 +302,7 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
         "tags": [h.lower() for h in hashtags] + [story_name, f"ตอนที่ {ep}"],
         "episode": ep,
         "story_name": story_name,
+        "hook": hook,
     }
 
 
@@ -556,6 +570,21 @@ def run(sb: str, dry: bool = False):
                 continue
         except Exception:
             pass
+
+        # Pre-Publish Auditor: ตรวจสกัดคำหลุด subagent / meta-talk และความไม่สอดคล้อง (Zero Tolerance)
+        try:
+            import agent_auditor
+            audit_res = agent_auditor.audit_publication_package(tpath, meta)
+            if not audit_res["passed"]:
+                log(f"  [auditor] 🛑 บล็อกการเผยแพร่ {key}! ตรวจพบข้อผิดพลาดร้ายแรง:")
+                for err in audit_res["errors"]:
+                    log(f"    - ❌ {err}")
+                continue
+            if audit_res.get("warnings"):
+                for warn in audit_res["warnings"]:
+                    log(f"    - ⚠️ {warn}")
+        except Exception as e:
+            log(f"  [auditor] ⚠️ ไม่สามารถรัน agent_auditor: {e}")
 
         targets = [
             ("youtube", lambda: publish_youtube(tpath, meta, dry)),

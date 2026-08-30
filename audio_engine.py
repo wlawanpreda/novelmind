@@ -57,14 +57,23 @@ def _clean_narration(text: str) -> str:
 
 
 def parse_audio_script(filepath: str) -> List[Dict[str, Any]]:
-    """แตกบทเสียง Markdown เป็น segment (speaker/tone/text) โดย "ล้าง cue ทุกชนิด" ไม่ให้ TTS อ่าน
+    """แตกบทเสียง Markdown เป็น segment (speaker/tone/text) โดย "ล้าง cue ทุกชนิด และตัด meta-talk" ไม่ให้ TTS อ่าน
     ครอบ: [SFX:...] กลางบรรทัด, speaker แบบ 'ชื่อ:' (ไม่มีวงเล็บ), [ชื่อ, โทน:...], อักษรจีนหลุด"""
     segments = []
     with open(filepath, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        raw_text = f.read()
 
+    # ล้าง AI meta-talk ออกก่อน
+    try:
+        from agent_auditor import sanitize_meta_talk
+        raw_text = sanitize_meta_talk(raw_text)
+    except Exception:
+        pass
+
+    lines = raw_text.splitlines()
     current_speaker = "ผู้บรรยาย"
     current_tone = "ปกติ"
+    title_added = False
 
     for raw in lines:
         line = raw.strip()
@@ -72,6 +81,20 @@ def parse_audio_script(filepath: str) -> List[Dict[str, Any]]:
             current_speaker = "ผู้บรรยาย"
             current_tone = "ปกติ"
             continue
+
+        # 0) ดึงชื่อตอนให้อ่านออกเสียงอย่างสม่ำเสมอเป็น segment แรกๆ (ไม่ว่าจะขึ้นต้นด้วย ##, **, หรือ [ชื่อตอน])
+        if not title_added and re.search(r"(?:ตอนที่|บทที่)\s*\d+", line):
+            m_t = re.search(r"((?:ตอนที่|บทที่)\s*\d+[^#\*\(\]]*)", line)
+            if m_t:
+                clean_t = re.sub(r"[*#`\[\]:]", " ", m_t.group(1)).strip()
+                clean_t = re.sub(r"\s+", " ", clean_t)
+                # ลบคำว่า ผู้บรรยาย หรือ ชื่อตอน ที่อาจติดมา
+                clean_t = re.sub(r"^(?:ผู้บรรยาย|ชื่อตอน)\s*", "", clean_t).strip()
+                if len(clean_t) >= 6:
+                    segments.append({"type": "dialog", "speaker": "ผู้บรรยาย", "tone": "ปกติ", "text": clean_t})
+                    title_added = True
+                    continue
+
         if line.startswith("#"):
             continue
 
@@ -106,6 +129,9 @@ def parse_audio_script(filepath: str) -> List[Dict[str, Any]]:
         if clean:
             segments.append({"type": "dialog", "speaker": current_speaker,
                              "tone": current_tone, "text": clean})
+
+    return segments
+
 
 from pydub.generators import Sine, WhiteNoise, Pulse
 
@@ -190,12 +216,16 @@ _FEMALE_V = "th-TH-PremwadeeNeural"
 VOICE_ASSIGN = {}
 
 
+MALE_NAMES = {"รัน", "ชล", "บอย", "เอก", "นนท์", "ทศ", "ก้อง", "แทน", "ภัทร", "วิน", "หมวด", "สารวัตร", "เชฟ", "บอส", "ลุง", "นาย", "อคิน", "วายุ", "พศิน", "เก่ง", "โซล", "ศิลา"}
+FEMALE_NAMES = {"หญิงสาว", "พราว", "มิ้นท์", "เกล", "แพรวา", "หลิน", "ฟ้า", "เจน", "เมย์", "จิ๊บ", "คุณหญิง", "แม่", "ป้า", "ยาย", "สาว", "แอน", "นุ่น", "อัญชิสา"}
+
+
 def assign_voices(segments, characters_text=""):
-    """กำหนดเสียง+pitch ต่อตัวละครอัตโนมัติ (เดาเพศจากไฟล์ตัวละคร + แยก pitch ให้เสียงไม่ซ้ำ)"""
+    """กำหนดเสียง+pitch ต่อตัวละครอัตโนมัติ (เดาเพศจากไฟล์ตัวละคร + รายชื่อตัวละคร + แยก pitch ให้เสียงไม่ซ้ำ)"""
     import itertools
     ctext = (characters_text or "").lower()
-    female_kw = ["หญิง", "สาว", "นาง", "แม่", "ป้า", "ย่า", "ยาย", "ราชินี", "นางเอก", "เธอ"]
-    male_kw = ["ชาย", "หนุ่ม", "นาย", "พ่อ", "ลุง", "ปู่", "กษัตริย์", "พระเอก", "เขา"]
+    female_kw = ["หญิง", "สาว", "นาง", "แม่", "ป้า", "ย่า", "ยาย", "ราชินี", "นางเอก", "เธอ", "หล่อน", "คุณหญิง"]
+    male_kw = ["ชาย", "หนุ่ม", "นาย", "พ่อ", "ลุง", "ปู่", "กษัตริย์", "พระเอก", "เขา", "สูท", "บิ๊กไบค์", "ตำรวจ", "หมวด", "ผู้กอง"]
     mp = itertools.cycle(["+0Hz", "-15Hz", "-28Hz", "+12Hz", "-40Hz"])
     fp = itertools.cycle(["+10Hz", "-6Hz", "+25Hz", "-15Hz", "+38Hz"])
     seen, assign = [], {}
@@ -209,11 +239,18 @@ def assign_voices(segments, characters_text=""):
             assign[sp] = (_FEMALE_V, "+0Hz")             # ผู้บรรยาย = หญิงโทนปกติ
         elif "ระบบ" in sp or low == "system":
             assign[sp] = (_MALE_V, "-45Hz")              # ระบบ = เสียงต่ำ จักรกล
+        elif sp in MALE_NAMES or any(mn in low for mn in ["รัน", "ชล", "บอย", "ตำรวจ", "หมวด"]):
+            assign[sp] = (_MALE_V, next(mp))             # ตัวละครชายที่ระบุชัดเจน
+        elif sp in FEMALE_NAMES or any(fn in low for fn in ["หญิง", "สาว", "นาง"]):
+            assign[sp] = (_FEMALE_V, next(fp))           # ตัวละครหญิงที่ระบุชัดเจน
         else:
             i = ctext.find(low)
-            ctx = ctext[max(0, i - 60):i + 300] if i >= 0 else ""
+            ctx = ctext[max(0, i - 60):i + 350] if i >= 0 else ""
             is_f = any(k in ctx for k in female_kw)
             is_m = any(k in ctx for k in male_kw)
+            # ถ้าเป็นตัวเอก และมีลักษณะชาย
+            if "ตัวเอก" in ctx and not is_f:
+                is_m = True
             if is_f and not is_m:
                 assign[sp] = (_FEMALE_V, next(fp))
             elif is_m and not is_f:
