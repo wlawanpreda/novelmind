@@ -53,6 +53,19 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
     m_title = re.search(r"^#\s*📚\s*ชุดเผยแพร่นิยาย:\s*([^\n\r]+)", content, re.MULTILINE)
     title = m_title.group(1).strip() if m_title else os.path.basename(kit_path).replace("_WEB_PUBLISH_KIT.md", "")
 
+    # ลองค้นชื่อเรื่องเต็มที่มีวรรณยุกต์ครบจาก Outline ถ้ามี
+    raw_key = os.path.basename(kit_path).replace("_WEB_PUBLISH_KIT.md", "")
+    outline_candidates = glob.glob(os.path.join(SB, "02_Concept_Extraction", f"*{raw_key}*_Outline.md"))
+    if outline_candidates:
+        try:
+            with open(outline_candidates[0], "r", encoding="utf-8") as of:
+                otxt = of.read()
+                m_thai = re.search(r"\*\*(?:ชื่อเรื่องภาษาไทย|ชื่อเรื่อง)\s*:\*\*\s*([^\n\r]+)", otxt)
+                if m_thai and len(m_thai.group(1).strip()) > 3:
+                    title = m_thai.group(1).strip()
+        except Exception:
+            pass
+
     # แยกตอนตาม header "## 🔖 ตอนที่ X" หรือ "## ตอนที่ X"
     if "## 🔖 ตอนที่" in content:
         raw_chapters = re.split(r"(?:\n|^)##\s*🔖\s*ตอนที่\s*(\d+)", content)
