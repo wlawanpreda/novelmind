@@ -190,7 +190,7 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
             page.evaluate("""(args) => {
                 $("#article_name").val(args.title);
                 $("#article_synopsis").val(args.synopsis);
-                $("#author_guid").val("7279cede10fa551f91c258317ac1e356").trigger("change");
+                $("#author_guid").val("ee0889900b3d4191c2b9fb24b49b3444").trigger("change");
                 setCategory("สืบสวน", "61", "87");
                 $("#content_rating").val("1").trigger("change");
             }""", {"title": data["title"], "synopsis": synopsis})
