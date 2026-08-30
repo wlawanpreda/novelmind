@@ -70,8 +70,20 @@ def write_next_chapter(sb, title, n):
     as_dir = os.path.join(sb, "05_Active_Projects", "Audio_Scripts")
     os.makedirs(as_dir, exist_ok=True)
 
-    outline = _read(os.path.join(sb, "02_Concept_Extraction", f"{title}_Outline.md"))
-    characters = _read(os.path.join(sb, "04_Character_Database", f"{title}_Characters.md"))
+    outline_fp = os.path.join(sb, "02_Concept_Extraction", f"{title}_Outline.md")
+    if not os.path.exists(outline_fp):
+        cands = glob.glob(os.path.join(sb, "02_Concept_Extraction", f"*{title[:4]}*_Outline.md"))
+        if cands:
+            outline_fp = cands[0]
+    outline = _read(outline_fp)
+
+    char_fp = os.path.join(sb, "04_Character_Database", f"{title}_Characters.md")
+    if not os.path.exists(char_fp):
+        cands = glob.glob(os.path.join(sb, "04_Character_Database", f"*{title[:4]}*_Characters.md"))
+        if cands:
+            char_fp = cands[0]
+    characters = _read(char_fp)
+
     prev = _read(os.path.join(ch_dir, f"{title}_Chapter_{n-1:02d}.md"))
     if not outline or not prev:
         print(f"[!] ข้าม {title} ตอน {n}: ขาด outline หรือบทก่อนหน้า")
