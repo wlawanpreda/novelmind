@@ -76,11 +76,18 @@ FORBIDDEN_PATTERNS = [
     r"ขอให้คุณเตรียมตัวดำดิ่ง",
     r"คุณคือ\s*[\"']?(?:Audio Production Director|Chief Literary Editor|Master Novelist)[\"']?",
 
-    # 3. Error / Artifacts รั่วไหล
+    # 3. Error / Artifacts / JSON Leaks รั่วไหล
     r"error:\s*generation\s*returned\s*empty\s*result",
     r"as\s+an\s+ai",
     r"i\s+cannot\s+(?:generate|create|write)",
     r"here\s+is\s+the\s+(?:chapter|revised|audio\s*script)",
+    r"INVALID_ARGUMENT",
+    r"API\s*key\s*expired",
+    r"googleapis\.com",
+    r'"revised_content"\s*:',
+    r'"paragraphs"\s*:\s*\[',
+    r'"simplified_sentences"\s*:\s*\[',
+    r'"character_relations"\s*:\s*\[',
 ]
 
 _COMPILED_FORBIDDEN = [re.compile(p, re.IGNORECASE) for p in FORBIDDEN_PATTERNS]
@@ -107,9 +114,85 @@ def detect_meta_talk(text: str) -> List[Dict[str, Any]]:
 
 
 def sanitize_meta_talk(text: str) -> str:
-    """ทำความสะอาดเนื้อหาโดยตัด meta-talk หัว/ท้าย/กลาง/ในหัวข้อ อย่างหมดจด"""
+    """ทำความสะอาดเนื้อหาโดยตัด meta-talk หัว/ท้าย/กลาง/ในหัวข้อ และแกะเนื้อความจาก JSON หลุด อย่างหมดจด"""
     if not text:
         return ""
+
+    # 0. ตรวจสอบกรณีที่เนื้อหาทั้งหมดหรือบางส่วนถูกส่งมาเป็น JSON ดิบ (เช่น {"revised_content": "..."} หรือ {"paragraphs": [...]})
+    trimmed = text.strip()
+    if (trimmed.startswith("{") and trimmed.endswith("}")) or (trimmed.startswith("[") and trimmed.endswith("]")):
+        # ลบ trailing commas ก่อน parse เพื่อความทนทาน
+        sanitized_json = re.sub(r",\s*([\]}])", r"\1", trimmed)
+        parsed = None
+        try:
+            parsed = json.loads(sanitized_json)
+        except Exception:
+            try:
+                parsed = json.loads(trimmed)
+            except Exception:
+                pass
+
+        if parsed is not None:
+            if isinstance(parsed, dict):
+                # กรณีมีคีย์เนื้อหาเด่นชัด
+                for k in ["revised_content", "content", "full_text", "chapter_text", "text", "prose"]:
+                    if k in parsed and isinstance(parsed[k], str):
+                        text = parsed[k]
+                        break
+                else:
+                    if "paragraphs" in parsed and isinstance(parsed["paragraphs"], list):
+                        p_list = []
+                        for item in parsed["paragraphs"]:
+                            if isinstance(item, dict) and "text" in item:
+                                p_list.append(item["text"])
+                            elif isinstance(item, str):
+                                p_list.append(item)
+                        if p_list:
+                            text = "\n\n".join(p_list)
+                    elif "analysis" in parsed and isinstance(parsed["analysis"], list):
+                        p_list = []
+                        for item in parsed["analysis"]:
+                            if isinstance(item, dict):
+                                t = item.get("modified") or item.get("line") or item.get("text")
+                                if t:
+                                    p_list.append(t)
+                                elif "issues" in item and isinstance(item["issues"], list):
+                                    for sub in item["issues"]:
+                                        if isinstance(sub, dict):
+                                            val = sub.get("suggestions") or sub.get("resolution") or sub.get("recommendation")
+                                            if val:
+                                                p_list.append(val)
+                        if p_list:
+                            text = "\n\n".join(p_list)
+                    elif "revisions" in parsed and isinstance(parsed["revisions"], list):
+                        p_list = []
+                        for item in parsed["revisions"]:
+                            if isinstance(item, dict) and "revisions" in item and isinstance(item["revisions"], list):
+                                p_list.extend(item["revisions"])
+                            elif isinstance(item, str):
+                                p_list.append(item)
+                        if p_list:
+                            text = "\n\n".join(p_list)
+            elif isinstance(parsed, list):
+                p_list = []
+                for item in parsed:
+                    if isinstance(item, dict):
+                        t = item.get("text") or item.get("content") or item.get("modified") or item.get("action")
+                        if t:
+                            p_list.append(t)
+                        elif "suggestions" in item:
+                            p_list.append(item["suggestions"])
+                        elif "resolution" in item:
+                            p_list.append(item["resolution"])
+                    elif isinstance(item, str):
+                        p_list.append(item)
+                if p_list:
+                    text = "\n\n".join(p_list)
+        else:
+            # Fallback: ถ้าเป็น JSON ที่ parse ไม่ได้แต่เป็น JSON block ให้ดึง string ภาษาไทยใน quotes
+            thai_snippets = re.findall(r'"(?:text|suggestions|resolution|recommendation|revised_content|description)"\s*:\s*"([^"]+)"', trimmed)
+            if thai_snippets:
+                text = "\n\n".join(thai_snippets)
 
     # ถ้ามีหัวข้อตอน (เช่น ## ตอนที่ X: หรือ **ตอนที่ X: หรือ [ผู้บรรยาย] ตอนที่ X:)
     # ข้อความทั้งหมดที่อยู่ก่อนหน้าหัวข้อตอนแรก ถือเป็น AI conversation preamble ให้ตัดทิ้งทันที

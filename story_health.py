@@ -20,6 +20,8 @@ _PATTERNS = [
      "บทมี error การเชื่อมต่อหรือ API error หลุดในเนื้อหา", "red"),
     (re.compile(r"Traceback \(most recent call last\)"),
      "มี Python traceback หลุดในเนื้อหา", "red"),
+    (re.compile(r"\{\s*\"(?:revised_content|paragraphs|analysis|revisions|scene_number)\""),
+     "มี JSON ดิบหลุดในเนื้อหาบท", "red"),
     (re.compile(r"ในฐานะ(?:โมเดล|ปัญญาประดิษฐ์)?\s*AI|as an AI(?: language model)?|"
                 r"I'?m sorry,? (?:but )?I (?:can'?t|cannot)|I cannot (?:assist|help|fulfill|create)|"
                 r"在转换|假设背景|作为(?:一个)?AI"),
