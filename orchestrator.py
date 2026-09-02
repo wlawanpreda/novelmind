@@ -172,9 +172,20 @@ def run_stage(name: str, cmd, dry: bool) -> bool:
         proc = subprocess.run(cmd, cwd=ROOT, env=sub_env)
         ok = proc.returncode == 0
         log(f"[{name}] {'OK' if ok else 'FAILED (rc=%d)' % proc.returncode}")
+        if not ok:
+            try:
+                from discord_reporter import send_pipeline_error_to_discord
+                send_pipeline_error_to_discord(name, f"Stage '{name}' failed with returncode {proc.returncode}\nCommand: {' '.join(cmd)}")
+            except Exception:
+                pass
         return ok
     except Exception as e:
         log(f"[{name}] EXCEPTION: {e}")
+        try:
+            from discord_reporter import send_pipeline_error_to_discord
+            send_pipeline_error_to_discord(name, f"Stage '{name}' crashed with exception: {e}")
+        except Exception:
+            pass
         return False
 
 
@@ -254,8 +265,10 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     else:
         log("[publish] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE/PUBLISH_TIKTOK/PUBLISH_NOVEL")
 
-    # 3.1) Web Novel Drip Publishing (ปล่อยตอนใหม่อัตโนมัติตามเวลา Golden Hours)
+    # 3.1) Web Novel Drip Publishing & Video Privacy Drip (ปล่อยตอนใหม่และสลับวิดีโอ YouTube เป็นสาธารณะ)
     run_stage("drip_release", [py, "auto_release_scheduler.py", "--cron-tick"], dry)
+    if os.environ.get("PUBLISH_YOUTUBE", "0").lower() in ("1", "true", "yes", "on"):
+        run_stage("privacy_drip", [py, "update_privacy.py", "--public", "--limit", "2"], dry)
 
     # 3.5) แพ็กเกจ E-Book (.epub) และ Master Audiobook (Long-Form 1080p)
     run_stage("epub", [py, "epub_packager.py", "--all", "--min-chapters", "4"], dry)
@@ -272,44 +285,14 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
             backup.auto_backup()
         except Exception:
             pass
-    # แจ้งเตือน Discord (ถ้าตั้ง webhook หรือ bot token) — สรุปผลผลิตปัจจุบัน
+    # แจ้งเตือน Discord (ถ้าตั้ง webhook หรือ bot token) — ส่งเฉพาะสรุปรายวัน / ราย 3 วัน / หรือเมื่อมี Error
     if not dry:
         try:
-            import glob as _g
-            ap = os.path.join(SECOND_BRAIN, "05_Active_Projects")
-            cnt = lambda *p: len(_g.glob(os.path.join(ap, *p)))
-            ch_n = cnt('Chapters', '*.md')
-            cov_n = cnt('Covers', '*.jpg') + cnt('Covers', '*.png')
-            aud_n = cnt('Audio_Output', '*.mp3')
-            tea_n = cnt('Teasers', '*.mp4') + cnt('Teaser_Output', '*.mp4')
-            epub_n = cnt('Exports', '*.epub')
-            long_aud_n = cnt('Exports', 'Audiobooks', '*.mp4')
-            
             try:
-                from discord_reporter import send_discord_message, send_daily_digest_to_discord
+                from discord_reporter import send_daily_digest_to_discord, send_3day_performance_report_to_discord
                 import youtube_stats
-                
-                # 1. Pipeline Status Embed
-                send_discord_message({
-                    "embeds": [{
-                        "title": "🏭 [Pipeline Update] ระบบอัตโนมัติทำงานรอบสมบูรณ์",
-                        "description": "ระบบได้ผลิต ตรวจสอบคุณภาพ (Quality Gate) แพ็กเกจ E-Book/Audiobook และส่งคิวเผยแพร่เรียบร้อยแล้ว",
-                        "color": 0x10B981,
-                        "fields": [
-                            {"name": "📖 บทนิยาย", "value": f"`{ch_n} ตอน`", "inline": True},
-                            {"name": "🖼️ ภาพปก", "value": f"`{cov_n} ปก`", "inline": True},
-                            {"name": "🎧 หนังสือเสียง", "value": f"`{aud_n} ตอน`", "inline": True},
-                            {"name": "🎬 Teaser Shorts", "value": f"`{tea_n} คลิป`", "inline": True},
-                            {"name": "📚 E-Book พร้อมขาย", "value": f"`{epub_n} เล่ม`", "inline": True},
-                            {"name": "🎙️ นิยายเสียงยาว", "value": f"`{long_aud_n} เรื่อง`", "inline": True},
-                            {"name": "🛡️ Quality Gate", "value": "`Active (≥80/100)`", "inline": True},
-                            {"name": "▶️ YouTube / Bilibili", "value": "`Auto-Publishing Active`", "inline": True},
-                        ],
-                        "footer": {"text": f"ANSRE Autonomous Studio • {datetime.now().strftime('%Y-%m-%d %H:%M')}"}
-                    }]
-                })
 
-                # 2. Daily YouTube Digest (ส่งวันละครั้ง)
+                # 1. Daily YouTube Digest (ส่งวันละครั้ง)
                 today_str = datetime.now().strftime("%Y-%m-%d")
                 if state.get("last_daily_digest_date") != today_str and _publish_enabled():
                     overview = youtube_stats.get_channel_overview(SECOND_BRAIN)
@@ -318,28 +301,25 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
                         state["last_daily_digest_date"] = today_str
                         save_state(state)
 
-                # 3. Daily Performance & Intelligence Loop (รีวิวสถิติทุกวันเพื่อพัฒนาพล็อต)
-                DAILY_SECS = 86400
-                last_fb_ts = state.get("last_daily_feedback_ts", 0)
-                if (time.time() - last_fb_ts >= DAILY_SECS or not last_fb_ts) and _publish_enabled():
+                # 2. 3-Day Performance & Intelligence Report (สรุปอันดับ Top Performers & ทิศทางกลยุทธ์ทุก 3 วัน)
+                THREE_DAYS_SECS = 3 * 86400
+                last_fb_ts = state.get("last_3day_feedback_ts", 0)
+                if (time.time() - last_fb_ts >= THREE_DAYS_SECS or not last_fb_ts) and _publish_enabled():
                     try:
                         import feedback
-                        from discord_reporter import send_3day_performance_report_to_discord
-                        sync_res = feedback.sync_youtube(use_ai=False)
-                        if sync_res.get("synced", 0) > 0:
+                        sync_res = feedback.sync_all(use_ai=False)
+                        if sync_res.get("youtube", {}).get("synced", 0) > 0 or sync_res.get("readawrite", {}).get("synced", 0) > 0:
                             overview = youtube_stats.get_channel_overview(SECOND_BRAIN)
                             brief_text = feedback.read_brief()
                             send_3day_performance_report_to_discord(overview, brief_text)
-                            state["last_daily_feedback_ts"] = time.time()
-                            state["last_daily_feedback_date"] = today_str
+                            state["last_3day_feedback_ts"] = time.time()
+                            state["last_3day_feedback_date"] = today_str
                             save_state(state)
-                            log(f"[feedback] ✅ ซิงค์สถิติประจำวัน ({sync_res['synced']} คลิป) และส่งรายงานเข้า Discord สำเร็จ")
+                            log(f"[feedback] 🏆 ส่งรายงาน Top Performers & กลยุทธ์รอบ 3 วัน เข้า Discord สำเร็จ")
                     except Exception as fb_err:
-                        log(f"[feedback] ❌ เกิดข้อผิดพลาดใน feedback loop: {fb_err}")
+                        log(f"[feedback] ❌ เกิดข้อผิดพลาดใน 3-day report: {fb_err}")
             except Exception:
-                from notify import notify as _notify
-                _notify(f"📖 ตอน {ch_n} · 🖼️ ปก {cov_n} · 🎧 เสียง {aud_n} · 🎬 teaser {tea_n}",
-                        "✅ Pipeline รอบหนึ่งเสร็จ", "good")
+                pass
         except Exception:
             pass
 

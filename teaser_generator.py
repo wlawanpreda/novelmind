@@ -67,32 +67,63 @@ def caption_cover(cover_path: str, title: str, hook: str = "", tiktok_safe: bool
         canvas.paste(fg, (0, fy))
 
         draw = ImageDraw.Draw(canvas, "RGBA")
-        title_f = ImageFont.truetype(_THAI_FONT, 76)
-        hook_f = ImageFont.truetype(_THAI_FONT, 48)
+        title_f = ImageFont.truetype(_THAI_FONT, 68)
+        hook_f = ImageFont.truetype(_THAI_FONT, 52)
 
-        def band_text(lines, font, y_start, fill="white"):
+        def draw_bubble_badge(lines, font, y_start, text_color="white", bg_color=(15, 15, 20, 220),
+                              border_color=(255, 215, 0, 255), tag_text=None, stroke_color="black", stroke_w=4):
+            if not lines:
+                return
             line_h = font.size + 16
-            total_h = line_h * len(lines)
-            draw.rectangle([0, y_start - 18, W, y_start + total_h + 8], fill=(0, 0, 0, 140))
-            y = y_start
+            max_w = max(draw.textlength(ln, font=font) for ln in lines)
+            pad_x = 36
+            pad_y = 18
+            box_w = min(W - 80, max(max_w + pad_x * 2, 480))
+            box_h = line_h * len(lines) + pad_y * 2
+            bx0 = (W - box_w) // 2
+            by0 = y_start
+            bx1 = bx0 + box_w
+            by1 = by0 + box_h
+
+            # เงาตกกระทบ (Drop Shadow) ให้กล่องดูลอยเด่นชัด
+            draw.rounded_rectangle([bx0 + 6, by0 + 6, bx1 + 6, by1 + 6], radius=24, fill=(0, 0, 0, 140))
+            # กล่องข้อความสไตล์ Viral Shorts พร้อมเส้นขอบคมชัด
+            draw.rounded_rectangle([bx0, by0, bx1, by1], radius=24, fill=bg_color, outline=border_color, width=3)
+
+            # แท็กสะดุดตาด้านบนกล่อง (Call-to-Action Mini Tag)
+            if tag_text:
+                tag_f = ImageFont.truetype(_THAI_FONT, 28)
+                tw = draw.textlength(tag_text, font=tag_f)
+                tx0 = bx0 + 28
+                ty0 = by0 - 18
+                draw.rounded_rectangle([tx0 - 12, ty0, tx0 + tw + 12, ty0 + 34], radius=10, fill=(255, 45, 85, 255))
+                draw.text((tx0, ty0 + 3), tag_text, font=tag_f, fill="#FFFFFF")
+
+            # พิมพ์ตัวหนังสือจัดกึ่งกลาง
+            y = by0 + pad_y + 4
             for ln in lines:
                 w = draw.textlength(ln, font=font)
-                draw.text(((W - w) / 2, y), ln, font=font, fill=fill,
-                          stroke_width=5, stroke_fill="black")
+                x = (W - w) // 2
+                draw.text((x, y), ln, font=font, fill=text_color, stroke_width=stroke_w, stroke_fill=stroke_color)
                 y += line_h
 
-        # ชื่อเรื่อง (บน) — วางในโซนปลอดภัย y=160 (ไม่โดน UI บนบัง และไม่หลุดจอเมื่อ zoom)
-        tlines = _wrap(draw, title, title_f, W - 100)[:3]
-        band_text(tlines, title_f, 160, fill="#FFFFFF")
-        # hook: ปกติวางล่างสุดในโซนปลอดภัย (เหนือ waveform y=1520) · tiktok_safe ดันขึ้น (~66% จอ)
+        # ชื่อเรื่อง (บน) — วางในโซนปลอดภัย y=160 (กล่องเข้มหรูหรา ขอบทอง ป้ายนิยายเสียง)
+        tlines = _wrap(draw, title, title_f, W - 140)[:3]
+        draw_bubble_badge(tlines, title_f, 160, text_color="#FFFFFF",
+                          bg_color=(12, 16, 28, 230), border_color=(255, 215, 0, 240),
+                          tag_text="นิยายเสียง | สปอยล์บทเดือด", stroke_color="#000000", stroke_w=4)
+
+        # hook: จุดพีคดึงดูดสายตา (ล่างหรือโซนปลอดภัย TikTok) — สไตล์กล่องไฮไลต์สีเหลืองสดใส สะกดสายตาแม้ปิดเสียง
         if hook:
-            hlines = _wrap(draw, hook, hook_f, W - 100)[:3]
+            hlines = _wrap(draw, hook, hook_f, W - 140)[:3]
             line_h = hook_f.size + 16
-            y_hook = int(H * 0.66) if tiktok_safe else (1500 - line_h * len(hlines) - 20)
-            band_text(hlines, hook_f, y_hook, fill="#22D3EE")
+            y_hook = int(H * 0.64) if tiktok_safe else (1480 - (line_h * len(hlines) + 40))
+            draw_bubble_badge(hlines, hook_f, y_hook, text_color="#0A0A0A",
+                              bg_color=(255, 230, 0, 240), border_color=(255, 255, 255, 255),
+                              tag_text="ไฮไลต์จุดพีคประจำตอน", stroke_color="#FFE600", stroke_w=0)
 
         out = os.path.splitext(cover_path)[0] + ("_tt.jpg" if tiktok_safe else "_captioned.jpg")
-        canvas.save(out, "JPEG", quality=90)
+        canvas.save(out, "JPEG", quality=92)
         return out
     except Exception as e:
         print(f"    [!] caption_cover ล้มเหลว: {e} — ใช้ปกเดิม")

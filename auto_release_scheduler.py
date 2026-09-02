@@ -11,11 +11,12 @@ auto_release_scheduler.py — ระบบบริหารจัดการ�
 """
 
 import os
+import re
 import sys
 import json
 import time
 import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 _VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
@@ -71,14 +72,17 @@ def get_article_chapters(article_id: str) -> List[Dict[str, Any]]:
         chapters = page.evaluate("""() => {
             return Array.from(document.querySelectorAll(".table tbody tr")).map(r => {
                 const titleEl = r.querySelector(".chapter_detail p, td:nth-child(3)");
-                const title = titleEl ? titleEl.innerText.trim() : "";
                 const chk = r.querySelector("input[name=chk_chapter_guid]");
+                const title = (chk ? chk.getAttribute("title_name") : "") || (titleEl ? titleEl.innerText.trim() : "");
                 const guid = chk ? chk.value : "";
                 const words = chk ? chk.getAttribute("word_count") : "";
                 const statusBtn = r.querySelector("button.dropdown-toggle");
                 const statusText = statusBtn ? statusBtn.innerText.trim() : "";
-                const isPublished = statusText.includes("เผยแพร่") && !statusText.includes("ไม่");
-                return { title, guid, words, isPublished, statusText };
+                const rowStatus = r.getAttribute("status");
+                const pubDate = r.getAttribute("first_published_date");
+                // status == "2" คือเผยแพร่แล้ว หรือมี first_published_date บันทึกไว้
+                const isPublished = (rowStatus === "2") || Boolean(pubDate && pubDate.length > 5);
+                return { title, guid, words, isPublished, statusText, status: rowStatus, pubDate };
             });
         }""")
         browser.close()
@@ -121,6 +125,28 @@ def publish_chapter(guid: str) -> bool:
         return res.get("status", {}).get("success", False)
 
 
+def ensure_story_master_published(article_id: str):
+    """ตรวจสอบและเปิดสถานะเรื่องหลักให้เป็น เผยแพร่ บน ReadAWrite หากยังเป็น ไม่เผยแพร่"""
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=AUTH_FILE)
+            page = context.new_page()
+            page.goto(f"https://www.readawrite.com/?action=manage_article&article_id={article_id}&tab=mainManageArticle", timeout=30000)
+            page.wait_for_timeout(2000)
+            st = page.inner_text("#article_status_text") if page.query_selector("#article_status_text") else ""
+            if "ไม่เผยแพร่" in st:
+                page.click(".switch_setting_status")
+                page.wait_for_timeout(1000)
+                confirm_btn = page.query_selector('button:has-text("ยืนยัน"), a:has-text("ยืนยัน")')
+                if confirm_btn:
+                    confirm_btn.click()
+                    page.wait_for_timeout(2500)
+            browser.close()
+    except Exception as e:
+        print(f"   [!] ensure_story_master_published error: {e}")
+
+
 def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]]:
     """หาตอนถัดไปที่ยังไม่เผยแพร่แล้วทำการเปิดเผยแพร่"""
     print(f"\n🔍 ตรวจสอบสารบัญของเรื่อง '{title}' (ID: {article_id})...")
@@ -132,7 +158,7 @@ def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]
     # จัดเรียงตามลำดับตอน
     sorted_chs = []
     for c in chapters:
-        m = re.search(r"#(\d+)", c["title"])
+        m = re.search(r"#(\d+)", c["title"]) or re.search(r"ตอนที่\s*(\d+)", c["title"])
         order = int(m.group(1)) if m else 999
         sorted_chs.append((order, c))
     sorted_chs.sort(key=lambda x: x[0])
@@ -151,6 +177,7 @@ def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]
     success = publish_chapter(next_ch["guid"])
     if success:
         print(f"   ✅ เผยแพร่ '{next_ch['title']}' สู่สาธารณะสำเร็จ!")
+        ensure_story_master_published(article_id)
         ledger = load_ledger()
         ledger["scheduled_releases"].append({
             "story": title,
@@ -186,11 +213,50 @@ def notify_discord_release(story_title: str, ch_title: str, ch_guid: str, remain
         print(f"   [!] ส่งแจ้งเตือน Discord: {e}")
 
 
+def sync_all_stories_from_studio() -> List[tuple[str, str]]:
+    """ดึงรายชื่อนิยายทั้งหมดจาก My Writing มาบันทึกเข้า Ledger เพื่อให้ระบบทยอยปล่อยได้ทุกเรื่อง"""
+    if not os.path.exists(AUTH_FILE):
+        return []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=AUTH_FILE)
+            page = context.new_page()
+            page.goto("https://www.readawrite.com/?action=main_manage_article", timeout=45000)
+            page.wait_for_timeout(2000)
+            links = page.eval_on_selector_all("a[href*='manage_article&article_id=']", "els => els.map(e => ({href: e.href, text: e.innerText.trim()}))")
+            browser.close()
+
+            ledger = load_ledger()
+            if "published_stories" not in ledger:
+                ledger["published_stories"] = {}
+
+            found = []
+            for l in links:
+                m = re.search(r"article_id=([a-f0-9]+)", l["href"])
+                if m:
+                    art_id = m.group(1)
+                    title = l["text"].split("\n")[0].strip()
+                    if title and len(title) > 1:
+                        found.append((art_id, title))
+                        ledger["published_stories"][title] = {
+                            "article_id": art_id,
+                            "platform": "readawrite",
+                            "synced_at": datetime.datetime.now().isoformat()
+                        }
+            save_ledger(ledger)
+            return found
+    except Exception as e:
+        print(f"   [!] Sync stories error: {e}")
+        return []
+
+
 def get_active_stories() -> List[tuple[str, str]]:
     """ดึงรายการเรื่องที่กำลังออนแอร์จาก Ledger และค่าเริ่มต้น"""
     base = [
         ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
-        ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ")
+        ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ"),
+        ("e90bfef727e4730819e92444783d6850", "ร้านค้าเหนือโลก: กระจกเงาคนตาย")
     ]
     ledger = load_ledger()
     known_ids = {s[0] for s in base}
@@ -203,40 +269,49 @@ def get_active_stories() -> List[tuple[str, str]]:
 
 
 def cron_tick(force: bool = False) -> None:
-    """ประเมินเวลาและทำการ Drip Release อัตโนมัติในแต่ละรอบของ Orchestrator"""
+    """ประเมินเวลาและทำการ Drip Release อัตโนมัติในแต่ละรอบของ Orchestrator (กระจายปล่อยหลายเรื่อง)"""
     now = datetime.datetime.now()
     hour = now.hour
     today_str = now.strftime("%Y-%m-%d")
     ledger = load_ledger()
     releases_today = [r for r in ledger.get("scheduled_releases", []) if r.get("published_at", "").startswith(today_str)]
 
-    is_midday = (11 <= hour <= 13)
-    is_evening = (19 <= hour <= 22)
+    # กำหนดโควตาการปล่อยต่อวัน (เพิ่มความต่อเนื่องในการเก็บ feedback)
+    max_daily = int(os.environ.get("ANSRE_DAILY_DRIP_LIMIT", "6"))
+    max_per_tick = int(os.environ.get("ANSRE_DRIP_PER_TICK", "2"))
 
-    # เช็คว่ารอบนี้ควรปล่อยไหม
     should_release = force
     if not should_release:
-        if is_midday and len(releases_today) == 0:
+        # ปล่อยได้ตลอดวันเมื่อถึงรอบ โดยคุมเพดานรายวันไม่ให้เกิน max_daily
+        if len(releases_today) < max_daily:
             should_release = True
-            print(f"\n☀️ [Cron Tick] เข้าสู่ช่วงเวลาทองรอบเที่ยง ({now.strftime('%H:%M น.')}) — ปล่อยตอนใหม่")
-        elif is_evening and len(releases_today) < 2:
-            should_release = True
-            print(f"\n🌙 [Cron Tick] เข้าสู่ช่วงเวลาทองรอบค่ำ ({now.strftime('%H:%M น.')}) — ปล่อยตอนใหม่")
+            print(f"\n🚀 [Drip Tick] ปล่อยตอนใหม่ต่อเนื่องเพื่อเก็บ Feedback (วันนี้ปล่อยแล้ว {len(releases_today)}/{max_daily} ตอน)")
 
     if not should_release:
         return
 
     # ค้นหาเรื่องที่กำลัง On-Air ทั้งหมด
     active_stories = get_active_stories()
+    if len(active_stories) <= 3:
+        # ซิงค์เรื่องทั้งหมดจาก Studio เพิ่มเติม
+        sync_all_stories_from_studio()
+        active_stories = get_active_stories()
 
-    for art_id, title in active_stories:
+    # สับเปลี่ยนเรื่องตามคิว เพื่อไม่ให้ปล่อยกระจุกเฉพาะเรื่องเดิม
+    released_in_tick = 0
+    # ดูว่าเรื่องไหนเพิ่งปล่อยไป ให้ขยับไปท้ายคิว
+    recent_released_titles = set(r.get("story", "") for r in releases_today[-5:])
+    sorted_stories = sorted(active_stories, key=lambda s: 1 if s[1] in recent_released_titles else 0)
+
+    for art_id, title in sorted_stories:
+        if released_in_tick >= max_per_tick:
+            break
         released = release_next_chapter(art_id, title)
         if released:
-            # ดึงจำนวนตอนที่ยังเหลือ
+            released_in_tick += 1
             all_chs = get_article_chapters(art_id)
             unpub_count = sum(1 for c in all_chs if not c.get("isPublished", False))
             notify_discord_release(title, released["title"], released["guid"], unpub_count)
-            break
 
 
 def show_publishing_dashboard():
@@ -274,5 +349,9 @@ if __name__ == "__main__":
             notify_discord_release(title, res["title"], res["guid"], 6)
     elif "--cron-tick" in args:
         cron_tick(force=("--force" in args))
+    elif "--sync-metadata" in args:
+        import readawrite_metadata_syncer
+        lim = None if "--all" in args else 5
+        readawrite_metadata_syncer.run_mass_sync(limit=lim)
     else:
         show_publishing_dashboard()

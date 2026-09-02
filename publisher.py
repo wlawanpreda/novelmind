@@ -452,8 +452,10 @@ def publish_bilibili(sb: str, teaser_path: str, meta: dict, dry: bool) -> str:
         return "disabled"
     try:
         import bilibili_publisher
-        res = bilibili_publisher.publish_to_bilibili(teaser_path, meta, dry)
-        if res.startswith("queued"):
+        res = bilibili_publisher.publish_to_bilibili(teaser_path, meta, dry=dry)
+        if res.startswith("uploaded"):
+            log(f"  [bilibili] 🚀 เผยแพร่วิดีโอขึ้นช่อง Bilibili สำเร็จ: {res.split(':', 2)[-1]}")
+        elif res.startswith("queued") or res.startswith("dry:queued"):
             log(f"  [bilibili] ✅ เข้าคิวเผยแพร่พร้อมแปลจีน: {os.path.basename(teaser_path)}")
         elif res.startswith("error"):
             log(f"  [bilibili] ❌ error: {res}")
@@ -571,10 +573,10 @@ def run(sb: str, dry: bool = False):
         except Exception:
             pass
 
-        # Pre-Publish Auditor: ตรวจสกัดคำหลุด subagent / meta-talk และความไม่สอดคล้อง (Zero Tolerance)
+        # Pre-Publish Auditor: ตรวจสกัดคำหลุด subagent / meta-talk และความไม่สอดคล้อง (Zero Tolerance + Auto Heal)
         try:
             import agent_auditor
-            audit_res = agent_auditor.audit_publication_package(tpath, meta)
+            audit_res = agent_auditor.audit_publication_package(tpath, meta, auto_sanitize=True)
             if not audit_res["passed"]:
                 log(f"  [auditor] 🛑 บล็อกการเผยแพร่ {key}! ตรวจพบข้อผิดพลาดร้ายแรง:")
                 for err in audit_res["errors"]:

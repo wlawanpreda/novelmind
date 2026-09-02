@@ -341,6 +341,64 @@ def sync_youtube(use_ai: bool = False) -> dict:
         return {"synced": 0, "error": str(e)}
 
 
+def sync_readawrite(use_ai: bool = False) -> dict:
+    """ดึงสถิติยอดอ่านจริงจาก ReadAWrite My Writing เข้า ledger"""
+    auth_file = os.path.join(ROOT, ".auth_sessions", "readawrite_state.json")
+    if not os.path.exists(auth_file):
+        print("   [!] ไม่พบ session ReadAWrite (.auth_sessions/readawrite_state.json)")
+        return {"synced": 0, "error": "No auth session"}
+    try:
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=auth_file)
+            page = context.new_page()
+            page.goto("https://www.readawrite.com/?action=main_manage_article", timeout=45000)
+            page.wait_for_timeout(2000)
+
+            links = page.query_selector_all("a[href*=manage_article]")
+            synced_count = 0
+            seen = set()
+            for a in links:
+                href = a.get_attribute("href") or ""
+                m = re.search(r"article_id=([a-f0-9]+)", href)
+                if not m:
+                    continue
+                aid = m.group(1)
+                if aid in seen:
+                    continue
+                seen.add(aid)
+
+                row_text = a.evaluate("el => (el.closest('tr') || el.parentElement).innerText")
+                lines = [l.strip() for l in row_text.split("\n") if l.strip()]
+
+                chs, views, cmts, likes = 0, 0, 0, 0
+                for line in lines:
+                    sm = re.match(r"^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$", line)
+                    if sm:
+                        chs, views, cmts, likes = int(sm.group(1)), int(sm.group(2)), int(sm.group(3)), int(sm.group(4))
+                        break
+
+                t = a.inner_text().split("\n")[0].strip()
+                record(t, views=views, likes=likes, comments=cmts, shares=0,
+                       platform="readawrite", url=f"https://www.readawrite.com/a/{aid}")
+                synced_count += 1
+            browser.close()
+            print(f"[+] Sync ข้อมูล {synced_count} เรื่องจาก ReadAWrite เรียบร้อย")
+            return {"synced": synced_count}
+    except Exception as e:
+        print(f"[!] ReadAWrite sync error: {e}")
+        return {"synced": 0, "error": str(e)}
+
+
+def sync_all(use_ai: bool = False) -> dict:
+    """ซิงค์สถิติจากทุกแพลตฟอร์ม (YouTube + ReadAWrite) แล้วประมวลผลการเรียนรู้"""
+    yt_res = sync_youtube(use_ai=False)
+    raw_res = sync_readawrite(use_ai=False)
+    brief = learn(use_ai=use_ai)
+    return {"youtube": yt_res, "readawrite": raw_res, "brief": brief}
+
+
 def main():
     ap = argparse.ArgumentParser(description="ANSRE feedback loop (Phase 5)")
     sub = ap.add_subparsers(dest="cmd")
@@ -357,7 +415,10 @@ def main():
     lrn = sub.add_parser("learn", help="สังเคราะห์ brief จาก ledger")
     lrn.add_argument("--ai", action="store_true", help="ให้ AI ช่วยสรุปคำแนะนำ (มีค่า token)")
 
-    sub.add_parser("sync", help="ดึงสถิติจริงจาก YouTube อัตโนมัติ")
+    sync_p = sub.add_parser("sync", help="ดึงสถิติจริงจาก YouTube และ ReadAWrite")
+    sync_p.add_argument("--platform", choices=["all", "youtube", "readawrite"], default="all")
+    sync_p.add_argument("--ai", action="store_true")
+
     sub.add_parser("list", help="ดูผลงานที่บันทึก")
     sub.add_parser("brief", help="พิมพ์ brief ที่ป้อนเข้า ideation")
     sub.add_parser("roi", help="ROI ต่อเรื่อง (engagement เทียบต้นทุน)")
@@ -366,7 +427,13 @@ def main():
     if a.cmd == "record":
         record(a.story, a.views, a.likes, a.comments, a.shares, a.platform, a.url)
     elif a.cmd == "sync":
-        sync_youtube()
+        if a.platform == "youtube":
+            sync_youtube(use_ai=a.ai)
+        elif a.platform == "readawrite":
+            sync_readawrite(use_ai=a.ai)
+            learn(use_ai=a.ai)
+        else:
+            sync_all(use_ai=a.ai)
     elif a.cmd == "learn":
         learn(use_ai=a.ai)
     elif a.cmd == "list":

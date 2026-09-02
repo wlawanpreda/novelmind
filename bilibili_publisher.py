@@ -20,6 +20,7 @@ import json
 import glob
 import urllib.request
 import urllib.parse
+import subprocess
 from typing import Dict, Any, Optional
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
@@ -111,7 +112,7 @@ def prepare_bilibili_package(teaser_path: str, meta: dict) -> str:
 
 
 def publish_to_bilibili(teaser_path: str, meta: dict, dry: bool = False) -> str:
-    """ส่งคลิปวิดีโอขึ้น Bilibili โดยตรงผ่าน Member API หรือบันทึกลง Queue"""
+    """ส่งคลิปวิดีโอขึ้น Bilibili โดยตรงผ่าน biliup / Member Web API หรือบันทึกลง Queue"""
     pkg_path = prepare_bilibili_package(teaser_path, meta)
     sessdata = os.environ.get("BILIBILI_SESSDATA", "").strip()
     bili_jct = os.environ.get("BILIBILI_BILI_JCT", "").strip()
@@ -123,9 +124,48 @@ def publish_to_bilibili(teaser_path: str, meta: dict, dry: bool = False) -> str:
         # ยังไม่ได้ใส่ Cookie -> เก็บเข้า Queue ให้อัตโนมัติ ไม่ให้ล้ม
         return f"queued_no_cookie:{pkg_path}"
 
+    cookies_json = os.path.join(ROOT, "cookies.json")
+    if not os.path.exists(cookies_json):
+        try:
+            import stream_gears
+            stream_gears.login_by_web_cookies(sessdata, bili_jct, None)
+        except Exception as e:
+            print(f"   [bilibili] login_by_web_cookies warning: {e}")
+
     try:
-        # สามารถเรียก API Bilibili อัปโหลดได้ที่นี่เมื่อมี Credential
-        return f"queued_authenticated:{pkg_path}"
+        with open(pkg_path, "r", encoding="utf-8") as f:
+            pkg_data = json.load(f)
+
+        title_zh = pkg_data.get("title_zh", "")[:80]
+        desc_zh = pkg_data.get("description_zh", "")[:250]
+        tags_zh = ",".join(pkg_data.get("tags_zh", ["小说推文", "有声小说"]))
+        tid = str(pkg_data.get("category_id", 21))
+
+        biliup_bin = os.path.join(ROOT, ".venv", "bin", "biliup")
+        if not os.path.exists(biliup_bin):
+            biliup_bin = "biliup"
+
+        cmd = [
+            biliup_bin,
+            "-u", cookies_json,
+            "upload",
+            os.path.abspath(teaser_path),
+            "--title", title_zh,
+            "--desc", desc_zh,
+            "--tag", tags_zh,
+            "--tid", tid,
+            "--copyright", "1"
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode == 0:
+            pkg_data["status"] = "uploaded"
+            with open(pkg_path, "w", encoding="utf-8") as f:
+                json.dump(pkg_data, f, ensure_ascii=False, indent=2)
+            return f"uploaded:bilibili:{title_zh}"
+        else:
+            err_msg = (proc.stderr or proc.stdout).strip().replace("\n", " ")[:150]
+            print(f"   [bilibili] upload failed ({proc.returncode}): {err_msg}")
+            return f"queued_authenticated:{pkg_path}"
     except Exception as e:
         return f"error:{e}"
 

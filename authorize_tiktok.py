@@ -50,7 +50,21 @@ if os.path.exists(_ENV):
 
 CLIENT_KEY = os.environ.get("TIKTOK_CLIENT_KEY", "")
 CLIENT_SECRET = os.environ.get("TIKTOK_CLIENT_SECRET", "")
-REDIRECT_URI = os.environ.get("TIKTOK_REDIRECT_URI", "http://localhost:9876/callback")
+def get_redirect_uri() -> str:
+    env_uri = os.environ.get("TIKTOK_REDIRECT_URI", "").strip()
+    if env_uri:
+        return env_uri
+    try:
+        req = urllib.request.Request("http://127.0.0.1:4040/api/tunnels")
+        with urllib.request.urlopen(req, timeout=1.5) as r:
+            data = json.loads(r.read().decode())
+            for t in data.get("tunnels", []):
+                if t.get("proto") == "https":
+                    url = t.get("public_url")
+                    return f"{url}/callback"
+    except Exception:
+        pass
+    return "http://localhost:9876/callback"
 
 
 class _Catcher(BaseHTTPRequestHandler):
@@ -59,8 +73,6 @@ class _Catcher(BaseHTTPRequestHandler):
 
     def do_GET(self):
         q = urllib.parse.urlparse(self.path)
-        if q.path != urllib.parse.urlparse(REDIRECT_URI).path:
-            self.send_response(404); self.end_headers(); return
         params = urllib.parse.parse_qs(q.query)
         _Catcher.code = (params.get("code") or [None])[0]
         _Catcher.state = (params.get("state") or [None])[0]
@@ -68,22 +80,26 @@ class _Catcher(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "text/html; charset=utf-8")
         self.end_headers()
         ok = bool(_Catcher.code)
-        msg = ("✅ อนุญาตสำเร็จ — กลับไปที่เทอร์มินัลได้เลย" if ok
-               else "❌ ไม่ได้รับ code — ลองใหม่")
-        self.wfile.write(f"<html><body style='font-family:sans-serif;padding:40px'><h2>{msg}</h2></body></html>".encode())
+        msg = ("✅ อนุญาตสิทธิ์ TikTok สำเร็จแล้ว! — กลับไปที่เทอร์มินัลได้เลยครับ" if ok
+               else "❌ ไม่ได้รับ authorization code — กรุณาลองใหม่อีกครั้ง")
+        self.wfile.write(f"<html><body style='font-family:sans-serif;padding:40px;text-align:center'><h2>{msg}</h2></body></html>".encode())
 
     def log_message(self, *a):
         pass
 
 
-def _exchange(code):
-    data = urllib.parse.urlencode({
+def _exchange(code, verifier=None, redirect_uri=None):
+    post_data = {
         "client_key": CLIENT_KEY,
         "client_secret": CLIENT_SECRET,
         "code": code,
         "grant_type": "authorization_code",
-        "redirect_uri": REDIRECT_URI,
-    }).encode()
+        "redirect_uri": redirect_uri or REDIRECT_URI,
+    }
+    if verifier:
+        post_data["code_verifier"] = verifier
+
+    data = urllib.parse.urlencode(post_data).encode()
     req = urllib.request.Request(TOKEN_URL, data=data,
                                 headers={"Content-Type": "application/x-www-form-urlencoded"})
     with urllib.request.urlopen(req, timeout=60) as r:
@@ -91,13 +107,16 @@ def _exchange(code):
 
 
 def main():
+    global REDIRECT_URI
+    REDIRECT_URI = get_redirect_uri()
+
     if not CLIENT_KEY or not CLIENT_SECRET:
         print("❌ ไม่พบ TIKTOK_CLIENT_KEY / TIKTOK_CLIENT_SECRET ใน .env")
         print("   ดูขั้นตอนเตรียม App ที่หัวไฟล์นี้ (developers.tiktok.com)")
         sys.exit(1)
 
     state = secrets.token_urlsafe(16)
-    # PKCE (TikTok รองรับ) — เพิ่มความปลอดภัย
+    # PKCE (TikTok รองรับ)
     verifier = secrets.token_urlsafe(48)
     challenge = base64.urlsafe_b64encode(
         hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
@@ -112,12 +131,23 @@ def main():
         "code_challenge_method": "S256",
     })
 
+    # รับ Traffic จาก ngrok หรือ localhost ที่พอร์ต 9876 เสมอ
+    listen_port = 9876
     parsed = urllib.parse.urlparse(REDIRECT_URI)
-    host, port = parsed.hostname or "localhost", parsed.port or 80
-    server = HTTPServer((host, port), _Catcher)
+    if parsed.port:
+        listen_port = parsed.port
+    server = HTTPServer(("0.0.0.0", listen_port), _Catcher)
 
-    print("🔑 เปิดเบราว์เซอร์ให้ล็อกอิน TikTok + อนุญาตสิทธิ์อัปโหลด ...")
-    print(f"   ถ้าไม่เด้งเอง เปิดลิงก์นี้:\n   {auth}\n")
+    print("\n=======================================================")
+    print(" 🎵 TikTok OAuth Authorization")
+    print("=======================================================")
+    print(f"🔗 Target Redirect URI: {REDIRECT_URI}")
+    parsed_domain = parsed.netloc.split(":")[0]
+    print(f"\n📋 [สำคัญ] กรุณาตรวจสอบใน TikTok Developer Portal -> Login Kit:")
+    print(f"   • Redirect domain : {parsed_domain}")
+    print(f"   • Redirect URI    : {REDIRECT_URI}\n")
+    print("🔑 กำลังเปิดเบราว์เซอร์เพื่อขอสิทธิ์ TikTok ...")
+    print(f"   ถ้าหน้าต่างไม่เปิดขึ้นมาเอง ให้คลิกลิงก์นี้:\n   {auth}\n")
     try:
         import webbrowser
         webbrowser.open(auth)
@@ -133,17 +163,16 @@ def main():
         print("⚠️ state ไม่ตรง — อาจถูกแทรกแซง ยกเลิกเพื่อความปลอดภัย"); sys.exit(1)
 
     print("🔄 แลก code เป็น access_token ...")
-    tok = _exchange(code)
+    tok = _exchange(code, verifier=verifier, redirect_uri=REDIRECT_URI)
     if "access_token" not in tok:
         print(f"❌ แลก token ไม่สำเร็จ: {json.dumps(tok, ensure_ascii=False)[:300]}"); sys.exit(1)
 
     tok["_obtained_at"] = int(time.time())
     with open(TOKEN_OUT, "w", encoding="utf-8") as f:
         json.dump(tok, f, ensure_ascii=False, indent=2)
-    print(f"✅ บันทึก {TOKEN_OUT} แล้ว")
+    print(f"✅ บันทึก {TOKEN_OUT} เรียบร้อยแล้ว!")
     print(f"   access_token อายุ ~{tok.get('expires_in','?')}s · refresh อายุ ~{tok.get('refresh_expires_in','?')}s")
-    print("   ต่อไป: ใส่ TIKTOK_ACCESS_TOKEN จากไฟล์นี้ลง .env หรือให้ publisher อ่านไฟล์โดยตรง")
-    print("   แล้วตั้ง PUBLISH_TIKTOK=1 + TIKTOK_PRIVACY=SELF_ONLY (จนกว่าจะผ่าน Audit)")
+    print("   🚀 ระบบพร้อมปล่อยคลิปสู่ TikTok อัตโนมัติในรอบ Orchestrator แล้วครับ")
 
 
 if __name__ == "__main__":

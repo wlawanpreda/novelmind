@@ -66,7 +66,8 @@ FORBIDDEN_PATTERNS = [
     r"เยี่ยมมาก(?:ครับ|ค่ะ)(?:\s*Chief|\s*Editor|\s*Director)?",
     r"ขอรับช่วง",
     r"เจียระไน",
-    r"ตามที่คุณ(?:ขอ|ต้องการ|แนะนำ)",
+    r"(?:นี่คือ|ส่งมอบ|แก้ไข|ขัดเกลา|จัดทำ)?\s*ตามที่คุณ(?:ขอ|ต้องการ|แนะนำ)(?:แล้ว|ครับ|ค่ะ|เลยครับ|เลยค่ะ)",
+    r"^ตามที่คุณ(?:ขอ|ต้องการ|แนะนำ)",
     r"ตามคำขอของคุณ",
     r"ยินดีเป็นอย่างยิ่งที่จะช่วย",
     r"หวังว่าฉบับนี้จะถูกใจ",
@@ -318,17 +319,32 @@ def audit_publication_package(
     hook = meta.get("hook", "")
 
     title_meta = detect_meta_talk(title)
+    desc_meta = detect_meta_talk(desc)
+    hook_meta = detect_meta_talk(hook) if hook else []
+
+    # Auto-heal Metadata ถ้าเปิด auto_sanitize
+    if auto_sanitize:
+        if title_meta:
+            meta["title"] = sanitize_meta_talk(title).replace("\n", " ").strip()
+            title = meta["title"]
+            title_meta = detect_meta_talk(title)
+        if desc_meta:
+            meta["description"] = sanitize_meta_talk(desc).strip()
+            desc = meta["description"]
+            desc_meta = detect_meta_talk(desc)
+        if hook_meta:
+            meta["hook"] = sanitize_meta_talk(hook).strip()
+            hook = meta["hook"]
+            hook_meta = detect_meta_talk(hook)
+
     if title_meta:
         errors.append(f"ชื่อคลิปมีข้อความ AI หลุด: '{title_meta[0]['matched']}' ใน \"{title}\"")
 
-    desc_meta = detect_meta_talk(desc)
     if desc_meta:
         errors.append(f"คำอธิบายคลิปมีข้อความ AI หลุด: '{desc_meta[0]['matched']}'")
 
-    if hook:
-        hook_meta = detect_meta_talk(hook)
-        if hook_meta:
-            errors.append(f"ข้อความ Hook มีข้อความ AI หลุด: '{hook_meta[0]['matched']}'")
+    if hook_meta:
+        errors.append(f"ข้อความ Hook มีข้อความ AI หลุด: '{hook_meta[0]['matched']}'")
 
     # 2. ตรวจสอบไฟล์ Teaser วิดีโอ
     if not os.path.exists(teaser_path) or os.path.getsize(teaser_path) < 10000:
@@ -343,6 +359,11 @@ def audit_publication_package(
         with open(srt_path, "r", encoding="utf-8") as f:
             srt_content = f.read()
         srt_leaks = detect_meta_talk(srt_content)
+        if srt_leaks and auto_sanitize:
+            cleaned_srt = sanitize_srt_content(srt_content)
+            with open(srt_path, "w", encoding="utf-8") as f:
+                f.write(cleaned_srt)
+            srt_leaks = []
         if srt_leaks:
             errors.append(f"ซับไตเติลที่จะเบิร์นลงวิดีโอมีข้อความ AI หลุด ({len(srt_leaks)} ตำแหน่ง)")
 

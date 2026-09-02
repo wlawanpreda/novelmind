@@ -195,6 +195,14 @@ def write_next_chapter(sb, title, n):
     # D) audio script (ใช้ฟังก์ชันเดียวกับ stage 6 ที่แบ่ง chunk กัน token limit)
     audio_script = run_stage_6_audio_script(f"{title} ตอนที่ {n}", final)
 
+    # Automatic Inspection & Sanitization: ล้าง meta-talk อัตโนมัติก่อนบันทึกไฟล์เสมอ
+    try:
+        from agent_auditor import sanitize_meta_talk
+        final = sanitize_meta_talk(final)
+        audio_script = sanitize_meta_talk(audio_script)
+    except Exception:
+        pass
+
     # save
     with open(os.path.join(ch_dir, f"{title}_Chapter_{n:02d}.md"), "w", encoding="utf-8") as f:
         f.write(final)

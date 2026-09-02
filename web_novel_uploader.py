@@ -182,8 +182,19 @@ def check_auth_status() -> Dict[str, bool]:
     }
 
 
-def text_to_html(text: str) -> str:
-    """แปลงเนื้อหา Markdown เป็นแท็ก HTML สำหรับ CKEditor 5 (ลบ heading ซ้ำซ้อนและแปลง bold/italic/quote)"""
+def text_to_html(text: str, base_name: Optional[str] = None, chapter_num: Optional[int] = None) -> str:
+    """แปลงเนื้อหา Markdown เป็นแท็ก HTML สำหรับ CKEditor 5 พร้อมแทรกภาพประกอบฉาก (Scene Illustrations) อัตโนมัติ"""
+    import base64
+    scene_imgs = []
+    if base_name and chapter_num is not None:
+        clean_base = re.sub(r"[\s_:\*]", "", base_name)
+        scenes_dir = os.path.join(SB, "05_Active_Projects", "Scene_Images")
+        all_scenes = glob.glob(os.path.join(scenes_dir, f"*_ch{int(chapter_num):02d}_s*.*"))
+        for sc in all_scenes:
+            sc_stem = re.sub(r"[\s_:\*]", "", os.path.basename(sc).split("_ch")[0])
+            if sc_stem and (sc_stem in clean_base or clean_base in sc_stem):
+                scene_imgs.append(sc)
+
     try:
         import markdown
         raw_text = text.strip()
@@ -191,14 +202,38 @@ def text_to_html(text: str) -> str:
         if lines and lines[0].startswith("#"):
             lines = lines[1:]
         clean_text = "\n".join(lines).strip()
-        return markdown.markdown(clean_text, extensions=["extra", "nl2br"])
+        html = markdown.markdown(clean_text, extensions=["extra", "nl2br"])
     except Exception:
         paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
         html_parts = []
         for p in paragraphs:
             p_clean = p.replace("\n", "<br/>")
             html_parts.append(f"<p>{p_clean}</p>")
-        return "".join(html_parts)
+        html = "".join(html_parts)
+
+    # แทรกภาพประกอบฉากที่ 45% ของความยาวบทความ
+    if scene_imgs:
+        paras = html.split("</p>")
+        total_p = len(paras)
+        if total_p >= 4:
+            insert_idx = int(total_p * 0.45)
+            img_p = scene_imgs[0]
+            try:
+                with open(img_p, "rb") as f:
+                    b64_data = base64.b64encode(f.read()).decode("utf-8")
+                ext = os.path.splitext(img_p)[1].lstrip(".").lower()
+                if ext == "jpg":
+                    ext = "jpeg"
+                img_tag = (f"<figure style='text-align:center; margin:24px 0;'>"
+                           f"<img src='data:image/{ext};base64,{b64_data}' style='max-width:100%; border-radius:10px; box-shadow:0 4px 14px rgba(0,0,0,0.12);' />"
+                           f"<figcaption style='font-size:13px; color:#888; margin-top:8px;'>✦ ภาพประกอบฉากสำคัญ</figcaption></figure>")
+                paras.insert(insert_idx, img_tag)
+                html = "</p>".join(paras)
+                print(f"      🖼️ ฝังภาพประกอบฉาก ({os.path.basename(img_p)}) ลงในตอนที่ {chapter_num} สำเร็จ!")
+            except Exception as e:
+                print(f"      [!] ฝังภาพประกอบฉากล้มเหลว: {e}")
+
+    return html
 
 
 def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
@@ -320,8 +355,8 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
             # กรอกชื่อตอน
             page.fill("#chapter_title", full_title)
 
-            # ใส่เนื้อหาใน CKEditor 5
-            html_content = text_to_html(ch["content"])
+            # ใส่เนื้อหาใน CKEditor 5 (พร้อมฝังภาพประกอบฉากถ้ามี)
+            html_content = text_to_html(ch["content"], base_name=data.get("title"), chapter_num=ch_num)
             page.evaluate("""(content) => {
                 const el = document.querySelector(".ck-editor__editable");
                 if (el && el.ckeditorInstance) {

@@ -12,6 +12,7 @@ discord_reporter.py — Discord Integration for ANSRE Multi-Agent Studio
 from __future__ import annotations
 
 import os
+import re
 import json
 import sqlite3
 import urllib.request
@@ -268,17 +269,57 @@ def send_3day_performance_report_to_discord(
 
     top_videos = channel_stats.get("top_videos", [])
     if top_videos:
-        top_list = "\n".join(f"• 👁️ `{v['views']:,}` | {v['title'][:40]}" for v in top_videos[:3])
+        top_list = []
+        for i, v in enumerate(top_videos[:5], 1):
+            likes_txt = f" ❤ {v.get('likes', 0)}" if v.get('likes') else ""
+            top_list.append(f"**#{i}** 👁️ `{v['views']:,}`{likes_txt} | {v['title'][:45]}")
         fields.append({
-            "name": "🏆 3 อันดับผลงานยอดนิยมสูงสุด",
-            "value": top_list,
+            "name": "🏆 อันดับผลงานยอดนิยมสูงสุด (Top 5 Performers)",
+            "value": "\n".join(top_list),
+            "inline": False
+        })
+
+    # แนะนำทิศทางของแต่ละงาน (Strategic Direction / Recommendations)
+    story_directions = []
+    seen_stories = set()
+    for v in top_videos:
+        title = v.get("title", "")
+        clean = re.sub(r"[\s_#].*ตอนที่.*$", "", title)
+        clean = re.sub(r"\s*#Shorts.*$", "", clean).strip()
+        if not clean or clean in seen_stories:
+            continue
+        seen_stories.add(clean)
+
+        # วิเคราะห์คำแนะนำตามข้อมูลสถิติ
+        views = v.get("views", 0)
+        likes = v.get("likes", 0)
+        if "กระจกเงา" in clean:
+            story_directions.append(f"• **{clean}** (`{views}` views): 🚀 **Scale Up** — ยอด Shorts วิ่งแรง ดันเป็นซีรีส์ยาว 15 ตอน และทำ Teaser Shorts ปล่อยต่อเนื่อง")
+        elif "กลิ่นหอม" in clean:
+            story_directions.append(f"• **{clean}** (`{views}` views, `{likes}` likes): ⭐ **High Engagement** — ผู้ชมชื่นชอบความอบอุ่น/โรแมนซ์ เร่งดันตอน 2-8 ขึ้น ReadAWrite และแพ็กขาย E-Book")
+        elif "จากน้องสาว" in clean:
+            story_directions.append(f"• **{clean}** (`{views}` views): 📈 **Rising Hook** — ยอดวิวเติบโตเร็ว แนวครอบครัว/ดราม่า ให้ปล่อยตอนถัดไปในรอบค่ำ 19:30 น.")
+        elif "ยอดนักสืบ" in clean:
+            story_directions.append(f"• **{clean}** (`{views}` views): 👑 **Flagship Core** — สินทรัพย์พร้อม 10 ตอนครบ ทยอยเปิดฟรี 1-3 ตอนบน ReadAWrite ดึงคนเข้าอ่าน")
+        elif "ดวงจันทร์" in clean or "ดาบไร้พระเจ้า" in clean:
+            story_directions.append(f"• **{clean}** (`{views}` views): 🎯 **Niche Quality** — Like rate สูง (>10%) เหมาะเจาะกลุ่มแฟนตาซีเฉพาะกลุ่ม ให้ทำ Teaser ช็อตไฮไลต์เพิ่ม")
+        else:
+            story_directions.append(f"• **{clean}** (`{views}` views): 🧪 **Maintain & Test** — ทยอย Drip Release ตอนใหม่ และติดตามสัญญาณวิว")
+
+        if len(story_directions) >= 5:
+            break
+
+    if story_directions:
+        fields.append({
+            "name": "🧭 คำแนะนำทิศทางของแต่ละงาน (Actionable Next Steps)",
+            "value": "\n".join(story_directions),
             "inline": False
         })
 
     if learning_brief:
         cleaned_brief = learning_brief.strip()
-        if len(cleaned_brief) > 900:
-            cleaned_brief = cleaned_brief[:900] + "..."
+        if len(cleaned_brief) > 800:
+            cleaned_brief = cleaned_brief[:800] + "..."
         fields.append({
             "name": "🧠 สิ่งที่ AI เรียนรู้และนำไปพัฒนาต่อ (Feedback Intelligence)",
             "value": f"```markdown\n{cleaned_brief}\n```",
@@ -287,13 +328,30 @@ def send_3day_performance_report_to_discord(
 
     payload = {
         "embeds": [{
-            "title": f"🔄 [3-Day Intelligence Report] สรุปสถิติ & สูตรพัฒนาพล็อต ({today_str})",
-            "description": "ระบบได้ทำการวิเคราะห์ผลตอบรับรอบ 3 วัน และบันทึกคำแนะนำเพื่อนำไปปรับปรุงแนวเรื่องในรอบถัดไปอัตโนมัติ",
-            "color": 0x8B5CF6,
+            "title": f"🏆 [3-Day Performance Report] อันดับผลงาน & ทิศทางกลยุทธ์ ({today_str})",
+            "description": "รายงานสถิติรอบ 3 วัน พร้อมการวิเคราะห์จัดอันดับผลงานและคำแนะนำทิศทางสำหรับแต่ละเรื่อง",
+            "color": 0xF59E0B,
             "fields": fields,
             "footer": {
                 "text": f"ANSRE Phase 5 Learning Engine • {datetime.now().strftime('%Y-%m-%d %H:%M')}"
             }
+        }]
+    }
+    return send_discord_message(payload, channel_id=channel_id)
+
+
+def send_pipeline_error_to_discord(stage: str, error_msg: str, channel_id: str = DEFAULT_CHANNEL_ID) -> bool:
+    """ส่งการแจ้งเตือนข้อผิดพลาดใน Pipeline เข้า Discord (เมื่อเกิดปัญหาเท่านั้น)"""
+    payload = {
+        "embeds": [{
+            "title": f"🚨 [Pipeline Error] พบปัญหาในขั้นตอน '{stage}'",
+            "description": f"ระบบตรวจพบข้อผิดพลาดระหว่างทำงาน:\n```{str(error_msg)[:1000]}```",
+            "color": 0xEF4444,
+            "fields": [
+                {"name": "⚙️ Stage", "value": f"`{stage}`", "inline": True},
+                {"name": "⏰ เวลาที่พบ", "value": f"`{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`", "inline": True}
+            ],
+            "footer": {"text": "ANSRE Autonomous Monitor • กรุณาตรวจสอบ log เพื่อแก้ไข"}
         }]
     }
     return send_discord_message(payload, channel_id=channel_id)

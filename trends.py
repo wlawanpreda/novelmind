@@ -100,25 +100,37 @@ def build_report():
     digest_txt = "\n".join(digest)
     tags_txt = ", ".join(f"{t}×{c}" for t, c in top_tags)
 
+    # ----- ข้อมูลเจาะลึกตลาดไทย ReadAWrite Top 100 (ถ้ามี) -----
+    raw_lessons_path = os.path.join(SB, "readawrite_top100_lessons.md")
+    raw_lessons_text = ""
+    if os.path.exists(raw_lessons_path):
+        try:
+            raw_lessons_text = open(raw_lessons_path, "r", encoding="utf-8").read()[:1500]
+        except Exception:
+            pass
+
     prompt = f"""คุณคือนักวิเคราะห์เทรนด์ตลาดนิยายออนไลน์ ดูข้อมูลนิยายยอดนิยมล่าสุด {len(rows)} เรื่องนี้
-แล้วสรุป "เทรนด์ที่กำลังมาแรง" และ "วิธีเอามาปรับใช้กับนิยายไทยเรื่องต่อไปของเรา"
+ร่วมกับข้อมูลสถิติตลาดนิยายไทย ReadAWrite Top 100 แล้วสรุป "เทรนด์ที่กำลังมาแรง" และ "วิธีเอามาปรับใช้กับนิยายไทยเรื่องต่อไปของเรา"
 
 แท็ก/ธีมที่พบบ่อย: {tags_txt}
 หมวดยอดนิยม: {", ".join(g for g,_ in top_genres)}
 
-จุดเด่นของเรื่องท็อป:
+จุดเด่นของเรื่องท็อปจากคลัง:
 {digest_txt}
 
+{"=== บทเรียนจาก ReadAWrite Top 100 นิยายขายดีของไทย ===" if raw_lessons_text else ""}
+{raw_lessons_text}
+
 เขียนรายงานภาษาไทยกระชับ มีหัวข้อ:
-1. 🔥 เทรนด์/ธีมที่กำลังมาแรง (3-5 ข้อ พร้อมเหตุผลจากข้อมูล)
-2. 🧩 สูตรสำเร็จร่วม (pattern ที่เรื่องดังมักมี)
+1. 🔥 เทรนด์/ธีมที่กำลังมาแรงในตลาดไทย (3-5 ข้อ เช่น แนวยุค 60s-70s มิติลับ, อาชีพเฉพาะทางหมอ/ทหาร, นางร้ายเจ้าก้อน)
+2. 🧩 สูตรสำเร็จร่วม & Title Engineering (การตั้งชื่อติดแท็กปิดการขาย เช่น [มี E-BOOK], (อ่านฟรีจนจบ))
 3. 🎯 คำแนะนำสำหรับนิยายเรื่องต่อไปของเรา (5 ข้อ เป็นรูปธรรม สั่งทำได้เลย)
-4. 💡 ไอเดียพล็อตที่ควรลอง (3 ไอเดียสั้นๆ ที่ตรงเทรนด์แต่เป็น Original)"""
-    print(f"[trends] สังเคราะห์จาก {len(rows)} เรื่อง...")
+4. 💡 ไอเดียพล็อตที่ควรลอง (3 ไอเดียสั้นๆ ที่ตรงเทรนด์คนไทยชอบเปย์ แต่เป็น Original)"""
+    print(f"[trends] สังเคราะห์จาก {len(rows)} เรื่อง และ ReadAWrite Top 100...")
     report = generate(prompt, role="researcher")
 
     header = (f"# 📈 Trend Report — ANSRE Market Intelligence\n\n"
-              f"*วิเคราะห์จาก {len(rows)} เรื่องยอดนิยม*\n\n"
+              f"*วิเคราะห์จาก {len(rows)} เรื่องยอดนิยม และ ReadAWrite Top 100*\n\n"
               f"## แท็ก/ธีมที่พบบ่อย\n" + "\n".join(f"- {t} (×{c})" for t, c in top_tags) + "\n\n"
               f"## หมวดยอดนิยม\n" + "\n".join(f"- {g} (×{c})" for g, c in top_genres) + "\n\n---\n\n")
     full = header + report
@@ -127,7 +139,7 @@ def build_report():
         f.write(full)
     # สรุปสั้นสำหรับ ideation
     with open(BRIEF, "w", encoding="utf-8") as f:
-        f.write(f"เทรนด์ล่าสุด (แท็กบ่อย: {tags_txt}):\n{report[:1200]}")
+        f.write(f"เทรนด์ล่าสุด & ReadAWrite DNA (แท็กบ่อย: {tags_txt}):\n{report[:1500]}")
     print(f"[trends] ✅ บันทึก {REPORT}")
     return full
 

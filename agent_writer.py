@@ -428,6 +428,14 @@ def process_analyzed_novels(second_brain_dir: str, only: str = None, limit: int 
             
             # Stage 6: Audio Script Formatting
             final_audio_script = run_stage_6_audio_script(novel_title, final_chapter)
+
+            # Automatic Inspection & Sanitization: ล้าง meta-talk อัตโนมัติก่อนบันทึกไฟล์เสมอ
+            try:
+                from agent_auditor import sanitize_meta_talk
+                final_chapter = sanitize_meta_talk(final_chapter)
+                final_audio_script = sanitize_meta_talk(final_audio_script)
+            except Exception:
+                pass
             
             # Save files to Second Brain structure
             active_projects_dir = os.path.join(second_brain_dir, "05_Active_Projects")

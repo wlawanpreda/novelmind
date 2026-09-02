@@ -117,6 +117,12 @@ def find_story_chapters(title: str) -> List[Dict[str, Any]]:
             content = f.read()
 
         clean_text = re.sub(r"^---\n.*?\n---\n", "", content, flags=re.DOTALL).strip()
+        try:
+            from agent_auditor import sanitize_meta_talk
+            clean_text = sanitize_meta_talk(clean_text)
+        except Exception:
+            pass
+
         chapters.append({
             "num": ch_num,
             "filename": fname,

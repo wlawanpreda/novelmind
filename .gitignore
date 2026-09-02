@@ -59,7 +59,12 @@ backups/
 youtube_token.json
 client_secret.json
 tiktok_token.json
-.labs_flow_profile/
-flow_*.png
-test_*.jpg
+# Auth & Cookies
 .auth_sessions/
+.labs_flow_profile/
+.bilibili_cookies.json
+cookies.json
+*.json.token
+*.png
+*.jpg
+*.jpeg

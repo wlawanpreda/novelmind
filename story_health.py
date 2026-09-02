@@ -16,8 +16,8 @@ import glob
 
 # (regex, label, severity)  severity: "red"=พัง/ห้ามปล่อย · "yellow"=ควรแก้
 _PATTERNS = [
-    (re.compile(r"Error:\s*HTTPConnectionPool|Max retries exceeded|NameResolutionError|Failed to resolve"),
-     "บทมี error การเชื่อมต่อหลุด (pipeline ถูกตัดกลางคัน)", "red"),
+    (re.compile(r"Error:\s*(?:HTTPConnectionPool|Max retries exceeded|NameResolutionError|Failed to resolve|\d{3}\s+INVALID_ARGUMENT)|API key expired|googleapis\.com"),
+     "บทมี error การเชื่อมต่อหรือ API error หลุดในเนื้อหา", "red"),
     (re.compile(r"Traceback \(most recent call last\)"),
      "มี Python traceback หลุดในเนื้อหา", "red"),
     (re.compile(r"ในฐานะ(?:โมเดล|ปัญญาประดิษฐ์)?\s*AI|as an AI(?: language model)?|"
