@@ -93,7 +93,8 @@ NO_META = ("\n\n[สำคัญ] ส่งคืน 'เฉพาะเนื�
 # วลีที่บ่งบอกว่าเป็น meta-talk ของ AI (ใช้ตัดทิ้งหัว/ท้าย)
 _META_MARK = ("ในฐานะ", "chief", "ข้าพเจ้า", "ผมขอ", "ผมจะ", "นี่คือผลลัพธ์", "นี่คือบท",
               "นี่คือโครง", "ยอดเยี่ยม", "ตามที่ท่าน", "ตามที่คุณ", "คำบัญชา", "เจียระไน",
-              "ขอรับช่วง", "ด้วยความยินดี", "ผมได้", "ข้าพเจ้าได้", "หวังว่า", "เรียบร้อยแล้วครับ")
+              "ขอรับช่วง", "ด้วยความยินดี", "ผมได้", "ข้าพเจ้าได้", "หวังว่า", "เรียบร้อยแล้วครับ",
+              "โอ้โห", "ดราฟต์นี้มีของ", "วัตถุดิบชั้นเลิศ", "มาครับ! ได้เวลา", "ใส่เกลือ", "ขัดเกลาให้คมกริบ")
 
 
 def _tone_note() -> str:
@@ -434,6 +435,8 @@ def process_analyzed_novels(second_brain_dir: str, only: str = None, limit: int 
                 from agent_auditor import sanitize_meta_talk
                 final_chapter = sanitize_meta_talk(final_chapter)
                 final_audio_script = sanitize_meta_talk(final_audio_script)
+                outline = sanitize_meta_talk(outline)
+                characters = sanitize_meta_talk(characters)
             except Exception:
                 pass
             

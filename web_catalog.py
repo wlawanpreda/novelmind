@@ -76,13 +76,18 @@ def get_all_stories_data() -> List[Dict[str, Any]]:
             if os.path.exists(ep1_audio):
                 audio_url = f"/audio/{os.path.basename(ep1_audio)}"
 
-        # อ่านบทตัวอย่างตอนที่ 1
+        # อ่านบทตัวอย่างตอนที่ 1 และ Sanitize ให้สะอาด
         ch1_text = ""
         ch1_path = os.path.join(CHAPTERS_DIR, f"{key}_Chapter_01.md")
         if os.path.exists(ch1_path):
             try:
                 with open(ch1_path, "r", encoding="utf-8") as f:
                     ch1_text = f.read()
+                try:
+                    from agent_auditor import sanitize_meta_talk
+                    ch1_text = sanitize_meta_talk(ch1_text)
+                except Exception:
+                    pass
             except Exception:
                 pass
 

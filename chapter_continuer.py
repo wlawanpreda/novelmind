@@ -27,6 +27,12 @@ except Exception:
     run_multi_agent_review_loop = None
 
 try:
+    from story_bible import get_continuity_prompt_context, update_story_bible_from_chapter
+except Exception:
+    get_continuity_prompt_context = None
+    update_story_bible_from_chapter = None
+
+try:
     from discord_reporter import send_review_summary_to_discord
 except Exception:
     send_review_summary_to_discord = None
@@ -92,11 +98,14 @@ def write_next_chapter(sb, title, n):
     print(f"\n[📖] เขียน '{title}' ตอนที่ {n}...")
     prev_tail = prev[-3500:]
     scene_words = int(os.environ.get("ANSRE_SCENE_WORDS", "450"))
+    bible_context = get_continuity_prompt_context(title, n) if get_continuity_prompt_context else ""
 
     # A) วาง beats 4 ฉากของตอนนี้
     beat_prompt = f"""คุณคือ Narrative Planner วางฉากนิยายไทย
 โครงเรื่องรวม (มีสรุปรายตอน + กฎของโลก/ระบบ):
-{outline[:3000]}
+{outline[:2500]}
+
+{bible_context}
 
 ตอนก่อนหน้า (ช่วงท้าย) จบไว้แบบนี้:
 {prev_tail}
@@ -121,10 +130,12 @@ def write_next_chapter(sb, title, n):
         sp = f"""คุณคือ Master Novelist เขียนนิยายไทยกระชับ ลื่นไหล
 เรื่อง: {title} | ตอนที่ {n} | ฉากที่ {i+1}
 
-กฎของโลก/ระบบ (ห้ามขัดแย้งตัวเลข/สถานะ):
-{outline[:2200]}
+{bible_context}
 
-ตัวละคร: {characters[:1500]}
+กฎของโลก/ระบบ (ห้ามขัดแย้งตัวเลข/สถานะ):
+{outline[:1800]}
+
+ตัวละคร: {characters[:1200]}
 
 ช่วงท้ายตอนก่อน: {prev_tail[-1500:]}
 ฉากก่อนหน้าในตอนนี้: {prev_in_chapter[-1800:] or '(เริ่มตอน)'}
@@ -209,6 +220,13 @@ def write_next_chapter(sb, title, n):
     with open(os.path.join(as_dir, f"{title}_AudioScript_{n:02d}.md"), "w", encoding="utf-8") as f:
         f.write(audio_script)
     print(f"[+] บันทึก {title} ตอนที่ {n} ({len(final)} ตัวอักษร)")
+
+    if update_story_bible_from_chapter:
+        try:
+            update_story_bible_from_chapter(title, n, final)
+        except Exception as be:
+            print(f"    [!] Story Bible update warning: {be}")
+
     return True
 
 

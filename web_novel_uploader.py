@@ -86,11 +86,12 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
             except Exception:
                 pass
 
-            # สกัดชื่อตอนย่อยถ้ามี
-            m_sub = re.search(r"^##?\s*ตอนที่\s*\d+\s*[:：\s]\s*([^\n\r]+)", body)
+            # สกัดชื่อตอนย่อยถ้ามี (รองรับทั้ง ## ตอนที่ X: ..., **บทที่ X: ...**, หรือ บทที่ X: ...)
+            m_sub = re.search(r"^(?:##?\s*ตอนที่\s*\d+|\*\*บทที่\s*\d+[:：\s]*|\s*บทที่\s*\d+[:：\s]*)\s*[:：\s]\s*([^\n\r\*]+)", body)
             ch_title = m_sub.group(1).strip() if m_sub else f"ตอนที่ {num}"
-            # ตัดวงเล็บ meta ในชื่อตอน เช่น (ฉบับ Chief...)
+            # ตัดวงเล็บ meta ในชื่อตอน เช่น (ฉบับ Chief...) และสัญลักษณ์ markdown ที่อาจหลงเหลือ
             ch_title = re.sub(r"\s*\(?(?:ฉบับขัดเกลาโดย|ฉบับปรับปรุงโดย|ฉบับ)\s*Chief[^\)]*\)?", "", ch_title, flags=re.IGNORECASE).strip()
+            ch_title = ch_title.strip("*_ \t")
 
             chapters.append({
                 "chapter_num": num,
@@ -410,6 +411,42 @@ def upload_story(story_name: str, platform: str = "readawrite", dry_run: bool = 
     data = parse_web_publish_kit(kits[0])
     print(f"\n📦 ตรวจพบชุดเผยแพร่นิยาย: {data['title']}")
     print(f"   • จำนวนตอนพร้อมส่ง: {data['chapters_count']} ตอน")
+
+    # -----------------------------------------------------------------------
+    # MANDATORY QUALITY GATE (Pre-flight Inspection)
+    # -----------------------------------------------------------------------
+    print(f"\n🛡️ [Quality Gate] กำลังตรวจสอบคุณภาพมาตรฐานของ '{data['title']}'...")
+    qc_failed = []
+    for ch in data["chapters"]:
+        body = ch["content"]
+        clean_chars = len(re.sub(r'\s+', '', body))
+        w_count = max(len(body.split()), clean_chars // 4)
+        
+        # 1. ตรวจสอบความยาว
+        if w_count < 800:
+            qc_failed.append(f"ตอนที่ {ch['chapter_num']} มีเพียง {w_count} คำ (ขั้นต่ำคือ 800-1,000 คำ)")
+        
+        # 2. ตรวจสอบชื่อตอนซ้ำซ้อน
+        if ch['chapter_title'] == f"ตอนที่ {ch['chapter_num']}" or not ch['chapter_title']:
+            qc_failed.append(f"ตอนที่ {ch['chapter_num']} ไม่มีชื่อตอนย่อย (Subtitle)")
+
+        # 3. ตรวจสอบ AI Meta-Talk / Prompt Leaks
+        try:
+            from agent_auditor import detect_meta_talk
+            leaks = detect_meta_talk(body)
+            if leaks:
+                qc_failed.append(f"ตอนที่ {ch['chapter_num']} พบข้อความ AI/Prompt หลุด: '{leaks[0].get('matched')}'")
+        except Exception:
+            pass
+
+    if qc_failed:
+        print(f"\n❌ [BLOCKED BY QUALITY GATE] ไม่สามารถเผยแพร่ '{data['title']}' ได้ เนื่องจากไม่ผ่านเกณฑ์คุณภาพ:")
+        for err in qc_failed:
+            print(f"   ⛔ {err}")
+        print("\n⚠️ ระบบได้ระงับการอัปโหลดอัตโนมัติ เพื่อรักษามาตรฐานผลงาน กรุณาปรับปรุงเนื้อหาก่อนส่งอีกครั้ง")
+        return False
+    
+    print("   ✅ ผ่านการตรวจสอบมาตรฐานคุณภาพทุกข้อ (100% Passed)!")
 
     if dry_run:
         print("\n🧪 [DRY RUN MODE] ตรวจสอบความถูกต้องของบทนิยาย (ไม่ส่งขึ้นเว็บจริง):")

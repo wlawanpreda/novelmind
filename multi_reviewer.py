@@ -281,7 +281,21 @@ def refine_chapter_prose(
 3. รักษาความยาวให้เหมาะสม ไม่สั้นเกินไปและไม่ยืดเยื้อ
 """
     refined = generate(prompt + NO_META, role="writer")
-    return strip_meta(refined) or current_text
+    cleaned = strip_meta(refined)
+    # ถ้าโมเดลเผลอส่งกลับมาเป็น JSON วิเคราะห์ ให้ปฏิเสธและใช้ current_text แทน
+    if cleaned and cleaned.strip().startswith("{") and cleaned.strip().endswith("}"):
+        try:
+            parsed = json.loads(cleaned)
+            for k in ["full_prose", "revised_content", "content", "prose", "chapter_text"]:
+                if k in parsed and isinstance(parsed[k], str) and len(parsed[k]) > 500:
+                    return parsed[k]
+        except Exception:
+            pass
+        return current_text
+
+    if not cleaned or len(cleaned) < 500:
+        return current_text
+    return cleaned
 
 
 # ===========================================================================

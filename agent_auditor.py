@@ -49,10 +49,16 @@ FORBIDDEN_PATTERNS = [
     r"ai\s*in\s*the\s*loop",
     r"ai-to-ai",
 
-    # 2. คำประกาศบทบาท / การสนทนาของ AI
+    # 2. คำประกาศบทบาท / การสนทนาของ AI / คำวิจารณ์ดราฟต์
+    r"โอ้โห!?\s*ดราฟต์นี้มีของ",
+    r"ดราฟต์นี้มีของ",
+    r"วัตถุดิบชั้นเลิศ",
+    r"มาครับ!?\s*ได้เวลา",
+    r"ใส่เกลือเพิ่มความเค็ม",
+    r"ขัดเกลาให้คมกริบ",
     r"ในฐานะ\s*(?:[\"']?(?:Chief|Editor|Director|ผู้กำกับ|สถาปนิก|ที่ปรึกษา|นักวิจารณ์|ผู้ช่วย|AI|โมเดล|ผู้เขียน|ผู้ประเมิน|ผู้คร่ำหวอด|ผู้เชี่ยวชาญ)[^,\n\r]*[\"']?|ของ(?:คุณ|ท่าน))",
     r"ข้าพเจ้าขอ(?:เสนอ|ปรับแต่ง|มอบ|คารวะ|ขัดเกลา)",
-    r"ผมขอ(?:ปรับปรุง|คารวะ|ขัดเกลา|เสนอ|รับช่วง)",
+    r"ผมขอ(?:ปรับปรุง|คารวะ|ขัดเกลา|เสนอ|รับช่วง|บอกเลย)",
     r"ฉันขอ(?:ปรับปรุง|ขัดเกลา|มอบ)",
     r"ดิฉันในฐานะ",
     r"นี่คือ(?:ผลลัพธ์|บทที่|โครงเรื่อง|ดราฟต์|ฉบับ)",
@@ -76,7 +82,20 @@ FORBIDDEN_PATTERNS = [
     r"ขอให้คุณเตรียมตัวดำดิ่ง",
     r"คุณคือ\s*[\"']?(?:Audio Production Director|Chief Literary Editor|Master Novelist)[\"']?",
 
-    # 3. Error / Artifacts / JSON Leaks รั่วไหล
+    # 3. Prompt Instructions & Editing Notes หลุด
+    r"ปรับคำและประโยค",
+    r"เพิ่มรายละเอียดเกี่ยวกับ",
+    r"เพิ่มคำบรรยายให้",
+    r"ใช้เวลามากมายในการวิเคราะห์",
+    r"เน้นแรงจูงใจและความผูกพัน",
+    r'ปรับประโยคที่ยาว.*?(?:\n|$)',
+    r'กรุณาทราบว่า.*?(?:\n|$)',
+    r'ฉันได้ส่งคืนเฉพาะ.*?(?:\n|$)',
+    r'พร้อมทั้งคำแนะนำในการปรับปรุง.*?(?:\n|$)',
+    r"suggestion\s*:",
+    r"modified\s*:",
+
+    # 4. Error / Artifacts / JSON Leaks รั่วไหล & ภาษาจีนหลุด
     r"error:\s*generation\s*returned\s*empty\s*result",
     r"as\s+an\s+ai",
     r"i\s+cannot\s+(?:generate|create|write)",
@@ -88,6 +107,7 @@ FORBIDDEN_PATTERNS = [
     r'"paragraphs"\s*:\s*\[',
     r'"simplified_sentences"\s*:\s*\[',
     r'"character_relations"\s*:\s*\[',
+    r'[\u4e00-\u9fff]{3,}',  # อักษรจีน 3 ตัวขึ้นไปในเนื้อเรื่องไทย
 ]
 
 _COMPILED_FORBIDDEN = [re.compile(p, re.IGNORECASE) for p in FORBIDDEN_PATTERNS]
@@ -134,11 +154,19 @@ def sanitize_meta_talk(text: str) -> str:
 
         if parsed is not None:
             if isinstance(parsed, dict):
+                # กรณี nested ใน response
+                if "response" in parsed and isinstance(parsed["response"], dict):
+                    resp = parsed["response"]
+                    for k in ["story", "prose", "chapter_text", "content", "full_prose", "revised_content"]:
+                        if k in resp and isinstance(resp[k], str):
+                            text = resp[k]
+                            break
                 # กรณีมีคีย์เนื้อหาเด่นชัด
-                for k in ["revised_content", "content", "full_text", "chapter_text", "text", "prose"]:
-                    if k in parsed and isinstance(parsed[k], str):
-                        text = parsed[k]
-                        break
+                if not text:
+                    for k in ["story", "full_prose", "revised_content", "content", "full_text", "chapter_text", "text", "prose"]:
+                        if k in parsed and isinstance(parsed[k], str):
+                            text = parsed[k]
+                            break
                 else:
                     if "paragraphs" in parsed and isinstance(parsed["paragraphs"], list):
                         p_list = []
@@ -153,14 +181,18 @@ def sanitize_meta_talk(text: str) -> str:
                         p_list = []
                         for item in parsed["analysis"]:
                             if isinstance(item, dict):
-                                t = item.get("modified") or item.get("line") or item.get("text")
-                                if t:
+                                t = item.get("description") or item.get("modified") or item.get("line") or item.get("text")
+                                if t and isinstance(t, str):
                                     p_list.append(t)
+                                elif "examples" in item and isinstance(item["examples"], list):
+                                    for ex in item["examples"]:
+                                        if isinstance(ex, str):
+                                            p_list.append(ex)
                                 elif "issues" in item and isinstance(item["issues"], list):
                                     for sub in item["issues"]:
                                         if isinstance(sub, dict):
-                                            val = sub.get("suggestions") or sub.get("resolution") or sub.get("recommendation")
-                                            if val:
+                                            val = sub.get("suggestions") or sub.get("resolution") or sub.get("recommendation") or sub.get("description")
+                                            if val and isinstance(val, str):
                                                 p_list.append(val)
                         if p_list:
                             text = "\n\n".join(p_list)
@@ -177,13 +209,13 @@ def sanitize_meta_talk(text: str) -> str:
                 p_list = []
                 for item in parsed:
                     if isinstance(item, dict):
-                        t = item.get("text") or item.get("content") or item.get("modified") or item.get("action")
-                        if t:
+                        t = item.get("text") or item.get("content") or item.get("modified") or item.get("description") or item.get("action")
+                        if t and isinstance(t, str):
                             p_list.append(t)
                         elif "suggestions" in item:
-                            p_list.append(item["suggestions"])
+                            p_list.append(str(item["suggestions"]))
                         elif "resolution" in item:
-                            p_list.append(item["resolution"])
+                            p_list.append(str(item["resolution"]))
                     elif isinstance(item, str):
                         p_list.append(item)
                 if p_list:
@@ -193,6 +225,18 @@ def sanitize_meta_talk(text: str) -> str:
             thai_snippets = re.findall(r'"(?:text|suggestions|resolution|recommendation|revised_content|description)"\s*:\s*"([^"]+)"', trimmed)
             if thai_snippets:
                 text = "\n\n".join(thai_snippets)
+
+    # แปลง/ลบคำศัพท์จีน-ญี่ปุ่นทั่วไปที่อาจหลงเหลือ
+    cjk_dict = {
+        '魔王': 'จอมมาร', '魑魅魍魉': 'ภูตผีปีศาจ', '神器': 'ศาสตราวุธเทพ', '防卫': 'ป้องกัน',
+        '闪烁': 'กะพริบระยิบระยับ', '他说': 'เขาพูดว่า', '琴': 'พิณ', '垭': 'ช่องเขา',
+        '树叶': 'ใบไม้', '砂': 'ทราย', '静': 'สงบ', '温柔': 'อ่อนโยน', '和平': 'สงบสุข',
+        '报警': 'สัญญาณเตือนภัย', '结束': 'สิ้นสุด', '早上好': 'สวัสดีตอนเช้า', '你是谁': 'เธอเป็นใคร',
+        '我们必须立刻行动': 'พวกเราต้องลงมือทันที', '调整时间线': 'ปรับเส้นเวลา',
+    }
+    for cjk_k, cjk_v in cjk_dict.items():
+        if cjk_k in text:
+            text = text.replace(cjk_k, cjk_v)
 
     # ถ้ามีหัวข้อตอน (เช่น ## ตอนที่ X: หรือ **ตอนที่ X: หรือ [ผู้บรรยาย] ตอนที่ X:)
     # ข้อความทั้งหมดที่อยู่ก่อนหน้าหัวข้อตอนแรก ถือเป็น AI conversation preamble ให้ตัดทิ้งทันที

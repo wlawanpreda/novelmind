@@ -50,16 +50,16 @@ def check_chapter_quality(file_path: str) -> Dict[str, Any]:
     score = 100
     issues = []
 
-    # 1. ความยาวบท (ต้องอย่างน้อย 300 คำ หรือประมาณ 1,200 ตัวอักษร)
-    if word_count < 250:
-        deduct = min(40, int((250 - word_count) / 5))
+    # 1. ความยาวบท (ต้องอย่างน้อย 1,000 คำ หรือประมาณ 4,000 ตัวอักษร)
+    if word_count < 800:
+        deduct = min(60, int((800 - word_count) / 10))
         score -= deduct
-        issues.append(f"บทยาวน้อยเกินไป ({word_count} คำ)")
-    elif word_count > 3000:
-        score -= 10
-        issues.append(f"บทยาวเกินไปสำหรับตอนสั้น ({word_count} คำ)")
+        issues.append(f"บทยาวน้อยเกินไป ({word_count} คำ, มาตรฐานคืออย่างน้อย 1,000 คำ)")
+    elif word_count < 1000:
+        score -= 15
+        issues.append(f"บทยังค่อนข้างสั้น ({word_count} คำ, แนะนำ 1,200 - 2,500 คำ)")
 
-    # 2. ตรวจสอบข้อความ AI รั่วไหล (Meta-talk) — Zero Tolerance
+    # 2. ตรวจสอบข้อความ AI รั่วไหล (Meta-talk / Prompt Leaks) — Zero Tolerance
     meta_leaks = []
     try:
         from agent_auditor import detect_meta_talk
@@ -70,23 +70,36 @@ def check_chapter_quality(file_path: str) -> Dict[str, Any]:
                 meta_leaks.append({"matched": bad})
 
     if meta_leaks:
-        score -= 40 * len(meta_leaks)
+        score -= 50 * len(meta_leaks)
         for ml in meta_leaks[:3]:
-            issues.append(f"ตรวจพบข้อความ AI หลุด: '{ml.get('matched', '')}'")
+            issues.append(f"ตรวจพบข้อความ AI/Prompt หลุด: '{ml.get('matched', '')}'")
 
-    # 3. โครงสร้างย่อหน้าและบทสนทนา
-    paragraphs = [p for p in body.split("\n\n") if p.strip()]
-    if len(paragraphs) < 4:
-        score -= 15
+    # 3. ตรวจสอบข้อความซ้ำซ้อน (Duplicate Paragraphs / Hallucination loops)
+    paragraphs = [p.strip() for p in body.split("\n\n") if p.strip()]
+    seen_p = set()
+    dup_p = 0
+    for p in paragraphs:
+        p_clean = re.sub(r"\s+", "", p)
+        if len(p_clean) > 30:
+            if p_clean in seen_p:
+                dup_p += 1
+            seen_p.add(p_clean)
+    if dup_p > 0:
+        score -= 30 * dup_p
+        issues.append(f"พบบล็อกข้อความซ้ำซ้อน {dup_p} จุด")
+
+    # 4. โครงสร้างย่อหน้าและบทสนทนา
+    if len(paragraphs) < 6:
+        score -= 20
         issues.append("การเว้นย่อหน้าน้อยเกินไป อ่านยาก")
 
     has_dialogue = any('"' in p or '“' in p or '”' in p for p in paragraphs)
-    if not has_dialogue and word_count > 400:
-        score -= 10
+    if not has_dialogue and word_count > 300:
+        score -= 15
         issues.append("ไม่มีบทสนทนาของตัวละคร")
 
     final_score = max(0, min(100, score))
-    passed = final_score >= 80 and len(meta_leaks) == 0
+    passed = final_score >= 80 and len(meta_leaks) == 0 and word_count >= 800 and dup_p == 0
     return {
         "score": final_score,
         "passed": passed,

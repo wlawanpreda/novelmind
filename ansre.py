@@ -359,6 +359,10 @@ def main():
         return run([py, "quality_gate.py"] + rest)
     if cmd in ("bot", "listen"):
         return run([py, "discord_bot_listener.py"] + rest)
+    if cmd in ("bible", "story-bible"):
+        return run([py, "story_bible.py"] + rest)
+    if cmd in ("package", "daily-pack", "pack"):
+        return run([py, "daily_packager.py"] + rest)
     if cmd in ("epub", "export"):
         return run([py, "epub_packager.py"] + rest)
     if cmd == "discord":

@@ -166,11 +166,26 @@ def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]
     next_ch = None
     for order, c in sorted_chs:
         if not c["isPublished"]:
+            # ดักจับ: ห้ามปล่อยตอนที่ชื่อตอนไม่สมบูรณ์ หรือไม่มี subtitle
+            raw_title = c.get("title", "")
+            if re.match(r"^ตอนที่\s*\d+:\s*ตอนที่\s*\d+$", raw_title.strip()):
+                print(f"   ⛔ ข้าม {raw_title}: ชื่อตอนซ้ำซ้อน ไม่มีชื่อตอนย่อย (Quality Gate Failed)")
+                continue
+
+            # ดักจับคำ: ถ้ามี word_count ต่ำกว่า 600 คำ ห้ามปล่อย
+            try:
+                w_num = int(c.get("words", "0") or 0)
+                if 0 < w_num < 600:
+                    print(f"   ⛔ ข้าม {raw_title}: จำนวนคำน้อยเกินไป ({w_num} คำ < 600 คำ) (Quality Gate Failed)")
+                    continue
+            except Exception:
+                pass
+
             next_ch = c
             break
 
     if not next_ch:
-        print(f"   🎉 เรื่อง '{title}' เผยแพร่ครบทุกตอนแล้ว!")
+        print(f"   ℹ️ เรื่อง '{title}' ไม่มีตอนที่มีคุณภาพผ่านเกณฑ์พร้อมปล่อย")
         return None
 
     print(f"   🚀 กำลังเปิดเผยแพร่: {next_ch['title']} (GUID: {next_ch['guid']})...")
