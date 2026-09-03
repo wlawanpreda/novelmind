@@ -19,6 +19,16 @@ import sys
 import glob
 import json
 
+ROOT = os.path.dirname(os.path.abspath(__file__))
+_VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
+if os.path.exists(_VENV_PY) and sys.executable != _VENV_PY:
+    try:
+        import requests
+        import google.genai
+    except ImportError:
+        os.execv(_VENV_PY, [_VENV_PY] + sys.argv)
+
+
 from agent_writer import generate_content_safe, strip_meta, NO_META, run_stage_6_audio_script
 
 try:
