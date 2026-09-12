@@ -279,16 +279,77 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
     except Exception:
         pass
 
+    # ดึงลิงก์ ReadAWrite อัตโนมัติเพื่อเชื่อมคนดูเข้าเว็บนิยาย
+    raw_novel_link = ""
+    try:
+        raw_stats_path = os.path.join(sb, "readawrite_current_stats.json")
+        if os.path.exists(raw_stats_path):
+            with open(raw_stats_path, "r", encoding="utf-8") as f_raw:
+                raw_articles = json.load(f_raw)
+                for art in raw_articles:
+                    art_title = art.get("title", "").split("\n")[0].strip()
+                    art_id = art.get("aid", "")
+                    if art_id and (art_title in story_name or story_name in art_title):
+                        raw_novel_link = f"https://www.readawrite.com/a/{art_id}"
+                        break
+    except Exception:
+        pass
+
+    if not raw_novel_link:
+        try:
+            led = load_ledger(sb)
+            pub_stories = led.get("published_stories", {})
+            for st_name, st_info in pub_stories.items():
+                if (st_name in story_name or story_name in st_name) and isinstance(st_info, dict):
+                    art_id = st_info.get("article_id")
+                    if art_id:
+                        raw_novel_link = f"https://www.readawrite.com/a/{art_id}"
+                        break
+        except Exception:
+            pass
+
+    if not raw_novel_link:
+        known_links = {
+            "กระจกเงาคนตาย": "https://www.readawrite.com/a/e90bfef727e4730819e92444783d6850",
+            "ร้านค้าเหนือโลก": "https://www.readawrite.com/a/e90bfef727e4730819e92444783d6850",
+            "รานคาเหนอโลก": "https://www.readawrite.com/a/e90bfef727e4730819e92444783d6850",
+            "ยอดนักสืบสปีดรัน": "https://www.readawrite.com/a/084947f5c23530e03094cc84bb1364b5",
+            "สมาคมประกันภัยลี้ลับ": "https://www.readawrite.com/a/f3624f7b4e09cde8fc524dff4f2fc4bd",
+            "โลกแฟนตาซีอันเหนือจริง": "https://www.readawrite.com/a/d7b6b42256a73ff2c99dee9291b23c2e",
+            "รักกับเจ้าหญิงเพลย์บอย": "https://www.readawrite.com/a/5738758aa9e2c5f89bcf6552d3a79187",
+            "เมื่อนางร้ายหมดรัก ท่านประธานก็เริ่มคลั่ง": "https://www.readawrite.com/a/33e483f95428f693527c5d4843c7fef4",
+            "เมื่อนางร้ายหมดรัก_ท่านประธานก็เริ่มคลั่ง": "https://www.readawrite.com/a/33e483f95428f693527c5d4843c7fef4",
+            "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค 70 พร้อมซูเปอร์มาร์เก็ตลับ": "https://www.readawrite.com/a/627d9707279484797acafaba010fcf69",
+            "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค_70_พร้อมซูเปอร์มาร์เก็ตลับ": "https://www.readawrite.com/a/627d9707279484797acafaba010fcf69",
+            "แสงแห่งฤดูใบไม้ผลิในเมืองเทา": "https://www.readawrite.com/a/41b125951707f59f407094e795dc9c11",
+            "เหล่ามือกระบี่ไร้แม่เหล็ก": "https://www.readawrite.com/a/df9588a13de2636f3a23ea0ce9286e4a",
+            "เส้นทางแห่งชัยชนะในดินแดนเซ็กซ์": "https://www.readawrite.com/a/655b42cb45491b18752e86e6553c9fdc",
+            "ฟาร์มสาวปีศาจรัก": "https://www.readawrite.com/a/ac04dda030fae1380e3aa7ac52f66762",
+            "วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์": "https://www.readawrite.com/a/f5d5ec2e430ab0bbade7b02be1beb149",
+        }
+        for kn_name, kn_url in known_links.items():
+            if kn_name in story_name or story_name in kn_name:
+                raw_novel_link = kn_url
+                break
+
     hashtags = ["Shorts", "นิยายเสียง", "นิยาย", "audiobook", "เล่าเรื่อง", "เรื่องเล่า", "นิยายแปล", "สปีดรัน"]
     desc_lines = [
         f"🎧 {raw_title}",
         "",
         f"📖 เรื่องย่อ: {synopsis.strip() or f'ติดตามความสนุกของนิยายเรื่อง {story_name}'}",
         "",
+    ]
+    if raw_novel_link:
+        desc_lines.extend([
+            "🔗 อ่านฉบับเต็มและตอนต่อไปก่อนใครได้ที่ ReadAWrite:",
+            f"👉 {raw_novel_link}",
+            ""
+        ])
+    desc_lines.extend([
         "⚡ ฝากกด Like & กด Subscribe เพื่อติดตามตอนใหม่ทุกวันครับ!",
         "",
         " ".join("#" + h for h in hashtags)
-    ]
+    ])
     description = "\n".join(desc_lines)
     try:
         from agent_auditor import sanitize_meta_talk
@@ -303,6 +364,7 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
         "episode": ep,
         "story_name": story_name,
         "hook": hook,
+        "readawrite_link": raw_novel_link,
     }
 
 
@@ -325,8 +387,11 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool, as_shorts: bool = T
         from googleapiclient.discovery import build
         from googleapiclient.http import MediaFileUpload
 
-        creds = Credentials.from_authorized_user_file(
-            token_file, ["https://www.googleapis.com/auth/youtube.upload"])
+        scopes = [
+            "https://www.googleapis.com/auth/youtube.upload",
+            "https://www.googleapis.com/auth/youtube"
+        ]
+        creds = Credentials.from_authorized_user_file(token_file, scopes)
         if creds.expired and creds.refresh_token:
             creds.refresh(Request())
         yt = build("youtube", "v3", credentials=creds)
@@ -336,7 +401,7 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool, as_shorts: bool = T
         body = {
             "snippet": {"title": title, "description": meta["description"], "tags": meta["tags"],
                         "categoryId": "24"},
-            "status": {"privacyStatus": os.environ.get("YOUTUBE_PRIVACY", "unlisted"),
+            "status": {"privacyStatus": os.environ.get("YOUTUBE_PRIVACY", "public"),
                        "selfDeclaredMadeForKids": False},
         }
         media = MediaFileUpload(teaser_path, chunksize=-1, resumable=True, mimetype="video/mp4")
@@ -348,7 +413,14 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool, as_shorts: bool = T
         log(f"  [youtube] ✅ uploaded: https://youtu.be/{vid}")
         return f"https://youtu.be/{vid}"
     except Exception as e:  # noqa: BLE001
-        log(f"  [youtube] ❌ error: {e}")
+        err_str = str(e)
+        log(f"  [youtube] ❌ error: {err_str}")
+        if "invalid_grant" in err_str.lower() or "revoked" in err_str.lower() or "expired" in err_str.lower():
+            try:
+                from discord_reporter import send_token_revoked_alert
+                send_token_revoked_alert("YouTube", err_str)
+            except Exception as ex:
+                log(f"  [youtube] ⚠️ ไม่สามารถส่งแจ้งเตือน Discord: {ex}")
         return f"error: {e}"
 
 
@@ -413,17 +485,33 @@ def publish_tiktok(teaser_path: str, meta: dict, dry: bool) -> str:
         import requests
         size = os.path.getsize(teaser_path)
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-        init = requests.post(
-            "https://open.tiktokapis.com/v2/post/publish/video/init/",
-            headers=headers,
-            json={
-                # SELF_ONLY ก่อน App ผ่าน audit (TikTok บังคับ) — เปลี่ยนเป็น PUBLIC_TO_EVERYONE ผ่าน .env หลัง audit ผ่าน
-                "post_info": {"title": meta["title"][:150],
-                              "privacy_level": os.environ.get("TIKTOK_PRIVACY", "SELF_ONLY"),
-                              "disable_comment": False},
-                "source_info": {"source": "FILE_UPLOAD", "video_size": size,
-                                "chunk_size": size, "total_chunk_count": 1},
-            }, timeout=60)
+        payload = {
+            "post_info": {
+                "title": meta["title"][:150],
+                "privacy_level": os.environ.get("TIKTOK_PRIVACY", "SELF_ONLY"),
+                "disable_comment": False
+            },
+            "source_info": {
+                "source": "FILE_UPLOAD",
+                "video_size": size,
+                "chunk_size": size,
+                "total_chunk_count": 1
+            },
+        }
+        init = requests.post("https://open.tiktokapis.com/v2/post/publish/video/init/", headers=headers, json=payload, timeout=60)
+        
+        # Fallback 1: ถ้า 403 ให้ลองสลับเป็น SELF_ONLY (กรณี App ยังไม่ผ่าน Audit บังคับให้โพสต์แบบส่วนตัวก่อน)
+        if init.status_code == 403 and payload["post_info"]["privacy_level"] != "SELF_ONLY":
+            log("  [tiktok] ⚠️ ติด 403 (App ยังไม่ผ่าน Audit) — ลองสลับ privacy เป็น SELF_ONLY...")
+            payload["post_info"]["privacy_level"] = "SELF_ONLY"
+            init = requests.post("https://open.tiktokapis.com/v2/post/publish/video/init/", headers=headers, json=payload, timeout=60)
+
+        # Fallback 2: ถ้า 429 (Rate limit) ให้รอ 10 วินาทีแล้วลองใหม่อีกครั้ง
+        if init.status_code == 429:
+            log("  [tiktok] ⏳ ติด Rate limit (429) — ชะลอรอ 10 วินาทีแล้วลองใหม่...")
+            time.sleep(10)
+            init = requests.post("https://open.tiktokapis.com/v2/post/publish/video/init/", headers=headers, json=payload, timeout=60)
+
         if init.status_code != 200:
             log(f"  [tiktok] ❌ init failed: {init.status_code} {init.text[:200]}")
             return f"error: init {init.status_code}"
@@ -558,6 +646,9 @@ def run(sb: str, dry: bool = False):
 
     log(f"[publisher] วันนี้ ({today_str}) ปล่อย YouTube ไปแล้ว {today_yt}/{daily_yt_limit} คลิป")
 
+    tiktok_circuit_broken = False
+    consecutive_tiktok_errors = 0
+
     for tpath in teasers:
         key = os.path.basename(tpath)
         entry = ledger.get(key, {})
@@ -602,6 +693,10 @@ def run(sb: str, dry: bool = False):
             if prev and not prev.startswith(("error", "no_creds", "disabled", "dry")):
                 continue
 
+            # ถ้า TikTok ติด Circuit Breaker ให้ข้ามทันที
+            if name == "tiktok" and tiktok_circuit_broken:
+                continue
+
             # เช็กโควต้ารายวันสำหรับ YouTube
             if name == "youtube" and _enabled("PUBLISH_YOUTUBE") and daily_yt_limit > 0:
                 current_yt = count_published_today(ledger, "youtube", today_str)
@@ -615,6 +710,16 @@ def run(sb: str, dry: bool = False):
 
             result = fn()
             entry[name] = result
+            if name == "tiktok":
+                if str(result).startswith("error:"):
+                    consecutive_tiktok_errors += 1
+                    if consecutive_tiktok_errors >= 3:
+                        log("  [tiktok] ⚡ Circuit Breaker ทำงาน: พบข้อผิดพลาดติดต่อกัน 3 ครั้ง (403/429) — พักการยิง TikTok ชั่วคราวสำหรับรอบนี้")
+                        tiktok_circuit_broken = True
+                else:
+                    consecutive_tiktok_errors = 0
+
+            time.sleep(3)
 
             if not dry and (result.startswith("http") or result.startswith("publish_id:")):
                 now_iso = datetime.now().isoformat()

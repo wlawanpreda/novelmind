@@ -357,6 +357,61 @@ def send_pipeline_error_to_discord(stage: str, error_msg: str, channel_id: str =
     return send_discord_message(payload, channel_id=channel_id)
 
 
+def send_token_revoked_alert(platform: str, error_detail: str, channel_id: str = DEFAULT_CHANNEL_ID) -> bool:
+    """ส่งการแจ้งเตือนระดับวิกฤตเมื่อ Token หลุด หรือ invalid_grant เข้า Discord (พร้อมระบบ Cooldown 6 ชม.)"""
+    import time
+    alert_state_file = os.path.join(ROOT, "SecondBrain", "05_Active_Projects", "token_alert_cooldown.json")
+    now_ts = time.time()
+    try:
+        if os.path.exists(alert_state_file):
+            with open(alert_state_file, "r", encoding="utf-8") as f:
+                state = json.load(f)
+            last_sent = state.get(platform.lower(), 0)
+            if now_ts - last_sent < 21600:  # 6 hours cooldown
+                return False
+    except Exception:
+        pass
+
+    auth_script = f"python authorize_{platform.lower()}.py"
+    payload = {
+        "content": "🚨 **[ด่วน] ตรวจพบ Token หลุด / หมดอายุ ทำให้การปล่อยผลงานหยุดชะงัก**",
+        "embeds": [{
+            "title": f"🚨 [CRITICAL ALERT] {platform.upper()} Token หมดอายุ / ถูกเพิกถอน (invalid_grant)",
+            "description": f"ระบบอัตโนมัติตรวจพบว่า **{platform} Token** หมดอายุหรือถูกเพิกถอนสิทธิ์\nส่งผลให้ **ไม่สามารถอัปโหลดหรือจัดการวิดีโอ/สถานะได้** จำเป็นต้อง Re-authorize บนเครื่องด่วนครับ!",
+            "color": 0xEF4444,
+            "fields": [
+                {
+                    "name": "⚠️ ข้อความ Error",
+                    "value": f"```{str(error_detail)[:800]}```",
+                    "inline": False
+                },
+                {
+                    "name": "🛠️ วิธีแก้ไขทันที",
+                    "value": f"เปิด Terminal ในโปรเจกต์แล้วรันคำสั่ง:\n```{auth_script}```\nเพื่อล็อกอินและต่ออายุ Token",
+                    "inline": False
+                }
+            ],
+            "footer": {
+                "text": f"ANSRE Security Watchdog • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            }
+        }]
+    }
+    sent = send_discord_message(payload, channel_id=channel_id)
+    if sent:
+        try:
+            os.makedirs(os.path.dirname(alert_state_file), exist_ok=True)
+            state = {}
+            if os.path.exists(alert_state_file):
+                with open(alert_state_file, "r", encoding="utf-8") as f:
+                    state = json.load(f)
+            state[platform.lower()] = now_ts
+            with open(alert_state_file, "w", encoding="utf-8") as f:
+                json.dump(state, f)
+        except Exception:
+            pass
+    return sent
+
+
 def get_latest_user_feedback_from_discord(limit: int = 5) -> List[Dict[str, Any]]:
     """ดึงข้อความฟีดแบ็กจากห้อง writer-feedback ใน SQLite archive.db"""
     if not os.path.exists(ARCHIVER_DB):

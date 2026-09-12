@@ -2,11 +2,12 @@
 ANSRE Backup — สำรอง SecondBrain ทั้งหมด (บท/ปก/เสียง/teaser/ledger) เป็น .zip
 ==============================================================================
 งานทั้งหมดอยู่ใน SecondBrain (gitignored) — ไม่มีสำเนา = เสี่ยงหายถาวร
-ใช้:  python backup.py [./SecondBrain]            สำรอง 1 ครั้ง (เก็บล่าสุด 10 ไฟล์)
+ใช้:  python backup.py [./SecondBrain]            สำรอง 1 ครั้ง (เก็บย้อนหลัง 2 วัน)
       python backup.py --auto                     สำรองเฉพาะถ้าเกิน 24 ชม.จากครั้งก่อน
 """
 import os
 import sys
+import time
 import glob
 import zipfile
 
@@ -14,7 +15,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 SB = os.path.join(ROOT, "SecondBrain")
 BACKUP_DIR = os.path.join(ROOT, "backups")
 _SKIP_DIRS = {"__pycache__", ".tasks"}
-_KEEP = 10  # เก็บไฟล์ backup ล่าสุดกี่ไฟล์
+_KEEP_DAYS = 2  # เก็บไฟล์ backup ย้อนหลัง 2 วัน (48 ชม.)
 
 
 def _ts():
@@ -53,9 +54,12 @@ def make_backup(sb=SB, rotate=True):
                 except OSError:
                     pass
     if rotate:
-        for old in sorted(glob.glob(os.path.join(BACKUP_DIR, "ansre_backup_*.zip")))[:-_KEEP]:
+        cutoff = time.time() - (_KEEP_DAYS * 86400)
+        all_backups = sorted(glob.glob(os.path.join(BACKUP_DIR, "ansre_backup_*.zip")), reverse=True)
+        for old in all_backups[1:]:
             try:
-                os.remove(old)
+                if os.path.getmtime(old) < cutoff:
+                    os.remove(old)
             except OSError:
                 pass
     out_mb = round(os.path.getsize(path) / 1e6, 1)

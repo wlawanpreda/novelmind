@@ -35,29 +35,8 @@ os.makedirs(QUEUE_DIR, exist_ok=True)
 
 def find_cover_image(title: str) -> Optional[str]:
     """ค้นหาภาพปกที่มีความคมชัดและดีที่สุดของเรื่อง"""
-    candidates = [
-        f"{title}_Cover_captioned.jpg",
-        f"{title}_Cover_captioned.png",
-        f"{title}_Cover.jpg",
-        f"{title}_Cover.png",
-        f"{title}.jpg",
-        f"{title}.png"
-    ]
-    for fn in candidates:
-        fp = os.path.join(COVERS_DIR, fn)
-        if os.path.exists(fp) and os.path.getsize(fp) > 1000:
-            return fp
-    matches = glob.glob(os.path.join(COVERS_DIR, f"*{title}*Cover*.*"))
-    if matches:
-        return sorted(matches)[0]
-    if os.path.exists(COVERS_DIR):
-        all_covers = [f for f in os.listdir(COVERS_DIR) if f.lower().endswith(('.jpg', '.png', '.jpeg'))]
-        for i in range(max(1, len(title) - 3)):
-            chunk = title[i:i+4]
-            for cf in all_covers:
-                if chunk in cf and "Cover" in cf:
-                    return os.path.join(COVERS_DIR, cf)
-    return None
+    from auto_story_packager import find_cover_image as packager_cover
+    return packager_cover(title)
 
 
 def extract_synopsis_and_meta(title: str) -> Dict[str, Any]:
@@ -96,10 +75,15 @@ def extract_synopsis_and_meta(title: str) -> Dict[str, Any]:
 
 def find_story_chapters(title: str) -> List[Dict[str, Any]]:
     """ค้นหาไฟล์บททั้งหมดของเรื่อง เรียงตามลำดับตอน 1, 2, 3..."""
+    clean_title = re.sub(r'[:\s_-]+', '_', title).strip('_')
+    space_title = re.sub(r'[:\s_-]+', ' ', title).strip()
+    prefix = clean_title.split('_')[0]
+
     patterns = [
         os.path.join(STORIES_DIR, "Chapters", f"{title}_Chapter_*.md"),
-        os.path.join(STORIES_DIR, "Chapters", f"{title}_*.md"),
-        os.path.join(STORIES_DIR, f"{title}_Chapter_*.md"),
+        os.path.join(STORIES_DIR, "Chapters", f"{clean_title}_Chapter_*.md"),
+        os.path.join(STORIES_DIR, "Chapters", f"{space_title}_Chapter_*.md"),
+        os.path.join(STORIES_DIR, "Chapters", f"*{prefix}*_Chapter_*.md"),
     ]
     files = []
     for pat in patterns:

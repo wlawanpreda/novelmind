@@ -144,6 +144,7 @@ def package_story_audiobook(title: str, make_video: bool = True) -> Optional[Dic
             current_time += dur
 
     total_duration_str = format_timestamp(current_time)
+    timestamps_text = "\n".join(timestamps)
     print(f"   ⏱️ ความยาวรวมทั้งสิ้น: {total_duration_str}")
 
     # 2. Concat MP3 ด้วย ffmpeg
@@ -165,8 +166,22 @@ def package_story_audiobook(title: str, make_video: bool = True) -> Optional[Dic
     if os.path.exists(filelist_path):
         os.remove(filelist_path)
 
-    # 3. สร้าง YouTube Description พร้อม Timestamps
-    timestamps_text = "\n".join(timestamps)
+    # ดึงลิงก์ ReadAWrite อัตโนมัติ
+    raw_novel_link = ""
+    known_links = {
+        "กระจกเงาคนตาย": "https://www.readawrite.com/a/e90bfef727e4730819e92444783d6850",
+        "ร้านค้าเหนือโลก": "https://www.readawrite.com/a/e90bfef727e4730819e92444783d6850",
+        "ยอดนักสืบสปีดรัน": "https://www.readawrite.com/a/084947f5c23530e03094cc84bb1364b5",
+        "สมาคมประกันภัยลี้ลับ": "https://www.readawrite.com/a/f3624f7b4e09cde8fc524dff4f2fc4bd",
+        "โลกแฟนตาซีอันเหนือจริง": "https://www.readawrite.com/a/d7b6b42256a73ff2c99dee9291b23c2e",
+    }
+    for kn_name, kn_url in known_links.items():
+        if kn_name in title:
+            raw_novel_link = kn_url
+            break
+
+    raw_link_section = f"\n🔗 อ่านฉบับเต็มและตอนต่อไปก่อนใครได้ที่ ReadAWrite:\n👉 {raw_novel_link}\n" if raw_novel_link else f"\n• อ่านรายตอนบน ReadAWrite / Dek-D: ค้นหาชื่อ \"{title}\"\n"
+
     desc_content = f"""🎧 {title} — รวมทุกตอนจบภาค (Full Audiobook)
 ฟังนิยายเสียงคุณภาพ บรรยายลื่นไหล สนุก ตื่นเต้น เหมาะสำหรับฟังตอนทำงาน ฟังก่อนนอน หรือเดินทาง
 
@@ -174,9 +189,9 @@ def package_story_audiobook(title: str, make_video: bool = True) -> Optional[Dic
 {timestamps_text}
 
 ---
-📖 สำหรับท่านที่ต้องการอ่านบทความฉบับเต็ม หรือสนับสนุนผลงาน E-Book:
+📖 สำหรับท่านที่ต้องการอ่านบทความฉบับเต็ม หรือสนับสนุนผลงาน:
+{raw_link_section}
 • E-Book เล่มเต็มบน Meb Market: ค้นหาชื่อ "{title}"
-• อ่านรายตอนบน ReadAWrite / Dek-D: ค้นหาชื่อ "{title}"
 
 ✨ ผลิตและสร้างสรรค์โดย: ANSRE Studio & NovelMind
 กดติดตาม (Subscribe) และกดกระดิ่งแจ้งเตือน เพื่อไม่พลาดตอนใหม่และนิยายเรื่องใหม่ๆ!

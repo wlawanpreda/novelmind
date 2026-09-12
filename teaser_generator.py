@@ -241,9 +241,10 @@ def generate_teaser(
     ]
     
     if use_subtitles:
-        # burn in subtitles. MarginV=280 moves it above the waveform (which starts at 1520)
+        # burn in subtitles: สไตล์ TikTok/Shorts ตัวโตสีเหลืองทอง คมชัด ขอบดำหนา ไม่กลืนกับพื้นหลัง
+        font_name = "Thonburi" if os.path.exists("/System/Library/Fonts/Thonburi.ttc") else "Arial"
         filter_parts.append(
-            f"[bg_wave]subtitles=filename={temp_srt_name}:force_style='Alignment=2,MarginV=280,FontSize=24,PrimaryColour=&H00FFFF,OutlineColour=&H000000,Outline=3'[outv]"
+            f"[bg_wave]subtitles=filename={temp_srt_name}:force_style='Fontname={font_name},Bold=1,Alignment=2,MarginV=320,FontSize=40,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,Outline=4,Shadow=2'[outv]"
         )
         map_video = "[outv]"
     else:

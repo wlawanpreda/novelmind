@@ -19,11 +19,24 @@ def _yt():
     from google.auth.transport.requests import Request
     from googleapiclient.discovery import build
     token = os.environ.get("YOUTUBE_TOKEN_FILE", os.path.join(ROOT, "youtube_token.json"))
-    creds = Credentials.from_authorized_user_file(
-        token, ["https://www.googleapis.com/auth/youtube.upload",
-                "https://www.googleapis.com/auth/youtube.readonly"])
+    scopes = [
+        "https://www.googleapis.com/auth/youtube.upload",
+        "https://www.googleapis.com/auth/youtube.readonly",
+        "https://www.googleapis.com/auth/youtube"
+    ]
+    creds = Credentials.from_authorized_user_file(token, scopes)
     if creds.expired and creds.refresh_token:
-        creds.refresh(Request())
+        try:
+            creds.refresh(Request())
+        except Exception as e:
+            err_str = str(e)
+            if "invalid_grant" in err_str.lower() or "revoked" in err_str.lower() or "expired" in err_str.lower():
+                try:
+                    from discord_reporter import send_token_revoked_alert
+                    send_token_revoked_alert("YouTube", err_str)
+                except Exception:
+                    pass
+            raise
     return build("youtube", "v3", credentials=creds)
 
 

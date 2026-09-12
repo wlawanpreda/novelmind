@@ -172,11 +172,11 @@ def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]
                 print(f"   ⛔ ข้าม {raw_title}: ชื่อตอนซ้ำซ้อน ไม่มีชื่อตอนย่อย (Quality Gate Failed)")
                 continue
 
-            # ดักจับคำ: ถ้ามี word_count ต่ำกว่า 600 คำ ห้ามปล่อย
+            # ดักจับคำ: ถ้ามี word_count ต่ำกว่า 400 คำ ห้ามปล่อย (ดักจับดราฟต์เปล่า/โครงร่างสั้น)
             try:
                 w_num = int(c.get("words", "0") or 0)
-                if 0 < w_num < 600:
-                    print(f"   ⛔ ข้าม {raw_title}: จำนวนคำน้อยเกินไป ({w_num} คำ < 600 คำ) (Quality Gate Failed)")
+                if 0 < w_num < 400:
+                    print(f"   ⛔ ข้าม {raw_title}: จำนวนคำน้อยเกินไป ({w_num} คำ < 400 คำ) (Quality Gate Failed)")
                     continue
             except Exception:
                 pass
@@ -269,8 +269,11 @@ def sync_all_stories_from_studio() -> List[tuple[str, str]]:
 def get_active_stories() -> List[tuple[str, str]]:
     """ดึงรายการเรื่องที่กำลังออนแอร์จาก Ledger และค่าเริ่มต้น"""
     base = [
-        ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
+        ("627d9707279484797acafaba010fcf69", "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค 70 พร้อมซูเปอร์มาร์เก็ตลับ"),
+        ("33e483f95428f693527c5d4843c7fef4", "เมื่อนางร้ายหมดรัก ท่านประธานก็เริ่มคลั่ง"),
         ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ"),
+        ("5738758aa9e2c5f89bcf6552d3a79187", "รักกับเจ้าหญิงเพลย์บอย"),
+        ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
         ("e90bfef727e4730819e92444783d6850", "ร้านค้าเหนือโลก: กระจกเงาคนตาย")
     ]
     ledger = load_ledger()
@@ -351,11 +354,40 @@ def show_publishing_dashboard():
     print("=" * 65 + "\n")
 
 
+def run_scheduler_daemon():
+    """รัน loop ต่อเนื่องในฐานะ daemon Service (เหมาะสำหรับ PM2 / Launchd)"""
+    print("\n" + "=" * 65)
+    print(" 🚀 เริ่มต้น ReadAWrite Drip Publishing Daemon (Background Service)")
+    print("=" * 65)
+    print(" ⏰ ระบบจะตรวจเช็กตารางและปล่อยตอนใหม่ตามช่วงเวลาทองอัตโนมัติ")
+    print("    • ตรวจสอบรอบปล่อยทุก 30 นาที")
+    print("    • โควตาสูงสุด 6 ตอน/วัน เพื่อดันฟีดอย่างสม่ำเสมอ")
+    print("=" * 65 + "\n")
+    sys.stdout.flush()
+
+    while True:
+        try:
+            now = datetime.datetime.now()
+            # Golden hours check: เที่ยง (11:30 - 13:30) และ ค่ำ (18:30 - 21:30)
+            is_golden = (11 <= now.hour <= 13) or (18 <= now.hour <= 21)
+            print(f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] ⏳ Heartbeat check (Golden Hour: {is_golden})...")
+            sys.stdout.flush()
+            cron_tick(force=False)
+        except Exception as e:
+            print(f"[!] Daemon tick error: {e}")
+            sys.stdout.flush()
+        
+        # รอ 30 นาทีต่อรอบ
+        time.sleep(1800)
+
+
 if __name__ == "__main__":
     import re
     args = sys.argv[1:]
     if "--status" in args:
         show_publishing_dashboard()
+    elif "--loop" in args or "--daemon" in args:
+        run_scheduler_daemon()
     elif "--publish-next" in args:
         article_id = "084947f5c23530e03094cc84bb1364b5"
         title = "ยอดนักสืบสปีดรัน"
@@ -364,9 +396,46 @@ if __name__ == "__main__":
             notify_discord_release(title, res["title"], res["guid"], 6)
     elif "--cron-tick" in args:
         cron_tick(force=("--force" in args))
-    elif "--sync-metadata" in args:
-        import readawrite_metadata_syncer
-        lim = None if "--all" in args else 5
-        readawrite_metadata_syncer.run_mass_sync(limit=lim)
+    elif "--unlock-unpublished" in args:
+        lim = int(args[args.index("--limit") + 1]) if "--limit" in args else 5
+        print(f"[*] ปลดล็อกนิยายที่ยังไม่เผยแพร่จำนวน {lim} เรื่อง...")
+        with open("SecondBrain/readawrite_current_stats.json") as f:
+            stats = json.load(f)
+        unpub = [d for d in stats if "ไม่เผยแพร่" in d["info"]][:lim]
+        from playwright.sync_api import sync_playwright
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=AUTH_FILE, viewport={"width": 1440, "height": 1080})
+            page = context.new_page()
+            for item in unpub:
+                aid = item["aid"]
+                title = item["title"]
+                print(f"🚀 ปลดล็อก '{title}' ({aid})...")
+                # publish chapters
+                ch_url = f"https://www.readawrite.com/?action=manage_article&article_id={aid}&tab=mainManageChapter"
+                page.goto(ch_url, timeout=30000)
+                page.wait_for_timeout(2000)
+                page.evaluate("""() => {
+                    const rows = document.querySelectorAll(".table tbody tr");
+                    for (const r of rows) {
+                        const chk = r.querySelector("input[name=chk_chapter_guid]");
+                        const guid = chk ? chk.value : "";
+                        const st = r.getAttribute("status");
+                        if (guid && st !== "2") {
+                            $.ajax({
+                                method: "POST",
+                                url: "?action=manage_chapter&token=",
+                                data: { chapter_guid: guid, manage: "publishAndMoveToMaster", is_collaborator: 0 },
+                                dataType: "json"
+                            });
+                        }
+                    }
+                }""")
+                page.wait_for_timeout(2000)
+                ensure_story_master_published(aid)
+                print(f"   ✅ '{title}' ออนแอร์สู่สาธารณะแล้ว!")
+            context.storage_state(path=AUTH_FILE)
+            browser.close()
     else:
         show_publishing_dashboard()
+
