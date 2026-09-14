@@ -14,7 +14,9 @@ import zipfile
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SB = os.path.join(ROOT, "SecondBrain")
 BACKUP_DIR = os.path.join(ROOT, "backups")
+EXTERNAL_BACKUP_DIR = "/Volumes/PJ-3TB/backups/ansre"
 _SKIP_DIRS = {"__pycache__", ".tasks"}
+_SKIP_EXTS = {".pyc", ".mp4", ".mp3", ".wav", ".m4a"}
 _KEEP_DAYS = 2  # เก็บไฟล์ backup ย้อนหลัง 2 วัน (48 ชม.)
 
 
@@ -33,7 +35,7 @@ def list_backups():
     return out
 
 
-def make_backup(sb=SB, rotate=True):
+def make_backup(sb=SB, rotate=True, with_media=False):
     os.makedirs(BACKUP_DIR, exist_ok=True)
     name = f"ansre_backup_{_ts()}.zip"
     path = os.path.join(BACKUP_DIR, name)
@@ -44,7 +46,8 @@ def make_backup(sb=SB, rotate=True):
         for root, dirs, files in os.walk(sb):
             dirs[:] = [d for d in dirs if d not in _SKIP_DIRS]
             for f in files:
-                if f.endswith((".pyc",)):
+                ext = os.path.splitext(f)[1].lower()
+                if not with_media and ext in _SKIP_EXTS:
                     continue
                 fp = os.path.join(root, f)
                 try:
@@ -62,6 +65,24 @@ def make_backup(sb=SB, rotate=True):
                     os.remove(old)
             except OSError:
                 pass
+
+    # Optional sync to external drive if mounted
+    if os.path.exists("/Volumes/PJ-3TB"):
+        try:
+            import shutil
+            os.makedirs(EXTERNAL_BACKUP_DIR, exist_ok=True)
+            ext_path = os.path.join(EXTERNAL_BACKUP_DIR, name)
+            shutil.copy2(path, ext_path)
+            # Rotate external backups as well
+            ext_backups = sorted(glob.glob(os.path.join(EXTERNAL_BACKUP_DIR, "ansre_backup_*.zip")), reverse=True)
+            for old in ext_backups[5:]:  # keep up to 5 on 3TB drive
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+        except Exception:
+            pass
+
     out_mb = round(os.path.getsize(path) / 1e6, 1)
     print(f"[backup] ✅ {name} — {count} ไฟล์ · {out_mb}MB (บีบอัดจาก {round(size/1e6,1)}MB)")
     return {"ok": True, "name": name, "files": count, "size_mb": out_mb, "path": path}
@@ -77,9 +98,10 @@ def auto_backup():
 
 
 if __name__ == "__main__":
+    with_media = "--with-media" in sys.argv
     if "--auto" in sys.argv:
         r = auto_backup()
         print("[backup] auto:", "ข้าม (สำรองไป <24ชม.)" if r.get("skipped") else "สำรองแล้ว")
     else:
         sb = next((a for a in sys.argv[1:] if not a.startswith("--")), SB)
-        make_backup(sb)
+        make_backup(sb, with_media=with_media)

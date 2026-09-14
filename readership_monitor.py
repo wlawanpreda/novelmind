@@ -17,6 +17,8 @@ output_dir = "SecondBrain/Analytics"
 os.makedirs(output_dir, exist_ok=True)
 
 TRACKED_STORIES = [
+    {"aid": "2ac4e08e36403cb46241714ff5758789", "name": "สาวอภินิหารหัวใจเหล็ก"},
+    {"aid": "f5d5ec2e430ab0bbade7b02be1beb149", "name": "วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์"},
     {"aid": "5738758aa9e2c5f89bcf6552d3a79187", "name": "รักกับเจ้าหญิงเพลย์บอย"},
     {"aid": "f3624f7b4e09cde8fc524dff4f2fc4bd", "name": "สมาคมประกันภัยลี้ลับ"},
     {"aid": "33e483f95428f693527c5d4843c7fef4", "name": "เมื่อนางร้ายหมดรัก ท่านประธานก็เริ่มคลั่ง"},
