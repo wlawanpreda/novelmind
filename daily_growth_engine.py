@@ -137,26 +137,36 @@ def find_and_auto_improve(audit_data: Dict[str, Any]) -> List[str]:
 def auto_replenish_next_story() -> Optional[str]:
     """เตรียมเรื่องถัดไปจากคลังผลงานขึ้นสู่ ReadAWrite เมื่อเรื่องหลักเดิมเผยแพร่ครบ"""
     candidates = [
-        "ฟาร์มสาวปีศาจรัก",
-        "สมาคมภูติ์ผีกวนประสาท",
-        "ย้ายมาอยู่บ้านปีศาจ",
-        "สาวอภินิหารหัวใจเหล็ก"
+        ("c9ba3d70c41e7b9e05e4d1110ec5b94e", "จากน้องสาวสู่พี่ใหญ่_สายใยแห่งความรัก"),
+        ("454f3980e21e630dc4891fa752796d58", "ผู้สาปแช่ง_Chimera_เกิดใหม่ในโลกเวทย์มนต์"),
+        ("ac04dda030fae1380e3aa7ac52f66762", "ฟาร์มสาวปีศาจรัก")
     ]
     
     ledger = load_ledger()
-    known_titles = set(ledger.get("published_stories", {}).keys())
+    known_releases = {r.get("story") for r in ledger.get("scheduled_releases", [])}
     
+    target_id = None
     target_title = None
-    for cand in candidates:
-        if cand not in known_titles:
+    for cid, cand in candidates:
+        # หากเรื่องนี้ยังปล่อยไม่ครบ ให้เลือกเป็นเรื่องถัดไป
+        rel_count = sum(1 for r in ledger.get("scheduled_releases", []) if r.get("story") == cand)
+        if rel_count < 8:
+            target_id = cid
             target_title = cand
             break
             
     if not target_title:
         return None
         
-    print(f" 🚀 กำลังเตรียมความพร้อมสำหรับซีรีส์ถัดไป: '{target_title}'...")
-    # ตรวจสอบภาพปก, เรื่องย่อ และชุดเผยแพร่
+    print(f" 🚀 กำลังบรรจุซีรีส์ถัดไปเข้าคิว Active: '{target_title}' (ID: {target_id})...")
+    
+    # สร้าง Social Funnel ล่วงหน้า
+    try:
+        from social_funnel_engine import export_funnel_social_pack
+        export_funnel_social_pack(target_title, target_id, chapter_num=1)
+    except Exception:
+        pass
+        
     return target_title
 
 
