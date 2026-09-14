@@ -123,14 +123,36 @@ def export_funnel_social_pack(story_title: str, article_id: str, chapter_num: in
     with open(os.path.join(out_dir, f"README_CH{chapter_num:02d}.md"), "w", encoding="utf-8") as f:
         f.write(readme_content)
 
-    print(f"✅ บันทึก Social Funnel Pack สำเร็จ: {pkg_file}")
-    return pkg_file
+def export_all_social_packs() -> List[str]:
+    """สร้าง Social Funnel Pack สำหรับทุกเรื่องหลักในสตูดิโอ"""
+    stories = [
+        ("สาวอภินิหารหัวใจเหล็ก", "2ac4e08e36403cb46241714ff5758789", 1, "เอลลาริค หลังความตาย"),
+        ("จากน้องสาวสู่พี่ใหญ่_สายใยแห่งความรัก", "c9ba3d70c41e7b9e05e4d1110ec5b94e", 1, "การเปลี่ยนแปลงเริ่มต้น"),
+        ("ผู้สาปแช่ง_Chimera_เกิดใหม่ในโลกเวทย์มนต์", "454f3980e21e630dc4891fa752796d58", 1, "ก้าวแรกเมื่อโลกเปลี่ยน"),
+        ("ฟาร์มสาวปีศาจรัก", "ac04dda030fae1380e3aa7ac52f66762", 1, "สู่โลกใหม่และไร่ศักดิ์สิทธิ์"),
+        ("วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์", "f5d5ec2e430ab0bbade7b02be1beb149", 1, "การนอนหลับคือพลัง"),
+        ("สมาคมประกันภัยลี้ลับ", "f3624f7b4e09cde8fc524dff4f2fc4bd", 1, "แผนกเคลมกรรม"),
+        ("ยอดนักสืบสปีดรัน", "084947f5c23530e03094cc84bb1364b5", 1, "คดีฆาตกรรมห้องปิดตาย"),
+        ("ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค_70_พร้อมซูเปอร์มาร์เก็ตลับ", "627d9707279484797acafaba010fcf69", 1, "เกิดใหม่พร้อมซูเปอร์มาร์เก็ต")
+    ]
+    results = []
+    print("\n=================================================================")
+    print(" 🎬 กำลังสร้างชุด Social Funnel Packs สำหรับทุกเรื่องในแคตตาล็อก")
+    print("=================================================================")
+    for title, aid, ch_num, ch_title in stories:
+        f = export_funnel_social_pack(title, aid, ch_num, ch_title)
+        results.append(f)
+    print(f"\n🎉 บันทึก Social Funnel Packs ครบ {len(results)} เรื่องเรียบร้อย!\n")
+    return results
 
 
 if __name__ == "__main__":
-    export_funnel_social_pack(
-        story_title="สาวอภินิหารหัวใจเหล็ก",
-        article_id="2ac4e08e36403cb46241714ff5758789",
-        chapter_num=1,
-        chapter_title="เอลลาริค หลังความตาย"
-    )
+    if "--all" in sys.argv or len(sys.argv) == 1:
+        export_all_social_packs()
+    else:
+        export_funnel_social_pack(
+            story_title="สาวอภินิหารหัวใจเหล็ก",
+            article_id="2ac4e08e36403cb46241714ff5758789",
+            chapter_num=1,
+            chapter_title="เอลลาริค หลังความตาย"
+        )
