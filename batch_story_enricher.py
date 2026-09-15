@@ -161,7 +161,7 @@ def enrich_story_in_studio(article_id: str, story_name: str, subtitles_map: Opti
 
             html_body = md_to_html(raw_text)
 
-            edit_url = f"https://www.readawrite.com/?action=manage_chapter&article_id={article_id}&chapter_guid={guid}"
+            edit_url = f"https://www.readawrite.com/?action=manage_chapter&article_id={article_id}&chapter_id={guid}"
             print(f"   📝 อัปเกรด [ตอนที่ {num}] '{full_title}' ({len(raw_text)} อักขระ)...")
             page.goto(edit_url, timeout=45000)
             page.wait_for_timeout(2500)
@@ -173,7 +173,7 @@ def enrich_story_in_studio(article_id: str, story_name: str, subtitles_map: Opti
 
             page.fill("#chapter_title", full_title)
             if page.query_selector("#chapter_subtitle"):
-                page.fill("#chapter_subtitle", sub)
+                page.fill("#chapter_subtitle", "")
 
             page.evaluate("""(content) => {
                 const el = document.querySelector('.ck-editor__editable');
@@ -186,7 +186,17 @@ def enrich_story_in_studio(article_id: str, story_name: str, subtitles_map: Opti
             save_btn = page.locator("#btnSaveDraft")
             if save_btn.is_visible():
                 save_btn.click()
-                page.wait_for_timeout(3000)
+                page.wait_for_timeout(1000)
+                try:
+                    change_log_label = page.locator("label[for=pop_change_log2]")
+                    if change_log_label.is_visible(timeout=1500):
+                        change_log_label.click()
+                        page.wait_for_timeout(500)
+                        page.click(".swal2-modal input.btnSaveDraft")
+                        page.wait_for_timeout(2500)
+                except Exception:
+                    pass
+                page.wait_for_timeout(2000)
                 print(f"      ✅ บันทึกตอนที่ {num} สำเร็จ!")
             else:
                 print(f"      ❌ ไม่พบปุ่มบันทึกในตอนที่ {num}")
