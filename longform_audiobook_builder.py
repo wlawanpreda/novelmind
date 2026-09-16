@@ -13,11 +13,45 @@ import subprocess
 from datetime import timedelta
 from typing import List, Dict, Optional
 
+import json
+
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SB = os.path.join(ROOT, "SecondBrain")
 AUDIO_DIR = os.path.join(SB, "05_Active_Projects", "Audio_Output")
 COVERS_DIR = os.path.join(SB, "05_Active_Projects", "Covers")
 LONGFORM_DIR = os.path.join(SB, "05_Active_Projects", "Longform_Output")
+
+
+def get_readawrite_link(stem: str) -> str:
+    """ค้นหาลิงก์ตรงของหน้านิยายบน ReadAWrite จากชื่อเรื่อง"""
+    clean_stem = re.sub(r"[\s_:：]+", "", stem)
+    ledger_p = os.path.join(SB, "05_Active_Projects", "publish_ledger.json")
+    if os.path.exists(ledger_p):
+        try:
+            with open(ledger_p, "r", encoding="utf-8") as f:
+                led = json.load(f)
+                for k, v in led.get("published_stories", {}).items():
+                    clean_k = re.sub(r"[\s_:：]+", "", k)
+                    if clean_k in clean_stem or clean_stem in clean_k:
+                        aid = v.get("article_id")
+                        if aid:
+                            return f"https://www.readawrite.com/a/{aid}"
+        except Exception:
+            pass
+    raw_stats_p = os.path.join(SB, "readawrite_current_stats.json")
+    if os.path.exists(raw_stats_p):
+        try:
+            with open(raw_stats_p, "r", encoding="utf-8") as f:
+                for a in json.load(f):
+                    t = re.sub(r"[\s_:：]+", "", a.get("title", ""))
+                    if t and (t in clean_stem or clean_stem in t):
+                        aid = a.get("aid")
+                        if aid:
+                            return f"https://www.readawrite.com/a/{aid}"
+        except Exception:
+            pass
+    return ""
+
 
 def get_audio_duration_sec(path: str) -> float:
     try:
@@ -148,28 +182,42 @@ def compile_longform_audiobook(stem: str, max_eps: int = 5) -> Optional[Dict]:
             print(f"  [!] Failed to render video: {e}")
             output_video_path = None
 
-    desc = [
-        f"🎧 นิยายเสียง: {story_display} (รวม EP {first_ep}–{last_ep} ต่อเนื่องยาวๆ)",
+    raw_link = get_readawrite_link(stem)
+    desc = []
+    if raw_link:
+        desc.extend([
+            f"👉 อ่านฉบับเต็มฟรีครบทุกตอนก่อนใครคลิก: {raw_link}",
+            f"❤️ ฝากกดหัวใจ + เพิ่มเข้าชั้นหนังสือใน ReadAWrite ด้วยนะครับ!",
+            ""
+        ])
+    desc.extend([
+        f"🎧 นิยายเสียง: {story_display} (รวม EP {first_ep}–{last_ep} ฟังยาวต่อเนื่องก่อนนอน)",
         "",
         "⏱️ สารบัญตอน (Timestamps):",
-    ]
+    ])
     desc.extend(timestamps)
     desc.extend([
         "",
-        "🔗 อ่านฉบับเต็มและตอนต่อไปก่อนใครได้ที่ ReadAWrite",
-        "⚡ ฝากกด Like & กด Subscribe เพื่อติดตามตอนใหม่ทุกวันครับ!",
+        f"🔗 อ่านฉบับเต็มและตอนต่อไปก่อนใครได้ที่ ReadAWrite: {raw_link}" if raw_link else "🔗 อ่านฉบับเต็มและตอนต่อไปก่อนใครได้ที่ ReadAWrite",
+        "⚡ ฝากกด Like & กด Subscribe ช่อง 'Midnight Tales · มิดไนท์เทล' เพื่อติดตามตอนใหม่ทุกวันครับ!",
         "",
-        "#นิยายเสียง #นิยายแปล #ฟังนิยาย #สปีดรัน #หนังสือเสียง"
+        "#นิยายเสียง #นิยายเสียงจบในตอน #ฟังก่อนนอน #นิยายแปล #หนังสือเสียง #นิยาย #สปีดรัน #เรื่องเล่า"
     ])
+
+    # ชูจุดขาย winning formula ใน title
+    win_title = f"นิยายเสียง: {story_display} รวมตอนที่ {first_ep}–{last_ep} (ฟังยาวต่อเนื่องก่อนนอน) [อ่านฟรี]"
+    if len(win_title) > 95:
+        win_title = f"นิยายเสียง: {story_display} รวมตอนที่ {first_ep}–{last_ep} (ฟังต่อเนื่องก่อนนอน)"
 
     result = {
         "stem": stem,
-        "title": f"นิยายเสียง: {story_display} รวมตอนที่ {first_ep}–{last_ep} (ฟังต่อเนื่อง)",
+        "title": win_title,
         "description": "\n".join(desc),
         "audio_path": combined_audio_path,
         "video_path": output_video_path,
         "timestamps": timestamps,
-        "duration_sec": current_time
+        "duration_sec": current_time,
+        "readawrite_url": raw_link
     }
     return result
 

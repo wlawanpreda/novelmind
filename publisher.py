@@ -326,6 +326,17 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
             "เส้นทางแห่งชัยชนะในดินแดนเซ็กซ์": "https://www.readawrite.com/a/655b42cb45491b18752e86e6553c9fdc",
             "ฟาร์มสาวปีศาจรัก": "https://www.readawrite.com/a/ac04dda030fae1380e3aa7ac52f66762",
             "วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์": "https://www.readawrite.com/a/f5d5ec2e430ab0bbade7b02be1beb149",
+            "จากน้องสาวสู่พี่ใหญ่": "https://www.readawrite.com/a/c9ba3d70c41e7b9e05e4d1110ec5b94e",
+            "จากน้องสาวสู่พี่ใหญ่_สายใยแห่งความรัก": "https://www.readawrite.com/a/c9ba3d70c41e7b9e05e4d1110ec5b94e",
+            "ผู้สาปแช่ง Chimera": "https://www.readawrite.com/a/454f3980e21e630dc4891fa752796d58",
+            "ผู้สาปแช่ง_Chimera_เกิดใหม่ในโลกเวทย์มนต์": "https://www.readawrite.com/a/454f3980e21e630dc4891fa752796d58",
+            "ดวงจันทร์แห่งเวทมนตร์": "https://www.readawrite.com/a/9e8c07991925a7993519a4d261fd6f2a",
+            "สาวอภินิหารหัวใจเหล็ก": "https://www.readawrite.com/a/2ac4e08e36403cb46241714ff5758789",
+            "อุปสมบทในรักระหว่างพี่น้อง": "https://www.readawrite.com/a/91ebfbe677e836f35774fb8c8c58c292",
+            "ตื่นตามฝันนางพยากรณ์": "https://www.readawrite.com/a/02efa2dd3eea0d584e8b815d78085966",
+            "ย้ายมาอยู่บ้านปีศาจ": "https://www.readawrite.com/a/2a364c2b01a394845dc7825556a8f0dd",
+            "กลิ่นหอมกู้วิกฤต": "https://www.readawrite.com/a/a0d11c41bcfc9018a57e8cf9a0464bc9",
+            "ดาบไร้พระเจ้า": "https://www.readawrite.com/a/8bca736060616f7602daefdb056ebf63",
         }
         for kn_name, kn_url in known_links.items():
             if kn_name in story_name or story_name in kn_name:
@@ -333,20 +344,27 @@ def build_metadata(sb: str, teaser_path: str) -> dict:
                 break
 
     hashtags = ["Shorts", "นิยายเสียง", "นิยาย", "audiobook", "เล่าเรื่อง", "เรื่องเล่า", "นิยายแปล", "สปีดรัน"]
-    desc_lines = [
+    desc_lines = []
+    if raw_novel_link:
+        desc_lines.extend([
+            f"👉 อ่านฉบับเต็มฟรีครบทุกตอนก่อนใครคลิก: {raw_novel_link}",
+            f"❤️ ฝากกดหัวใจ + เพิ่มเข้าชั้นหนังสือใน ReadAWrite ด้วยนะครับ!",
+            ""
+        ])
+    desc_lines.extend([
         f"🎧 {raw_title}",
         "",
         f"📖 เรื่องย่อ: {synopsis.strip() or f'ติดตามความสนุกของนิยายเรื่อง {story_name}'}",
         "",
-    ]
+    ])
     if raw_novel_link:
         desc_lines.extend([
-            "🔗 อ่านฉบับเต็มและตอนต่อไปก่อนใครได้ที่ ReadAWrite:",
+            "🔗 ลิงก์อ่านฉบับเต็มบน ReadAWrite:",
             f"👉 {raw_novel_link}",
             ""
         ])
     desc_lines.extend([
-        "⚡ ฝากกด Like & กด Subscribe เพื่อติดตามตอนใหม่ทุกวันครับ!",
+        "⚡ ฝากกด Like & กด Subscribe ช่อง 'Midnight Tales · มิดไนท์เทล' เพื่อติดตามตอนใหม่ทุกวันครับ!",
         "",
         " ".join("#" + h for h in hashtags)
     ])
