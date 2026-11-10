@@ -140,41 +140,41 @@ def create_mega_thumbnail(
     card_bg.paste(cover_resized, (8, 8))
     bg.paste(card_bg, (90, 80), card_bg)
 
-    # 3. Typography & Badges
+    # 3. Typography & Badges (ปรับขนาดฟอนต์ให้ใหญ่คมชัดบนจอมือถือ 65.5% ตามผล Analytics)
     draw = ImageDraw.Draw(bg)
-    title_font = ImageFont.truetype(FONT_PATH, 74, index=4 if "Sukhumvit" in FONT_PATH else 0)
-    badge_font = ImageFont.truetype(FONT_PATH, 34, index=4 if "Sukhumvit" in FONT_PATH else 0)
-    sub_font = ImageFont.truetype(FONT_PATH, 42, index=4 if "Sukhumvit" in FONT_PATH else 0)
-    pill_font = ImageFont.truetype(FONT_PATH, 32, index=4 if "Sukhumvit" in FONT_PATH else 0)
+    title_font = ImageFont.truetype(FONT_PATH, 88, index=4 if "Sukhumvit" in FONT_PATH else 0)
+    badge_font = ImageFont.truetype(FONT_PATH, 38, index=4 if "Sukhumvit" in FONT_PATH else 0)
+    sub_font = ImageFont.truetype(FONT_PATH, 46, index=4 if "Sukhumvit" in FONT_PATH else 0)
+    pill_font = ImageFont.truetype(FONT_PATH, 36, index=4 if "Sukhumvit" in FONT_PATH else 0)
 
     text_x = 90 + card_w + 65
 
     # Badge 1: Mega Audiobook
-    draw.rounded_rectangle([(text_x, 120), (text_x + 480, 195)], radius=14, fill=(245, 158, 11, 250))
-    draw.text((text_x + 25, 136), "FULL AUDIOBOOK", fill=(0, 0, 0), font=badge_font)
+    draw.rounded_rectangle([(text_x, 110), (text_x + 510, 195)], radius=16, fill=(245, 158, 11, 255))
+    draw.text((text_x + 28, 130), "FULL AUDIOBOOK", fill=(0, 0, 0), font=badge_font)
 
     # Badge 2: รวมครบจบในตอน
-    draw.rounded_rectangle([(text_x + 500, 120), (text_x + 850, 195)], radius=14, fill=(14, 165, 233, 245))
-    draw.text((text_x + 525, 136), badge_text[:16], fill=(255, 255, 255), font=badge_font)
+    draw.rounded_rectangle([(text_x + 530, 110), (text_x + 910, 195)], radius=16, fill=(14, 165, 233, 250))
+    draw.text((text_x + 555, 130), badge_text[:16], fill=(255, 255, 255), font=badge_font)
 
     # Story Title (ตัดขึ้นบรรทัดใหม่หากยาวเกินไป)
     clean_title = get_display_title(story_title)
-    if len(clean_title) > 22:
-        title_line1 = clean_title[:20]
-        title_line2 = clean_title[20:45]
-        draw.text((text_x, 245), title_line1, fill=(255, 255, 255), font=title_font)
-        draw.text((text_x, 340), title_line2, fill=(255, 255, 255), font=title_font)
-        sub_y = 445
+    if len(clean_title) > 20:
+        title_line1 = clean_title[:18]
+        title_line2 = clean_title[18:40]
+        draw.text((text_x, 235), title_line1, fill=(255, 255, 255), font=title_font)
+        draw.text((text_x, 345), title_line2, fill=(255, 255, 255), font=title_font)
+        sub_y = 470
     else:
-        draw.text((text_x, 260), clean_title, fill=(255, 255, 255), font=title_font)
-        sub_y = 380
+        draw.text((text_x, 255), clean_title, fill=(255, 255, 255), font=title_font)
+        sub_y = 390
 
     # Subtitle
     draw.text((text_x, sub_y), sub_title, fill=(56, 189, 248), font=sub_font)
 
     # Duration Pill
-    draw.rounded_rectangle([(text_x, 780), (text_x + 720, 875)], radius=16, fill=(30, 41, 59, 240), outline=(56, 189, 248), width=3)
-    draw.text((text_x + 40, 805), f"● {duration_str} · ฟังเพลิน ไม่มีสะดุด", fill=(241, 245, 249), font=pill_font)
+    draw.rounded_rectangle([(text_x, 770), (text_x + 780, 875)], radius=18, fill=(30, 41, 59, 245), outline=(56, 189, 248), width=3)
+    draw.text((text_x + 40, 798), f"● {duration_str} · ฟังเพลิน ไม่มีสะดุด", fill=(241, 245, 249), font=pill_font)
 
     bg.convert("RGB").save(out_path, quality=95)
     return out_path
@@ -214,6 +214,8 @@ def build_mega_audiobook(
     timestamps = []
     current_sec = 0.0
 
+    outro_hook_path = os.path.join(AUDIO_DIR, "channel_outro_hook.mp3")
+
     with open(concat_list_file, "w", encoding="utf-8") as f_list:
         for idx, fp in enumerate(chapter_files, 1):
             dur = get_audio_duration(fp)
@@ -221,6 +223,15 @@ def build_mega_audiobook(
             timestamps.append(f"{ts_str} ตอนที่ {idx}")
             f_list.write(f"file '{os.path.abspath(fp)}'\n")
             current_sec += dur
+
+        # แทรก Audio Outro Hook ท้ายเรื่อง เพื่อกระตุ้นยอด Subscribe (แก้ปัญหา 99.7% Not Subscribed)
+        if os.path.exists(outro_hook_path):
+            outro_dur = get_audio_duration(outro_hook_path)
+            ts_outro = format_timestamp(current_sec)
+            timestamps.append(f"{ts_outro} ส่งท้าย & กดติดตามช่อง")
+            f_list.write(f"file '{os.path.abspath(outro_hook_path)}'\n")
+            current_sec += outro_dur
+            print(f"🎙️ แทรก Audio Outro Call-To-Action สำเร็จ (+{outro_dur:.1f} วินาที)")
 
     total_time_str = format_timestamp(current_sec)
     print(f"⏱️ ความยาวรวมทั้งสิ้น: {total_time_str} ({current_sec:.1f} วินาที)")
