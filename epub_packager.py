@@ -33,6 +33,33 @@ os.makedirs(EXPORTS_DIR, exist_ok=True)
 os.makedirs(QUEUE_DIR, exist_ok=True)
 
 
+def clean_display_title(raw_title: str) -> str:
+    """ทำความสะอาดชื่อเรื่องสำหรับแสดงผลแก่ผู้อ่าน (ลบ _, **, และเว้นวรรคเกิน)"""
+    t = re.sub(r"[\*`#]+", "", raw_title or "")
+    t = re.sub(r"_+", " ", t)
+    t = re.sub(r"\s{2,}", " ", t).strip()
+    # แก้คำสะกดชื่อเรื่องที่ขาดวรรณยุกต์จากชื่อไฟล์เก่า
+    fixes = {
+        "รหสลบใตเงา บทเพลงแหงกาลเวลา": "รหัสลับใต้เงา: บทเพลงแห่งกาลเวลา",
+        "รานคาเหนอโลก กระจกเงาคนตาย": "ร้านค้าเหนือโลก: กระจกเงาคนตาย",
+    }
+    return fixes.get(t, t)
+
+
+def clean_chapter_subtitle(raw_sub: str, story_title: str, ch_num: int) -> str:
+    """ทำความสะอาดชื่อตอนย่อย ห้ามมี _, *, ฉากย่อยที่ X, บททดสอบบทที่ X, หรือวงเล็บ meta"""
+    s = re.sub(r"[\*`#_]+", " ", raw_sub or "").strip()
+    s = re.sub(r"\s*-\s*ฉากย่อยที่\s*\d+.*$", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"\s*\(?(?:ฉบับขัดเกลา|ฉบับปรับปรุง|ปรับปรุงครั้งที่|ฉบับ\s*Chief)[^\)]*\)?", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"^(?:ตอนที่|บทที่|Chapter)\s*\d+\s*[:：\-]?\s*", "", s, flags=re.IGNORECASE).strip()
+    s = re.sub(r"\s{2,}", " ", s).strip(" :：-_")
+    if not s or len(s) < 3 or "บททดสอบบทที่" in s or "ฉากย่อย" in s:
+        try:
+            from auto_release_scheduler import resolve_chapter_subtitle
+            s = resolve_chapter_subtitle(story_title, ch_num)
+        except Exception:
+            s = f"จุดเปลี่ยนครั้งสำคัญ"
+    return s
 def find_cover_image(title: str) -> Optional[str]:
     """ค้นหาภาพปกที่มีความคมชัดและดีที่สุดของเรื่อง"""
     from auto_story_packager import find_cover_image as packager_cover
@@ -118,7 +145,7 @@ def find_story_chapters(title: str) -> List[Dict[str, Any]]:
     return chapters
 
 
-def create_epub(title: str, author: str = "ANSRE Studio", output_path: Optional[str] = None) -> str:
+def create_epub(title: str, author: str = "เงาพันจันทร์ (ANSRE Studio)", output_path: Optional[str] = None, force: bool = False) -> str:
     """สร้างไฟล์ EPUB มาตรฐานสมบูรณ์ (Cover + TOC NCX + Styling + Chapters)"""
     chapters = find_story_chapters(title)
     if not chapters:
@@ -127,6 +154,11 @@ def create_epub(title: str, author: str = "ANSRE Studio", output_path: Optional[
     if not output_path:
         safe = re.sub(r'[^\w\-_\s฀-๿]', '', title).strip().replace(' ', '_')
         output_path = os.path.join(EXPORTS_DIR, f"{safe}.epub")
+
+    queue_pkg = os.path.join(QUEUE_DIR, f"{title}_WEB_PUBLISH_KIT.md")
+    latest_ch_mtime = max(os.path.getmtime(c["filepath"]) for c in chapters)
+    if not force and os.path.exists(output_path) and os.path.getsize(output_path) > 1000 and os.path.getmtime(output_path) >= latest_ch_mtime and os.path.exists(queue_pkg):
+        return output_path
 
     cover_fp = find_cover_image(title)
     meta_info = extract_synopsis_and_meta(title)
@@ -335,23 +367,24 @@ p { text-indent: 2em; margin: 0.9em 0; text-align: justify; }
 
     # 10. สร้าง Web Novel Publishing Kit (ReadAWrite / Dek-D) ใน Publish_Queue
     queue_pkg = os.path.join(QUEUE_DIR, f"{title}_WEB_PUBLISH_KIT.md")
+    display_title = clean_display_title(title)
     total_words = sum(len(ch["content"].split()) for ch in chapters)
     suggested_price = 59 if len(chapters) <= 5 else (99 if len(chapters) <= 12 else 149)
     
-    kit_content = f"""# 📚 ชุดเผยแพร่นิยาย: {title}
+    kit_content = f"""# 📚 ชุดเผยแพร่นิยาย: {display_title}
 **สถานะ:** พร้อมอัปโหลดขึ้น ReadAWrite, Meb, Dek-D, และ Fictionlog
 **จำนวนตอน:** {len(chapters)} ตอน (~{total_words:,} คำ)
 **ราคาเล่ม E-Book แนะนำ:** {suggested_price} บาท (หรือ 2–3 เหรียญ/ตอน สำหรับระบบอ่านรายตอน)
 
 ---
 ### 🏷️ ข้อมูลสำหรับกรอกหน้านิยาย (Metadata)
-* **ชื่อเรื่อง:** {title}
+* **ชื่อเรื่อง:** {display_title}
 * **หมวดหมู่:** {meta_info['category']}
 * **คำโปรยสั้น (Logline):**
-> {meta_info['logline']}
+> {clean_display_title(meta_info['logline'])}
 
 * **เรื่องย่อฉบับเต็ม:**
-{meta_info['synopsis']}
+{meta_info['synopsis'].replace('_', ' ')}
 
 * **แท็กค้นหา (Tags):**
 `{'`, `'.join(meta_info['tags'])}`
@@ -363,7 +396,10 @@ p { text-indent: 2em; margin: 0.9em 0; text-align: justify; }
 ### 📖 สารบัญและเนื้อหารายตอน (Copy-Paste)
 """
     for ch in chapters:
-        kit_content += f"\n\n---\n## 🔖 ตอนที่ {ch['num']}\n\n{ch['content']}\n"
+        m_sub = re.search(r"^(?:##?\s*ตอนที่\s*\d+|\*\*บทที่\s*\d+[:：\s]*|\s*บทที่\s*\d+[:：\s]*)\s*[:：\s]\s*([^\n\r\*]+)", ch["content"])
+        raw_sub = m_sub.group(1).strip() if m_sub else ""
+        sub_t = clean_chapter_subtitle(raw_sub, display_title, ch["num"])
+        kit_content += f"\n\n---\n## 🔖 ตอนที่ {ch['num']}\n## ตอนที่ {ch['num']}: {sub_t}\n\n{ch['content']}\n"
 
     with open(queue_pkg, "w", encoding="utf-8") as qf:
         qf.write(kit_content)

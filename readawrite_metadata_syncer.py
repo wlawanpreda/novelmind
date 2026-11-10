@@ -91,11 +91,27 @@ def find_assets_for_title(title: str) -> Tuple[Optional[str], Optional[str], Opt
 
 def sync_single_story_metadata(page, aid: str, title: str, cover_path: Optional[str],
                                synopsis: str, update_cover: bool = True) -> bool:
-    """อัปเดตปกและเรื่องย่อของนิยายเรื่องหนึ่งบน ReadAWrite ผ่าน Playwright"""
+    """อัปเดตชื่อเรื่อง (ลบ _), หมวดหมู่ตามแนวจริง, ปก, และเรื่องย่อของนิยายบน ReadAWrite ผ่าน Playwright"""
     setting_url = f"https://www.readawrite.com/?action=manage_article&article_id={aid}&tab=articleSetting"
     try:
         page.goto(setting_url, timeout=35000)
         page.wait_for_timeout(2000)
+
+        # 0. ซ่อมชื่อเรื่องถ้ามี underscore (_) และจัดหมวดหมู่ให้ตรงกับแนวนิยายจริง
+        clean_title = title.replace("_", " ").strip()
+        try:
+            from web_novel_uploader import infer_readawrite_category
+            cat_name, cat_main, cat_sub = infer_readawrite_category(clean_title, synopsis)
+            page.evaluate("""(args) => {
+                if ($("#article_name").length && args.clean_title) {
+                    $("#article_name").val(args.clean_title);
+                }
+                if (typeof setCategory === "function") {
+                    setCategory(args.cat_name, args.cat_main, args.cat_sub);
+                }
+            }""", {"clean_title": clean_title, "cat_name": cat_name, "cat_main": cat_main, "cat_sub": cat_sub})
+        except Exception:
+            pass
 
         # 1. กรอกเรื่องย่อ
         if synopsis:

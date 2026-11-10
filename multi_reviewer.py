@@ -282,18 +282,23 @@ def refine_chapter_prose(
 """
     refined = generate(prompt + NO_META, role="writer")
     cleaned = strip_meta(refined)
-    # ถ้าโมเดลเผลอส่งกลับมาเป็น JSON วิเคราะห์ ให้ปฏิเสธและใช้ current_text แทน
-    if cleaned and cleaned.strip().startswith("{") and cleaned.strip().endswith("}"):
+    # ถ้าหลุดภาษาจีน (CJK >= 3 ตัวติดกัน) หรือส่งกลับมาเป็น JSON วิเคราะห์ ให้ปฏิเสธและใช้ current_text แทน
+    if cleaned and re.search(r"[\u4e00-\u9fff]{3,}", cleaned):
+        print("   ⚠️ [Refiner Guard] ตรวจพบอักษรจีนหลุดในฉบับเกลา — ยกเลิกและคงต้นฉบับภาษาไทยไว้")
+        return current_text
+    if cleaned and (cleaned.strip().startswith("{") or '"优化内容"' in cleaned or '"revised_content"' in cleaned):
         try:
             parsed = json.loads(cleaned)
             for k in ["full_prose", "revised_content", "content", "prose", "chapter_text"]:
                 if k in parsed and isinstance(parsed[k], str) and len(parsed[k]) > 500:
-                    return parsed[k]
+                    if not re.search(r"[\u4e00-\u9fff]{3,}", parsed[k]):
+                        return parsed[k]
         except Exception:
             pass
         return current_text
 
-    if not cleaned or len(cleaned) < 500:
+    # ป้องกัน Refiner ย่อเนื้อหาจนสั้นลงเกิน 35% ของต้นฉบับ
+    if not cleaned or len(cleaned) < max(500, int(len(current_text) * 0.65)):
         return current_text
     return cleaned
 

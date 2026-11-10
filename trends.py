@@ -71,11 +71,18 @@ def _section(body, header):
     return m.group(1).strip() if m else ""
 
 
-def build_report():
+def build_report(force: bool = False):
     rows = gather()
     if not rows:
         print("[trends] ยังไม่มีนิยายที่ analyze แล้ว — รัน scout + analyze ก่อน")
         return None
+
+    # Idempotency check: ถ้า Trend_Report.md มีอยู่แล้วและใหม่กว่าไฟล์ใน 01_Scouting_Pool ทั้งหมด ไม่ต้องเรียก LLM ซ้ำทุกรอบ
+    pool_files = glob.glob(os.path.join(POOL, "*.md"))
+    if not force and os.path.exists(REPORT) and os.path.exists(BRIEF) and pool_files:
+        latest_pool_mtime = max(os.path.getmtime(fp) for fp in pool_files)
+        if os.path.getmtime(REPORT) >= latest_pool_mtime and os.path.getsize(REPORT) > 200:
+            return open(REPORT, "r", encoding="utf-8").read()
 
     # ----- รวมสถิติ -----
     tag_counter = Counter()

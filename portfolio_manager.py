@@ -26,10 +26,15 @@ STORIES_DIR = os.path.join(SB, "05_Active_Projects")
 EXPORTS_DIR = os.path.join(SB, "05_Active_Projects", "Exports")
 
 FLAGSHIP_CANDIDATES = [
+    "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค",
     "ยอดนักสืบสปีดรัน",
     "ร้านค้าเหนือโลก",
+    "รานคาเหนอโลก",
+    "กระจกเงาคนตาย",
     "สมาคมประกันภัยลี้ลับ",
-    "รหัสลับใต้เงา"
+    "รหัสลับใต้เงา",
+    "รหสลบใตเงา",
+    "กลิ่นหอมกู้วิกฤต",
 ]
 
 def scan_portfolio() -> Dict[str, Any]:

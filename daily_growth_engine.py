@@ -54,10 +54,23 @@ def run_full_audit() -> Dict[str, Any]:
     print("=" * 65)
     
     active_stories = get_active_stories()
+    ledger = load_ledger()
+    completed_ids = set(ledger.get("completed_story_ids", []))
+    # สแกนเรื่องที่ยังไม่จบเป็นหลัก (รวมถึงเรื่องตัวอย่างที่จบแล้ว 3 เรื่องแรก)
+    pending_stories = [(aid, t) for aid, t in active_stories if aid not in completed_ids]
+    scan_list = (active_stories[:3] + pending_stories[:8]) if pending_stories else active_stories[:10]
+    # Deduplicate preserving order
+    seen_aids = set()
+    unique_scan = []
+    for aid, t in scan_list:
+        if aid not in seen_aids:
+            seen_aids.add(aid)
+            unique_scan.append((aid, t))
+
     audit_results = []
     issues_found = []
     
-    for aid, title in active_stories[:8]:
+    for aid, title in unique_scan:
         chapters = get_article_chapters(aid)
         if not chapters:
             continue
@@ -116,17 +129,28 @@ def find_and_auto_improve(audit_data: Dict[str, Any]) -> List[str]:
     print(" 🛠️ [Daily Growth Engine] วิเคราะห์จุดที่ต้องพัฒนาและดำเนินการขัดเกลา")
     print("=" * 65)
     
+    from auto_release_scheduler import resolve_chapter_subtitle, update_chapter_title_on_raw
     improvements = []
-    
-    # ตรวจสอบเรื่องปัจจุบันที่กำลังออนแอร์ (เช่น วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์)
+    healed_count = 0
+
+    for s in audit_data["stories"]:
+        for iss in s.get("issues", []):
+            if iss["type"] == "title_duplicate" and healed_count < 5:
+                m_num = re.search(r"ตอนที่\s*(\d+)", iss["chapter"])
+                ch_num = int(m_num.group(1)) if m_num else 1
+                sub = resolve_chapter_subtitle(s["title"], ch_num)
+                new_title = f"ตอนที่ {ch_num}: {sub}"
+                if update_chapter_title_on_raw(s["aid"], iss["guid"], new_title):
+                    healed_count += 1
+                    improvements.append(f"[Self-Heal] ซ่อมชื่อตอน '{s['title']}' -> {new_title}")
+
     active_now = [s for s in audit_data["stories"] if s["status"] == "active"]
     if active_now:
         main_story = active_now[0]
-        print(f" 📖 เรื่องหลักปัจจุบัน: '{main_story['title']}' (เผยแพร่แล้ว {main_story['published']}/{main_story['total_chapters']} ตอน)")
+        print(f" 📖 เรื่องหลักกำลังออนแอร์: '{main_story['title']}' (เผยแพร่แล้ว {main_story['published']}/{main_story['total_chapters']} ตอน)")
         improvements.append(f"ดูแลการปล่อยตอนของ '{main_story['title']}' คงเหลือพร้อมปล่อยอีก {main_story['unpublished']} ตอน")
     else:
-        print(" ℹ️ ซีรีส์ปัจจุบันเผยแพร่ครบทุกตอนแล้ว กำลังเตรียมเรื่องถัดไปขึ้นสู่ระบบ...")
-        # Auto-replenish: ดึงเรื่องใหม่จาก Drafts_Under_Refinement
+        print(" ℹ️ ซีรีส์ที่ตรวจเผยแพร่ครบแล้ว กำลังดึงเรื่องถัดไปเข้าคิว...")
         replenish_res = auto_replenish_next_story()
         if replenish_res:
             improvements.append(f"บรรจุซีรีส์ใหม่เข้าคิวสำเร็จ: '{replenish_res}'")

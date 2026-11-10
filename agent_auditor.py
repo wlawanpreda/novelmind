@@ -107,6 +107,26 @@ FORBIDDEN_PATTERNS = [
     r'"paragraphs"\s*:\s*\[',
     r'"simplified_sentences"\s*:\s*\[',
     r'"character_relations"\s*:\s*\[',
+    r'"revised_novel_content"\s*:',
+    r'"chapter_title"\s*:',
+    r'"Revisions"\s*:\s*\[',
+    r'"Examples"\s*:\s*\[',
+    r'"Detail"\s*:',
+    r'"Description"\s*:',
+    r'"ปรับปรุง"\s*:',
+    r'"section"\s*:',
+    r'"original_text"\s*:',
+    r'"changes"\s*:',
+    r'"revision"\s*:',
+    r'"Structure_and_Hook"\s*:',
+    r'หมายเหตุ:\s*รูปแบบ\s*JSON',
+    r'โปรดตรวจสอบเนื้อหานิยายฉบับปรับปรุง',
+    r'เพื่อให้ตรงตามข้อกำหนด,?\s*หนังสือจึงมีเฉพาะเนื้อหา',
+    r'ความยาวของเนื้อหาคือ\s*\d+\s*คำ',
+    r'เนื้อหานิยายฉบับปรับปรุงอยู่ข้างบนนี้แล้ว',
+    r'เนื้อหานิยายส่งคืนแล้ว\s*ขออนุญาตส่งคืนเฉพาะ',
+    r'"优化内容"\s*:',
+    r'"优化后的文本"\s*:',
     r'[\u4e00-\u9fff]{3,}',  # อักษรจีน 3 ตัวขึ้นไปในเนื้อเรื่องไทย
 ]
 
@@ -222,11 +242,33 @@ def sanitize_meta_talk(text: str) -> str:
                     text = "\n\n".join(p_list)
         else:
             # Fallback: ถ้าเป็น JSON ที่ parse ไม่ได้แต่เป็น JSON block ให้ดึง string ภาษาไทยใน quotes
-            thai_snippets = re.findall(r'"(?:text|suggestions|resolution|recommendation|revised_content|description)"\s*:\s*"([^"]+)"', trimmed)
+            thai_snippets = re.findall(r'"(?:text|suggestions|resolution|recommendation|revised_content|revised_novel_content|description)"\s*:\s*"([^"]+)"', trimmed)
             if thai_snippets:
                 text = "\n\n".join(thai_snippets)
 
+    # กรณี JSON พังตั้งแต่ต้นไฟล์ (ไม่ได้เปิดด้วย { แต่มี "revised_novel_content": "..." หรือ ", ซึ่ง...")
+    if '"revised_novel_content"' in text:
+        m_rev = re.search(r'"revised_novel_content"\s*:\s*"(.*)', text, re.DOTALL)
+        if m_rev:
+            raw_body = m_rev.group(1)
+            raw_body = re.sub(r'"\s*\}\s*(?:โปรดตรวจสอบ.*)?$', "", raw_body, flags=re.DOTALL)
+            raw_body = re.sub(r'"\s*\n\s*",\s*', "\n\n", raw_body)
+            text = raw_body.strip().strip('"')
+
+    # ลบหัวข้อฉากย่อย เช่น "## ตอนที่ 1: ... - ฉากย่อยที่ 2: ..." ที่คั่นกลางบทออกให้เหลือแต่เนื้อเรื่องลื่นไหล
+    text = re.sub(r"(?:\n|^)#+\s*ตอนที่\s*\d+\s*[:：][^\n]*?-\s*ฉากย่อยที่\s*[2-9][^\n]*\n?", "\n", text)
+    text = re.sub(r"(#+\s*ตอนที่\s*\d+\s*[:：]\s*[^\n\-]+?)\s*-\s*ฉากย่อยที่\s*1\s*[:：][^\n]+", r"\1", text)
+
     # แปลง/ลบคำศัพท์จีน-ญี่ปุ่นทั่วไปที่อาจหลงเหลือ
+    # 0.5 ลบ JSON block ภาษาจีนหรือ JSON เศษซากที่หลุดมาช่วงต้นไฟล์ก่อนเริ่มเนื้อเรื่องไทย
+    text = re.sub(
+        r"^(?:\s*\{[^{}]*(?:\"优化内容\"|\"优化后的文本\"|\"revised_content\"|\"suggestions\")[^{}]*\}\s*,?\s*)+",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
+    text = re.sub(r'^\s*"优化后的文本"\s*:\s*"[^"]*"\s*\}?\s*', "", text)
+
     cjk_dict = {
         '魔王': 'จอมมาร', '魑魅魍魉': 'ภูตผีปีศาจ', '神器': 'ศาสตราวุธเทพ', '防卫': 'ป้องกัน',
         '闪烁': 'กะพริบระยิบระยับ', '他说': 'เขาพูดว่า', '琴': 'พิณ', '垭': 'ช่องเขา',
@@ -254,7 +296,7 @@ def sanitize_meta_talk(text: str) -> str:
     # 1. กำจัดส่วนหัว (Leading AI preamble) จนกว่าจะถึงเนื้อเรื่องจริงหรือหัวข้อตอน
     while lines:
         first = lines[0].strip()
-        if not first or first == "---":
+        if not first or first in ("---", "{", "}", "},", "]", "],"):
             lines.pop(0)
             continue
         is_meta = any(p.search(first) for p in _COMPILED_FORBIDDEN)
@@ -283,7 +325,11 @@ def sanitize_meta_talk(text: str) -> str:
         s = line.strip()
 
         # เริ่มต้นบล็อก meta กลางเนื้อหา
-        if re.search(r"\*\*(?:ความคิดเห็นเพิ่มเติม|ข้อเสนอแนะ|โน้ตจากผู้ตรวจทาน|บันทึกจากบรรณาธิการ)", s, re.IGNORECASE):
+        if re.search(
+            r"(?:\*\*(?:ความคิดเห็นเพิ่มเติม|ข้อเสนอแนะ|โน้ตจากผู้ตรวจทาน|บันทึกจากบรรณาธิการ)|^(?:การเพิ่มรายละเอียดและอารมณ์|ข้อติติง|เพื่อให้ตรงตามข้อกำหนด|ความยาวของเนื้อหาคือ|เนื้อหานิยายฉบับปรับปรุงอยู่ข้างบน)\s*[:：]?)",
+            s,
+            re.IGNORECASE,
+        ):
             skip_block = True
             continue
 
@@ -325,7 +371,38 @@ def sanitize_meta_talk(text: str) -> str:
         cleaned_lines.append(line)
 
     res = "\n".join(cleaned_lines).strip()
+    res = deduplicate_repetitive_paragraphs(res)
     return res
+
+
+def deduplicate_repetitive_paragraphs(text: str) -> str:
+    """กำจัดย่อหน้าที่ซ้ำกันเกิน 80% ภายในบทเดียวกัน (แก้ปัญหา Local LLM วนลูปฉากซ้ำ)"""
+    if not text:
+        return ""
+    paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(paragraphs) <= 2:
+        return text
+    unique_paras = []
+    seen_norms = []
+    for p in paragraphs:
+        # ถ้าเป็นหัวข้อตอนหรือคั่นฉาก ให้เก็บไว้
+        if p.startswith("#") or p == "---":
+            unique_paras.append(p)
+            continue
+        norm = re.sub(r"[\s\"'“”‘’.,!?()\-_:;]+", "", p)
+        if len(norm) < 35:
+            unique_paras.append(p)
+            continue
+        is_dup = False
+        for s_norm in seen_norms:
+            # ตรวจสอบว่าข้อความเหมือนกันหรือเป็น substring ยาวๆ ซ้ำกัน
+            if norm == s_norm or (len(norm) > 60 and (norm[:60] == s_norm[:60] and norm[-40:] == s_norm[-40:])):
+                is_dup = True
+                break
+        if not is_dup:
+            seen_norms.append(norm)
+            unique_paras.append(p)
+    return "\n\n".join(unique_paras)
 
 
 # ---------------------------------------------------------------------------
@@ -375,6 +452,13 @@ def audit_title_and_audio_coherence(story_name: str) -> Dict[str, Any]:
 
         with open(as_path, "r", encoding="utf-8") as f:
             as_content = f.read()
+
+        # ตรวจสอบว่า AudioScript มีเนื้อหาบรรยายจริง ไม่ใช่หลุดหายเหลือแต่แท็ก SFX
+        as_clean_words = re.sub(r"\[SFX:[^\]]*\]", "", as_content)
+        as_clean_words = re.sub(r"\[[^\]]*\]", "", as_clean_words).strip()
+        thai_char_count = len(re.findall(r"[\u0E00-\u0E7F]", as_clean_words))
+        if thai_char_count < 100:
+            issues.append(f"บทที่ {ep}: AudioScript ว่างเปล่าหรือมีแต่แท็ก SFX (พบตัวอักษรไทยเพียง {thai_char_count} ตัว) — เสียงจะเงียบสนิท ต้องสร้างบทพากย์ใหม่")
 
         m_as_title = re.search(r"ตอนที่\s*\d+\s*[:：\s]\s*([^\n\r#\(\)]+)", as_content)
         as_title = m_as_title.group(1).strip() if m_as_title else ""

@@ -259,9 +259,14 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     run_stage("auditor", [py, "agent_auditor.py", "--fix"], dry)
     run_stage("qa",      [py, "quality_gate.py", "--all"], dry)
 
+    # 2.8) แพ็กเกจ E-Book (.epub), ชุด WEB_PUBLISH_KIT.md และ Master Audiobook ก่อนส่งขึ้นแพลตฟอร์ม
+    run_stage("epub", [py, "epub_packager.py", "--all", "--min-chapters", "4"], dry)
+    run_stage("audiobook", [py, "audiobook_packager.py", "--all"], dry)
+
     # 3) เผยแพร่ (Phase 4) — publisher จะข้ามแพลตฟอร์มที่ยังไม่เปิด/ไม่มี creds เอง
     if _publish_enabled():
         run_stage("publish", [py, "publisher.py", SECOND_BRAIN], dry)
+        run_stage("web_sync", [py, "web_novel_uploader.py", "--sync-all"], dry)
     else:
         log("[publish] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE/PUBLISH_TIKTOK/PUBLISH_NOVEL")
 
@@ -269,10 +274,6 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     run_stage("drip_release", [py, "auto_release_scheduler.py", "--cron-tick"], dry)
     if os.environ.get("PUBLISH_YOUTUBE", "0").lower() in ("1", "true", "yes", "on"):
         run_stage("privacy_drip", [py, "update_privacy.py", "--public", "--limit", "2"], dry)
-
-    # 3.5) แพ็กเกจ E-Book (.epub) และ Master Audiobook (Long-Form 1080p)
-    run_stage("epub", [py, "epub_packager.py", "--all", "--min-chapters", "4"], dry)
-    run_stage("audiobook", [py, "audiobook_packager.py", "--all"], dry)
 
     # 3.6) ปรับปรุงพอร์ตโฟลิโอธุรกิจ (Portfolio Matrix & Flagship Tracking)
     run_stage("portfolio", [py, "portfolio_manager.py"], dry)

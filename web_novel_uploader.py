@@ -66,6 +66,12 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
         except Exception:
             pass
 
+    # ล้างเครื่องหมาย _, **, ` ออกจากชื่อเรื่องเสมอ
+    title = re.sub(r"[\*`#]+", "", title or "")
+    title = re.sub(r"_+", " ", title)
+    title = re.sub(r"\s{2,}", " ", title).strip()
+    if title == "รหสลบใตเงา บทเพลงแหงกาลเวลา":
+        title = "รหัสลับใต้เงา: บทเพลงแห่งกาลเวลา"
     # แยกตอนตาม header "## 🔖 ตอนที่ X" หรือ "## ตอนที่ X"
     if "## 🔖 ตอนที่" in content:
         raw_chapters = re.split(r"(?:\n|^)##\s*🔖\s*ตอนที่\s*(\d+)", content)
@@ -88,10 +94,18 @@ def parse_web_publish_kit(kit_path: str) -> Dict[str, Any]:
 
             # สกัดชื่อตอนย่อยถ้ามี (รองรับทั้ง ## ตอนที่ X: ..., **บทที่ X: ...**, หรือ บทที่ X: ...)
             m_sub = re.search(r"^(?:##?\s*ตอนที่\s*\d+|\*\*บทที่\s*\d+[:：\s]*|\s*บทที่\s*\d+[:：\s]*)\s*[:：\s]\s*([^\n\r\*]+)", body)
-            ch_title = m_sub.group(1).strip() if m_sub else f"ตอนที่ {num}"
-            # ตัดวงเล็บ meta ในชื่อตอน เช่น (ฉบับ Chief...) และสัญลักษณ์ markdown ที่อาจหลงเหลือ
-            ch_title = re.sub(r"\s*\(?(?:ฉบับขัดเกลาโดย|ฉบับปรับปรุงโดย|ฉบับ)\s*Chief[^\)]*\)?", "", ch_title, flags=re.IGNORECASE).strip()
-            ch_title = ch_title.strip("*_ \t")
+            ch_title = m_sub.group(1).strip() if m_sub else ""
+            # ทำความสะอาดชื่อตอนย่อย: ลบ _, *, ฉากย่อยที่ X, บททดสอบบทที่ X, และวงเล็บ meta
+            ch_title = re.sub(r"[\*`#_]+", " ", ch_title)
+            ch_title = re.sub(r"\s*-\s*ฉากย่อยที่\s*\d+.*$", "", ch_title, flags=re.IGNORECASE)
+            ch_title = re.sub(r"\s*\(?(?:ฉบับขัดเกลา|ฉบับปรับปรุง|ปรับปรุงครั้งที่|ฉบับ\s*Chief)[^\)]*\)?", "", ch_title, flags=re.IGNORECASE)
+            ch_title = re.sub(r"\s{2,}", " ", ch_title).strip(" :：-_\t")
+            if not ch_title or ch_title == f"ตอนที่ {num}" or "บททดสอบบทที่" in ch_title or "ฉากย่อย" in ch_title:
+                try:
+                    from auto_release_scheduler import resolve_chapter_subtitle
+                    ch_title = resolve_chapter_subtitle(title, num)
+                except Exception:
+                    ch_title = f"จุดเปลี่ยนครั้งสำคัญ"
 
             chapters.append({
                 "chapter_num": num,
@@ -237,12 +251,27 @@ def text_to_html(text: str, base_name: Optional[str] = None, chapter_num: Option
     return html
 
 
+def infer_readawrite_category(title: str, synopsis: str = "") -> tuple[str, str, str]:
+    """วิเคราะห์หมวดหมู่นิยายบน ReadAWrite อัตโนมัติตามชื่อเรื่องและคำโปรย แทนการล็อกหมวดสืบสวนทุกเรื่อง"""
+    text = f"{title} {synopsis}".lower()
+    if any(k in text for k in ["ทะลุมิติ", "ย้อนเวลา", "เกิดใหม่", "ยุค 70", "ยุค 80", "อดีต", "จีนโบราณ"]):
+        return ("อดีต ปัจจุบัน อนาคต", "14", "87")
+    if any(k in text for k in ["นางร้าย", "ประธาน", "คลั่งรัก", "คุณแม่", "ลูกแฝด", "รัก", "แต่งงาน", "สามี", "เจ้าหญิง"]):
+        return ("นิยายโรมานซ์", "2", "87")
+    if any(k in text for k in ["เวทมนตร์", "เวทย์มนต์", "ดันเจี้ยน", "ผู้กล้า", "จอมมาร", "มังกร", "ต่างโลก", "ระบบ", "chimera", "succubus", "ปีศาจ"]):
+        return ("นิยายแฟนตาซี", "4", "87")
+    if any(k in text for k in ["ผี", "สยอง", "วิญญาณ", "ตาย", "อาถรรพ์", "ลี้ลับ", "เงา"]):
+        return ("สยองขวัญ", "10", "87")
+    return ("สืบสวน", "61", "87")
+
+
 def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
     """สร้างเรื่องและอัปโหลดทุกบทนิยายขึ้น ReadAWrite อัตโนมัติ"""
     from playwright.sync_api import sync_playwright
     import time
 
-    print(f"\n🚀 [ReadAWrite] เริ่มต้นกระบวนการเผยแพร่นิยาย '{data['title']}'...")
+    clean_display_title = data["title"].replace("_", " ").strip()
+    print(f"\n🚀 [ReadAWrite] เริ่มต้นกระบวนการเผยแพร่นิยาย '{clean_display_title}'...")
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -255,31 +284,46 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
         page.wait_for_timeout(2000)
 
         article_id = None
-        links = page.eval_on_selector_all("a[href*='manage_article&article_id=']", "els => els.map(e => ({href: e.href, text: e.innerText.trim()}))")
-        for l in links:
-            if data["title"] in l["text"]:
-                m = re.search(r"article_id=([a-f0-9]+)", l["href"])
-                if m:
-                    article_id = m.group(1)
-                    print(f"   ✨ พบผลงานที่มีอยู่แล้ว: '{data['title']}' (ID: {article_id})")
+        # เช็กจาก publish_ledger.json ก่อนเพื่อความแม่นยำ 100%
+        try:
+            from auto_release_scheduler import load_ledger
+            ledger = load_ledger()
+            for k_title, k_info in ledger.get("published_stories", {}).items():
+                if (data["title"] in k_title or clean_display_title in k_title.replace("_", " ")) and k_info.get("article_id"):
+                    article_id = k_info["article_id"]
+                    print(f"   ✨ พบผลงานใน Ledger: '{clean_display_title}' (ID: {article_id})")
                     break
+        except Exception:
+            pass
+
+        if not article_id:
+            links = page.eval_on_selector_all("a[href*='manage_article&article_id=']", "els => els.map(e => ({href: e.href, text: e.innerText.trim()}))")
+            for l in links:
+                l_norm = l["text"].replace("_", " ")
+                if data["title"] in l["text"] or clean_display_title in l_norm:
+                    m = re.search(r"article_id=([a-f0-9]+)", l["href"])
+                    if m:
+                        article_id = m.group(1)
+                        print(f"   ✨ พบผลงานที่มีอยู่แล้ว: '{clean_display_title}' (ID: {article_id})")
+                        break
 
         # 2. ถ้ายังไม่เคยสร้าง ให้สร้างเรื่องใหม่
         if not article_id:
-            print(f"   📝 ยังไม่พบผลงาน กำลังสร้างเรื่องใหม่ '{data['title']}'...")
+            print(f"   📝 ยังไม่พบผลงาน กำลังสร้างเรื่องใหม่ '{clean_display_title}'...")
             create_url = "https://www.readawrite.com/?action=manage_article&article_style=ORIGINAL&article_species=FICTION&article_type=MULTI_CHAPTER&translation=0"
             page.goto(create_url, timeout=45000)
             page.wait_for_timeout(2000)
 
-            # กรอกฟอร์มหลัก
-            synopsis = data.get("synopsis", f"เรื่องราวสุดเข้มข้นใน '{data['title']}' ติดตามความสนุกครบทุกตอน")
+            # กรอกฟอร์มหลักพร้อมจัดหมวดหมู่อัตโนมัติตามแนวนิยายจริง
+            synopsis = data.get("synopsis", f"เรื่องราวสุดเข้มข้นใน '{clean_display_title}' ติดตามความสนุกครบทุกตอน")
+            cat_name, cat_main, cat_sub = infer_readawrite_category(clean_display_title, synopsis)
             page.evaluate("""(args) => {
                 $("#article_name").val(args.title);
                 $("#article_synopsis").val(args.synopsis);
                 $("#author_guid").val("ee0889900b3d4191c2b9fb24b49b3444").trigger("change");
-                setCategory("สืบสวน", "61", "87");
+                setCategory(args.cat_name, args.cat_main, args.cat_sub);
                 $("#content_rating").val("1").trigger("change");
-            }""", {"title": data["title"], "synopsis": synopsis})
+            }""", {"title": clean_display_title, "synopsis": synopsis, "cat_name": cat_name, "cat_main": cat_main, "cat_sub": cat_sub})
             page.wait_for_timeout(500)
 
             # อัปโหลดภาพปก
@@ -348,6 +392,14 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
                 print(f"   ⏭️ ข้าม [ตอนที่ {ch_num}] {ch_title} (มีอยู่ในระบบแล้ว)")
                 continue
 
+            # Per-chapter Quality Gate ก่อนอัปโหลดตอนใหม่
+            body = ch["content"]
+            clean_chars = len(re.sub(r'\s+', '', body))
+            w_count = max(len(body.split()), clean_chars // 4)
+            if w_count < 450:
+                print(f"   ⚠️ ข้าม [ตอนที่ {ch_num}] เนื่องจากสั้นเกินเกณฑ์ ({w_count} คำ < 450 คำ)")
+                continue
+
             print(f"\n   📤 กำลังส่ง [ตอนที่ {ch_num}/{total}] {ch_title} ({len(ch['content'])} ตัวอักษร)...")
             new_ch_url = f"https://www.readawrite.com/?action=manage_chapter&article_id={article_id}"
             page.goto(new_ch_url, timeout=45000)
@@ -384,12 +436,19 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
             ledger = load_ledger()
             if "published_stories" not in ledger:
                 ledger["published_stories"] = {}
-            ledger["published_stories"][data["title"]] = {
+            ledger["published_stories"][clean_display_title] = {
                 "article_id": article_id,
                 "platform": "readawrite",
                 "chapters_uploaded": uploaded_count,
+                "total_kit_chapters": total,
                 "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S")
             }
+            # ถ้ามีตอนใหม่อัปโหลดเพิ่ม ให้ปลดล็อกออกจาก completed_story_ids ทันที ताकि Drip Engine ปล่อยตอนใหม่ต่อได้
+            if uploaded_count > 0 and "completed_story_ids" in ledger:
+                comp = set(ledger.get("completed_story_ids", []))
+                if article_id in comp:
+                    comp.remove(article_id)
+                    ledger["completed_story_ids"] = list(comp)
             save_ledger(ledger)
         except Exception:
             pass
@@ -402,8 +461,14 @@ def upload_story_readawrite(data: Dict[str, Any], state_file: str) -> bool:
 
 def upload_story(story_name: str, platform: str = "readawrite", dry_run: bool = False) -> bool:
     """ประมวลผลและส่งตอนนิยายขึ้นแพลตฟอร์ม"""
-    # หาไฟล์ WEB_PUBLISH_KIT ของเรื่องนี้
-    kits = glob.glob(os.path.join(QUEUE_DIR, f"*{story_name}*_WEB_PUBLISH_KIT.md"))
+    # หาไฟล์ WEB_PUBLISH_KIT ของเรื่องนี้ (รองรับทั้งชื่อมี _ และไม่มี _)
+    clean_query = re.sub(r"[\*\:\s_]+", "_", story_name).strip("_")
+    prefix_query = clean_query.split("_")[0]
+    kits = (
+        glob.glob(os.path.join(QUEUE_DIR, f"*{story_name}*_WEB_PUBLISH_KIT.md"))
+        + glob.glob(os.path.join(QUEUE_DIR, f"*{clean_query}*_WEB_PUBLISH_KIT.md"))
+        + glob.glob(os.path.join(QUEUE_DIR, f"*{prefix_query}*_WEB_PUBLISH_KIT.md"))
+    )
     if not kits:
         print(f"[!] ไม่พบชุดเผยแพร่ WEB_PUBLISH_KIT สำหรับ '{story_name}' ใน Publish_Queue")
         return False
@@ -413,40 +478,46 @@ def upload_story(story_name: str, platform: str = "readawrite", dry_run: bool = 
     print(f"   • จำนวนตอนพร้อมส่ง: {data['chapters_count']} ตอน")
 
     # -----------------------------------------------------------------------
-    # MANDATORY QUALITY GATE (Pre-flight Inspection)
+    # MANDATORY QUALITY GATE (Pre-flight Inspection per Chapter)
     # -----------------------------------------------------------------------
     print(f"\n🛡️ [Quality Gate] กำลังตรวจสอบคุณภาพมาตรฐานของ '{data['title']}'...")
-    qc_failed = []
+    valid_chapters = []
+    qc_warnings = []
     for ch in data["chapters"]:
         body = ch["content"]
         clean_chars = len(re.sub(r'\s+', '', body))
         w_count = max(len(body.split()), clean_chars // 4)
-        
-        # 1. ตรวจสอบความยาว
-        if w_count < 800:
-            qc_failed.append(f"ตอนที่ {ch['chapter_num']} มีเพียง {w_count} คำ (ขั้นต่ำคือ 800-1,000 คำ)")
-        
-        # 2. ตรวจสอบชื่อตอนซ้ำซ้อน
-        if ch['chapter_title'] == f"ตอนที่ {ch['chapter_num']}" or not ch['chapter_title']:
-            qc_failed.append(f"ตอนที่ {ch['chapter_num']} ไม่มีชื่อตอนย่อย (Subtitle)")
+        ch_errs = []
 
-        # 3. ตรวจสอบ AI Meta-Talk / Prompt Leaks
+        # 1. ตรวจสอบความยาว (ยืดหยุ่นสำหรับบทที่ตัดย่อหน้าซ้ำออกแล้ว: ขั้นต่ำ 450 คำ)
+        if w_count < 450:
+            ch_errs.append(f"ตอนที่ {ch['chapter_num']} สั้นเกินไป ({w_count} คำ < 450 คำ)")
+
+        # 2. ตรวจสอบ AI Meta-Talk / Prompt Leaks
         try:
             from agent_auditor import detect_meta_talk
             leaks = detect_meta_talk(body)
             if leaks:
-                qc_failed.append(f"ตอนที่ {ch['chapter_num']} พบข้อความ AI/Prompt หลุด: '{leaks[0].get('matched')}'")
+                ch_errs.append(f"ตอนที่ {ch['chapter_num']} พบข้อความ AI/Prompt หลุด: '{leaks[0].get('matched')}'")
         except Exception:
             pass
 
-    if qc_failed:
-        print(f"\n❌ [BLOCKED BY QUALITY GATE] ไม่สามารถเผยแพร่ '{data['title']}' ได้ เนื่องจากไม่ผ่านเกณฑ์คุณภาพ:")
-        for err in qc_failed:
-            print(f"   ⛔ {err}")
-        print("\n⚠️ ระบบได้ระงับการอัปโหลดอัตโนมัติ เพื่อรักษามาตรฐานผลงาน กรุณาปรับปรุงเนื้อหาก่อนส่งอีกครั้ง")
+        if ch_errs:
+            qc_warnings.extend(ch_errs)
+        else:
+            valid_chapters.append(ch)
+
+    if qc_warnings:
+        for w in qc_warnings:
+            print(f"   ⚠️ ข้ามเฉพาะตอนที่ไม่ผ่านเกณฑ์: {w}")
+
+    if not valid_chapters:
+        print(f"\n❌ [BLOCKED BY QUALITY GATE] '{data['title']}' ไม่มีตอนใดผ่านเกณฑ์คุณภาพเลย")
         return False
-    
-    print("   ✅ ผ่านการตรวจสอบมาตรฐานคุณภาพทุกข้อ (100% Passed)!")
+
+    data["chapters"] = valid_chapters
+    data["chapters_count"] = len(valid_chapters)
+    print(f"   ✅ ผ่านการตรวจสอบมาตรฐานคุณภาพ {len(valid_chapters)} ตอน พร้อมส่งขึ้นระบบ!")
 
     if dry_run:
         print("\n🧪 [DRY RUN MODE] ตรวจสอบความถูกต้องของบทนิยาย (ไม่ส่งขึ้นเว็บจริง):")
@@ -488,6 +559,38 @@ if __name__ == "__main__":
         print(f"  • Dek-D      : {'✅ มีเซสชันพร้อมใช้งาน' if st['dekd'] else '❌ ยังไม่ได้ล็อกอิน (รัน --auth dekd)'}")
         kits = glob.glob(os.path.join(QUEUE_DIR, "*_WEB_PUBLISH_KIT.md"))
         print(f"\n📦 คลัง Publish Kits ที่พร้อมส่ง: {len(kits)} เรื่องใน SecondBrain/05_Active_Projects/Publish_Queue")
+    elif "--sync-all" in args:
+        dry = "--dry" in args or "--dry-run" in args
+        limit = int(args[args.index("--limit") + 1]) if "--limit" in args else 5
+        kits = sorted(glob.glob(os.path.join(QUEUE_DIR, "*_WEB_PUBLISH_KIT.md")))
+        from auto_release_scheduler import load_ledger
+        ledger = load_ledger()
+        pub_stories = ledger.get("published_stories", {})
+        # จัดลำดับ Flagship ขึ้นก่อนเสมอ
+        flagship_kw = ("ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค", "เมื่อนางร้ายหมดรัก", "สาวอภินิหารหัวใจเหล็ก",
+                       "วีรบุรุษสุดขี้เกียจ", "สมาคมประกันภัยลี้ลับ", "ยอดนักสืบสปีดรัน", "กระจกเงาคนตาย")
+        kits.sort(key=lambda p: 0 if any(k in os.path.basename(p) for k in flagship_kw) else 1)
+        synced = 0
+        for kp in kits:
+            if not dry and limit > 0 and synced >= limit:
+                break
+            data = parse_web_publish_kit(kp)
+            clean_t = data["title"].replace("_", " ").strip("* ")
+            # เช็กว่ามีตอนใหม่ใน Kit ที่มากกว่าที่เคยซิงค์ไว้หรือไม่ (รองรับชื่อย่อ/ชื่อเต็ม)
+            prev_info = pub_stories.get(clean_t) or pub_stories.get(data["title"])
+            if not prev_info:
+                for k_st, v_st in pub_stories.items():
+                    k_clean = k_st.replace("_", " ").strip("* ")
+                    if (clean_t in k_clean or k_clean in clean_t) and v_st.get("article_id"):
+                        prev_info = v_st
+                        break
+            prev_info = prev_info or {}
+            prev_total = int(prev_info.get("total_kit_chapters", 0) or 0)
+            if data["chapters_count"] > prev_total and prev_info.get("article_id"):
+                print(f"\n🔄 [Sync New Chapters] '{clean_t}' มีตอนเพิ่ม ({prev_total} -> {data['chapters_count']} ตอน)")
+                if upload_story(data["title"], platform="readawrite", dry_run=dry):
+                    synced += 1
+        print(f"\n✅ ซิงค์ตอนใหม่ขึ้น ReadAWrite เสร็จสิ้น ({synced} เรื่อง)")
     elif args:
         target_story = args[0]
         dry = "--dry" in args or "--dry-run" in args

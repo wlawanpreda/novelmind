@@ -152,7 +152,11 @@ def write_next_chapter(sb, title, n):
 
 แผนฉากนี้: สถานที่={b.get('setting')} | เป้าหมาย={b.get('goal')} | เหตุการณ์={b.get('action')} | จุดสำคัญ={b.get('climax')}
 
-เขียนฉากนี้ ~{scene_words} คำ ต่อเนื่องเป็นธรรมชาติ ไม่ยืดเยื้อ คงความสอดคล้องของกฎ/ตัวเลข/สถานะ"""
+ข้อบังคับสำคัญ:
+1. เขียนฉากนี้ ~{scene_words} คำ ต่อเนื่องเป็นธรรมชาติ ไม่ยืดเยื้อ
+2. ห้ามเขียนซ้ำเหตุการณ์หรือบทสนทนาที่เกิดขึ้นไปแล้วใน "ฉากก่อนหน้าในตอนนี้" เด็ดขาด ต้องเดินเรื่องไปข้างหน้าสู่เหตุการณ์ใหม่ตามแผนฉากนี้
+3. คงความสอดคล้องของยุคสมัย ชื่อตัวละคร เพศ (ครับ/ค่ะ) และกฎ/ตัวเลข/สถานะตามโครงเรื่องอย่างเคร่งครัด
+4. ห้ามใช้อักษรภาษาจีนหรือส่งคืนเป็น JSON เด็ดขาด"""
         sc = strip_meta(generate_content_safe("writer", sp + NO_META))
         scenes.append(sc)
         prev_in_chapter += "\n\n" + sc
@@ -284,14 +288,27 @@ def main():
         return
 
     if target:
-        # เขียนเรื่องที่ยังไม่ถึงเป้า เรียงตาม "ห่างเป้าสุด" ก่อน → กระจายความลึกทั่วถึง
-        gaps = [(t, target - (_next_n(sb, t) - 1)) for t in projects]
-        gaps = sorted([g for g in gaps if g[1] > 0], key=lambda x: -x[1])[:max_stories]
-        if not gaps:
-            print(f"[continue] ทุกเรื่องถึงเป้า {target} ตอนแล้ว ✅")
+        # เรื่องเรือธง (Flagship) ดันเป้าอัตโนมัติเป็น 20 ตอน เพื่อทำ Long-Form Audiobook & เก็บเหรียญอ่านล่วงหน้า
+        flagship_kw = ("ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค", "ยอดนักสืบสปีดรัน", "ร้านค้าเหนือโลก", "รานคาเหนอโลก",
+                       "กระจกเงาคนตาย", "สมาคมประกันภัยลี้ลับ", "รหัสลับใต้เงา", "รหสลบใตเงา", "กลิ่นหอมกู้วิกฤต")
+        flagship_target = int(os.environ.get("ANSRE_FLAGSHIP_CHAPTERS", "20"))
+        gaps = []
+        for t in projects:
+            cur_n = _next_n(sb, t) - 1
+            is_flag = any(k in t for k in flagship_kw)
+            eff_target = max(target, flagship_target) if is_flag else target
+            gap = eff_target - cur_n
+            if gap > 0:
+                # ให้ความสำคัญกับเรื่องที่ยังเขียนไม่ครบ 8 ตอนก่อน แล้วตามด้วยเรื่อง Flagship ที่กำลังขยายสู่ 20 ตอน
+                priority = (0 if cur_n < target else 1, -gap if not is_flag else -100 - gap)
+                gaps.append((priority, t, gap, eff_target))
+        gaps.sort(key=lambda x: x[0])
+        selected = gaps[:max_stories]
+        if not selected:
+            print(f"[continue] ทุกเรื่องถึงเป้า ({target} ตอน / Flagship {flagship_target} ตอน) แล้ว ✅")
             return
-        print(f"[continue] เป้า {target} ตอน · ทำ {len(gaps)} เรื่อง (สูงสุด {max_per_run} ตอน/เรื่อง/รอบ)")
-        for title, gap in gaps:
+        print(f"[continue] เป้ามาตรฐาน {target} ตอน (Flagship {flagship_target} ตอน) · ทำ {len(selected)} เรื่อง (สูงสุด {max_per_run} ตอน/เรื่อง/รอบ)")
+        for _, title, gap, eff_target in selected:
             for _ in range(min(gap, max_per_run)):
                 n = _next_n(sb, title)
                 try:

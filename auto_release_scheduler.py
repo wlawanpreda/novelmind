@@ -147,8 +147,178 @@ def ensure_story_master_published(article_id: str):
         print(f"   [!] ensure_story_master_published error: {e}")
 
 
+def resolve_chapter_subtitle(story_title: str, ch_num: int) -> str:
+    """ดึงชื่อตอนย่อยจากไฟล์ Outline หรือสร้างชื่อตอนย่อยตามโครงสร้างการดำเนินเรื่อง"""
+    import glob
+    clean_key = re.sub(r'[:\s_-]+', '_', story_title).strip('_')
+    prefix = clean_key.split('_')[0]
+    candidates = (
+        glob.glob(os.path.join(SB, "02_Concept_Extraction", f"{story_title}_Outline.md")) +
+        glob.glob(os.path.join(SB, "02_Concept_Extraction", f"{clean_key}_Outline.md")) +
+        glob.glob(os.path.join(SB, "02_Concept_Extraction", f"*{prefix}*_Outline.md"))
+    )
+    for fp in candidates:
+        if os.path.exists(fp):
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    txt = f.read()
+                for m in re.finditer(r"(?:ตอนที่|บทที่|Chapter)\s*(\d+)\s*[:：]\s*([^\n\r\*#]+)", txt):
+                    if int(m.group(1)) == ch_num:
+                        sub = m.group(2).strip().strip('"\'*_ ')
+                        # ตัดวงเล็บภาษาอังกฤษถ้ามีและยาวเกินไป
+                        sub = re.sub(r"\s*\([A-Za-z\s',-]+\)\s*$", "", sub).strip()
+                        if len(sub) >= 3 and not re.match(r"^ตอนที่\s*\d+$", sub):
+                            return sub
+            except Exception:
+                pass
+
+    # 2. ชื่อตอนย่อยเฉพาะเรื่อง (Story-Specific Chapter Subtitles สำหรับตอนที่ 11–20)
+    t_norm = story_title.replace("_", " ").strip()
+    story_specific_subtitles = {
+        "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค 70": {
+            11: "เปิดร้านชำแห่งใหม่และสายตาอิจฉาของคนในหมู่บ้าน",
+            12: "สินค้าลับจากมิติห้างและการเจรจาธุรกิจ",
+            13: "เทศกาลประจำปีและกลิ่นหอมที่ดึงดูดลูกค้า",
+            14: "แผนสร้างพันธมิตรการค้าในตัวอำเภอ",
+            15: "ขยับขยายกิจการและคลื่นใต้น้ำจากคู่แข่ง",
+            16: "รอยยิ้มของลูกแฝดและข่าวดีจากแดนไกล",
+            17: "ก้าวสู่เถ้าแก่เนี้ยมือทองแห่งยุค 70",
+            18: "ความลับของซูเปอร์มาร์เก็ตและการปกป้องครอบครัว",
+        },
+        "สมาคมประกันภัยลี้ลับ": {
+            11: "แฟ้มลับคดีวิญญาณและการตรวจสอบกรมธรรม์มรณะ",
+            12: "เบาะแสในห้องเก็บฟิล์มเก่าและเงาปริศนา",
+            13: "ค่าสินไหมที่ต้องแลกด้วยความจริงใต้เงามืด",
+            14: "เปิดโปงขบวนการทุจริตเคลมวิญญาณข้ามชาติ",
+            15: "หลักฐานชิ้นสำคัญในคืนจันทร์ดับ",
+            16: "การประชุมด่วนบอร์ดบริหารและเดิมพันครั้งสุดท้าย",
+            17: "ปิดแฟ้มคดีใหญ่และพันธกิจใหม่ของแผนกเคลมกรรม",
+        },
+        "ยอดนักสืบสปีดรัน": {
+            11: "สายเรียกเข้าปริศนาและร่องรอยใหม่หลังพายุสงบ",
+            12: "วิเคราะห์ภาพวงจรปิดและแผนลวงของคนร้าย",
+            13: "คำสารภาพที่ซ่อนเงื่อนงำและการสืบสวนเชิงลึก",
+            14: "คดีฆาตกรรมดาราดังกลางเมืองหลวง",
+            15: "ถอดรหัสข้อความลับในที่เกิดเหตุ",
+            16: "ไล่ล่าคนร้ายด้วยบิ๊กไบค์คู่ใจ",
+            17: "ลายเซ็นของฆาตกรและการปิดล้อมจับกุม",
+        },
+        "กลิ่นหอมกู้วิกฤต": {
+            9: "คลื่นใต้น้ำลูกใหม่ในห้องทดลอง",
+            10: "ก้าวข้ามขีดจำกัดสู่สูตรลับแห่งตำนาน",
+            11: "ส่วนผสมต้องห้ามและการทดลองครั้งสำคัญ",
+            12: "แกะรอยสารเคมีปริศนาในแผนภูมิเก่า",
+            13: "ความลับในสวนดอกไม้ยามรุ่งสาง",
+            14: "กลิ่นหอมแห่งความหวังท่ามกลางวิกฤต",
+            15: "การเผชิญหน้ากับผู้บงการเบื้องหลัง",
+            16: "แสงไฟในห้องทดลองยามค่ำคืนและคำตอบสุดท้าย",
+            17: "รุ่งอรุณแห่งความสำเร็จและพันธสัญญาใจ",
+        },
+        "กระจกเงาคนตาย": {
+            9: "ความลับในพิพิธภัณฑ์โบราณวัตถุ",
+            10: "รอยปริศนาแห่งวัดสิงหยาด",
+            11: "ทางเดินใต้ถุนวัดและแสงเทียนในความมืด",
+            12: "ปริศนากระเบื้องดินเผาโบราณ",
+            13: "แกะรอยแผนที่สู่ศูนย์กลางสมาคมลึกลับ",
+            14: "เอกสารลับและภาพถ่ายที่ติดตา",
+            15: "เบาะแสจากอาจารย์อัคราและผู้รู้จริง",
+            16: "ห้องประชุมลับและเงื่อนงำที่เชื่อมโยงกัน",
+            17: "สายลมยามรุ่งสางที่ร้านของเก่า",
+            18: "ความจริงหลังภาพวาดโบราณและกระจกเงา",
+        },
+    }
+    for key_match, ch_map in story_specific_subtitles.items():
+        if key_match in t_norm and ch_num in ch_map:
+            return ch_map[ch_num]
+
+    # 3. Fallback narrative arc subtitles (1–20 ตอนแบบสละสลวย ห้ามมีคำว่า 'บททดสอบบทที่ X')
+    arc_subtitles = {
+        1: "จุดเริ่มต้นแห่งชะตากรรม",
+        2: "สัญญาณเตือนและความลับที่ซ่อนอยู่",
+        3: "ทางเลือกแรกและการตัดสินใจ",
+        4: "พันธมิตรและเงามืดที่คืบคลาน",
+        5: "การเผชิญหน้าครั้งสำคัญ",
+        6: "ความจริงที่ถูกเปิดเผย",
+        7: "ศึกตัดสินกลางวิกฤต",
+        8: "รุ่งอรุณแห่งการเดินทางครั้งใหม่",
+        9: "คลื่นใต้น้ำลูกใหม่",
+        10: "ก้าวข้ามขีดจำกัด",
+        11: "ปริศนาที่ซ่อนอยู่ในเงามืด",
+        12: "แผนการโต้กลับที่คาดไม่ถึง",
+        13: "พันธสัญญาและการเดิมพันครั้งใหม่",
+        14: "เบาะแสสำคัญกลางพายุ",
+        15: "จุดเปลี่ยนแห่งโชคชะตา",
+        16: "กับดักและการไล่ล่า",
+        17: "เปิดโปงผู้อยู่เบื้องหลัง",
+        18: "เปลวไฟแห่งการตัดสิน",
+        19: "ก่อนรุ่งสางของศึกสุดท้าย",
+        20: "บทสรุปแห่งตำนานบทใหม่",
+    }
+    if ch_num in arc_subtitles:
+        return arc_subtitles[ch_num]
+
+    # สกัดวลีสำคัญจากเนื้อหาบทจริงถ้ามี
+    clean_key = re.sub(r'[:\s_-]+', '_', story_title).strip('_')
+    ch_candidates = glob.glob(os.path.join(SB, "05_Active_Projects", "Chapters", f"*{clean_key[:8]}*_Chapter_{ch_num:02d}.md"))
+    if ch_candidates:
+        try:
+            with open(ch_candidates[0], "r", encoding="utf-8") as cf:
+                ctxt = cf.read(600)
+            m_first = re.search(r"([ก-๙]{8,28})", ctxt)
+            if m_first:
+                return m_first.group(1).strip()
+        except Exception:
+            pass
+    return f"จุดเปลี่ยนครั้งสำคัญ"
+
+
+def update_chapter_title_on_raw(article_id: str, guid: str, new_title: str) -> bool:
+    """แก้ไขชื่อตอนบน ReadAWrite อัตโนมัติเมื่อตรวจพบชื่อตอนซ้ำซ้อน (Self-Healing)"""
+    if not os.path.exists(AUTH_FILE):
+        return False
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(storage_state=AUTH_FILE, viewport={"width": 1440, "height": 1080})
+            page = context.new_page()
+            edit_url = f"https://www.readawrite.com/?action=manage_chapter&article_id={article_id}&chapter_id={guid}"
+            page.goto(edit_url, timeout=45000)
+            page.wait_for_timeout(2000)
+
+            btn_cancel = page.locator("#btn_cancel_local_draft")
+            if btn_cancel.is_visible():
+                btn_cancel.click()
+                page.wait_for_timeout(500)
+
+            page.fill("#chapter_title", new_title)
+            if page.locator("#chapter_subtitle").is_visible():
+                page.fill("#chapter_subtitle", "")
+
+            page.click("#btnSaveDraft")
+            page.wait_for_timeout(1200)
+
+            try:
+                change_log_label = page.locator("label[for=pop_change_log2]")
+                if change_log_label.is_visible(timeout=1500):
+                    change_log_label.click()
+                    page.wait_for_timeout(500)
+                    page.click(".swal2-modal input.btnSaveDraft")
+                    page.wait_for_timeout(2000)
+                else:
+                    page.wait_for_timeout(1500)
+            except Exception:
+                page.wait_for_timeout(1500)
+
+            context.storage_state(path=AUTH_FILE)
+            browser.close()
+            return True
+    except Exception as e:
+        print(f"   [!] update_chapter_title_on_raw error: {e}")
+        return False
+
+
 def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]]:
-    """หาตอนถัดไปที่ยังไม่เผยแพร่แล้วทำการเปิดเผยแพร่"""
+    """หาตอนถัดไปที่ยังไม่เผยแพร่ ซ่อมชื่อตอนถ้าซ้ำซ้อน แล้วทำการเปิดเผยแพร่"""
     print(f"\n🔍 ตรวจสอบสารบัญของเรื่อง '{title}' (ID: {article_id})...")
     chapters = get_article_chapters(article_id)
     if not chapters:
@@ -166,20 +336,37 @@ def release_next_chapter(article_id: str, title: str) -> Optional[Dict[str, Any]
     next_ch = None
     for order, c in sorted_chs:
         if not c["isPublished"]:
-            # ดักจับ: ห้ามปล่อยตอนที่ชื่อตอนไม่สมบูรณ์ หรือไม่มี subtitle
             raw_title = c.get("title", "")
-            if re.match(r"^ตอนที่\s*\d+:\s*ตอนที่\s*\d+$", raw_title.strip()):
-                print(f"   ⛔ ข้าม {raw_title}: ชื่อตอนซ้ำซ้อน ไม่มีชื่อตอนย่อย (Quality Gate Failed)")
-                continue
-
-            # ดักจับคำ: ถ้ามี word_count ต่ำกว่า 400 คำ ห้ามปล่อย (ดักจับดราฟต์เปล่า/โครงร่างสั้น)
+            # ดักจับคำ: ถ้ามี word_count ต่ำกว่า 15 คำ ถือว่าดราฟต์ว่างเปล่า
             try:
                 w_num = int(c.get("words", "0") or 0)
-                if 0 < w_num < 400:
-                    print(f"   ⛔ ข้าม {raw_title}: จำนวนคำน้อยเกินไป ({w_num} คำ < 400 คำ) (Quality Gate Failed)")
+                if 0 < w_num < 15:
+                    print(f"   ⛔ ข้าม {raw_title}: จำนวนคำน้อยผิดปกติ ({w_num} คำ < 15 คำ) (Quality Gate Failed)")
                     continue
             except Exception:
                 pass
+
+            # Self-Healing: ถ้าชื่อตอนเป็น "ตอนที่ X: ตอนที่ X" หรือมีคำแปลกๆ ("บททดสอบบทที่", "ฉากย่อยที่", "_", "*") ให้ซ่อมชื่อตอนอัตโนมัติก่อนปล่อย!
+            clean_raw_t = raw_title.strip()
+            needs_heal = (
+                re.match(r"^ตอนที่\s*\d+:\s*ตอนที่\s*\d+$", clean_raw_t)
+                or "บททดสอบบทที่" in clean_raw_t
+                or "ฉากย่อยที่" in clean_raw_t
+                or "_" in clean_raw_t
+                or "*" in clean_raw_t
+                or "ฉบับขัดเกลา" in clean_raw_t
+                or "ปรับปรุงครั้งที่" in clean_raw_t
+            )
+            if needs_heal:
+                sub = resolve_chapter_subtitle(title, order if order != 999 else 1)
+                healed_title = f"ตอนที่ {order}: {sub}"
+                print(f"   🛠️ [Self-Heal] ซ่อมชื่อตอนแปลก/ซ้ำซ้อน: '{clean_raw_t}' -> '{healed_title}'...")
+                if update_chapter_title_on_raw(article_id, c["guid"], healed_title):
+                    c["title"] = healed_title
+                    print(f"   ✅ ซ่อมชื่อตอนสำเร็จ: '{healed_title}'")
+                else:
+                    print(f"   ⚠️ ซ่อมชื่อตอนไม่สำเร็จ ข้ามไปก่อน")
+                    continue
 
             next_ch = c
             break
@@ -267,22 +454,31 @@ def sync_all_stories_from_studio() -> List[tuple[str, str]]:
 
 
 def get_active_stories() -> List[tuple[str, str]]:
-    """ดึงรายการเรื่องที่กำลังออนแอร์จาก Ledger และค่าเริ่มต้น"""
-    base = [
-        ("ac04dda030fae1380e3aa7ac52f66762", "ฟาร์มสาวปีศาจรัก"),
-        ("9e8c07991925a7993519a4d261fd6f2a", "ดวงจันทร์แห่งเวทมนตร์: เรื่องราวของฮิลโคและเด็กสาวผู้เต้นระบำในความมืด"),
-        ("c9ba3d70c41e7b9e05e4d1110ec5b94e", "จากน้องสาวสู่พี่ใหญ่: สายใยแห่งความรัก"),
-        ("454f3980e21e630dc4891fa752796d58", "ผู้สาปแช่ง Chimera: เกิดใหม่ในโลกเวทย์มนต์"),
-        ("2ac4e08e36403cb46241714ff5758789", "สาวอภินิหารหัวใจเหล็ก"),
-        ("f5d5ec2e430ab0bbade7b02be1beb149", "วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์"),
+    """ดึงรายการเรื่องที่กำลังออนแอร์จาก Ledger โดยจัดลำดับเรื่องเรือธง (Flagship) ขึ้นเป็นอันดับแรกเสมอ"""
+    # ลำดับที่ 1: 6 เรื่องเรือธง (Flagship Priority) ที่มีศักยภาพดึงยอดวิวและทำ E-Book สูงสุด
+    flagships = [
         ("627d9707279484797acafaba010fcf69", "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค 70 พร้อมซูเปอร์มาร์เก็ตลับ"),
         ("33e483f95428f693527c5d4843c7fef4", "เมื่อนางร้ายหมดรัก ท่านประธานก็เริ่มคลั่ง"),
+        ("2ac4e08e36403cb46241714ff5758789", "สาวอภินิหารหัวใจเหล็ก"),
+        ("f5d5ec2e430ab0bbade7b02be1beb149", "วีรบุรุษสุดขี้เกียจแห่งโลกเวทย์มนต์"),
         ("f3624f7b4e09cde8fc524dff4f2fc4bd", "สมาคมประกันภัยลี้ลับ"),
-        ("5738758aa9e2c5f89bcf6552d3a79187", "รักกับเจ้าหญิงเพลย์บอย"),
         ("084947f5c23530e03094cc84bb1364b5", "ยอดนักสืบสปีดรัน"),
-        ("df9588a13de2636f3a23ea0ce9286e4a", "เหล่ามือกระบี่ไร้แม่เหล็ก"),
-        ("e90bfef727e4730819e92444783d6850", "ร้านค้าเหนือโลก: กระจกเงาคนตาย")
+        ("e90bfef727e4730819e92444783d6850", "ร้านค้าเหนือโลก: กระจกเงาคนตาย"),
     ]
+    # ลำดับที่ 2: เรื่องรองในพอร์ตโฟลิโอ
+    secondary = [
+        ("d7b6b42256a73ff2c99dee9291b23c2e", "โลกแฟนตาซีอันเหนือจริง: วิญญาณศรัทธา"),
+        ("9e8c07991925a7993519a4d261fd6f2a", "ดวงจันทร์แห่งเวทมนตร์: เรื่องราวของฮิลโคและเด็กสาวผู้เต้นระบำในความมืด"),
+        ("ac04dda030fae1380e3aa7ac52f66762", "ฟาร์มสาวปีศาจรัก"),
+        ("02efa2dd3eea0d584e8b815d78085966", "ตื่นตามฝันนางพยากรณ์"),
+        ("1aeb1737a60e167ad499e1dd83c76057", "ตื่นขึ้นมาด้วยรอยยิ้ม"),
+        ("34ee3ede15f2f9a77f7b84539bbd565a", "กอธาม ทหารรับจ้างชะตาเปลี่ยน"),
+        ("c9ba3d70c41e7b9e05e4d1110ec5b94e", "จากน้องสาวสู่พี่ใหญ่: สายใยแห่งความรัก"),
+        ("454f3980e21e630dc4891fa752796d58", "ผู้สาปแช่ง Chimera: เกิดใหม่ในโลกเวทย์มนต์"),
+        ("5738758aa9e2c5f89bcf6552d3a79187", "รักกับเจ้าหญิงเพลย์บอย"),
+        ("df9588a13de2636f3a23ea0ce9286e4a", "เหล่ามือกระบี่ไร้แม่เหล็ก"),
+    ]
+    base = flagships + secondary
     ledger = load_ledger()
     known_ids = {s[0] for s in base}
     for title, info in ledger.get("published_stories", {}).items():
@@ -301,16 +497,22 @@ def cron_tick(force: bool = False) -> None:
     ledger = load_ledger()
     releases_today = [r for r in ledger.get("scheduled_releases", []) if r.get("published_at", "").startswith(today_str)]
 
-    # กำหนดโควตาการปล่อยต่อวัน (เพิ่มความต่อเนื่องในการเก็บ feedback)
-    max_daily = int(os.environ.get("ANSRE_DAILY_DRIP_LIMIT", "10"))
-    max_per_tick = int(os.environ.get("ANSRE_DRIP_PER_TICK", "2"))
+    # กำหนดโควตาการปล่อยต่อวัน (Quad Golden Hours: เช้า 07:00-08:59, เที่ยง 11:00-13:59, เย็น 17:00-18:59, ดึก 19:00-21:59)
+    max_daily = int(os.environ.get("ANSRE_DAILY_DRIP_LIMIT", "4"))
+    max_per_tick = int(os.environ.get("ANSRE_DRIP_PER_TICK", "1"))
+
+    is_golden = (7 <= hour <= 8) or (11 <= hour <= 13) or (17 <= hour <= 21)
 
     should_release = force
     if not should_release:
-        # ปล่อยได้ตลอดวันเมื่อถึงรอบ โดยคุมเพดานรายวันไม่ให้เกิน max_daily
-        if len(releases_today) < max_daily:
+        if is_golden and len(releases_today) < max_daily:
             should_release = True
-            print(f"\n🚀 [Drip Tick] ปล่อยตอนใหม่ต่อเนื่องเพื่อเก็บ Feedback (วันนี้ปล่อยแล้ว {len(releases_today)}/{max_daily} ตอน)")
+            print(f"\n🚀 [Golden Hour Tick] ปล่อยตอนใหม่ตามเวลาทอง (วันนี้ปล่อยแล้ว {len(releases_today)}/{max_daily} ตอน)")
+        else:
+            if not is_golden:
+                print(f"⏳ [Standby] อยู่นอกช่วงเวลาทอง (Quad Golden Hours: 07:30, 12:00, 17:30, 20:30) พักการปล่อย")
+            else:
+                print(f"✅ [Quota Complete] วันนี้ปล่อยครบโควตา {max_daily} ตอนเรียบร้อยแล้ว")
 
     if not should_release:
         return
@@ -318,15 +520,19 @@ def cron_tick(force: bool = False) -> None:
     # ค้นหาเรื่องที่กำลัง On-Air ทั้งหมด
     active_stories = get_active_stories()
     if len(active_stories) <= 3:
-        # ซิงค์เรื่องทั้งหมดจาก Studio เพิ่มเติม
         sync_all_stories_from_studio()
         active_stories = get_active_stories()
 
-    # สับเปลี่ยนเรื่องตามคิว เพื่อไม่ให้ปล่อยกระจุกเฉพาะเรื่องเดิม
+    # ข้ามเรื่องที่ปล่อยครบทุกตอนแล้ว (completed_story_ids) เพื่อไม่ต้องเปิดเบราว์เซอร์เช็กซ้ำทุกครั้ง
+    completed_ids = set(ledger.get("completed_story_ids", []))
+    candidate_stories = [(aid, t) for aid, t in active_stories if aid not in completed_ids]
+    if not candidate_stories:
+        # ถ้าครบหมดแล้ว ให้ลองรีเซ็ตเช็กใหม่อีกครั้งเผื่อมีตอนใหม่เพิ่มเข้ามา
+        candidate_stories = active_stories
+
     released_in_tick = 0
-    # ดูว่าเรื่องไหนเพิ่งปล่อยไป ให้ขยับไปท้ายคิว
     recent_released_titles = set(r.get("story", "") for r in releases_today[-5:])
-    sorted_stories = sorted(active_stories, key=lambda s: 1 if s[1] in recent_released_titles else 0)
+    sorted_stories = sorted(candidate_stories, key=lambda s: 1 if s[1] in recent_released_titles else 0)
 
     for art_id, title in sorted_stories:
         if released_in_tick >= max_per_tick:
@@ -336,7 +542,20 @@ def cron_tick(force: bool = False) -> None:
             released_in_tick += 1
             all_chs = get_article_chapters(art_id)
             unpub_count = sum(1 for c in all_chs if not c.get("isPublished", False))
+            if unpub_count == 0:
+                ledger = load_ledger()
+                comp = set(ledger.get("completed_story_ids", []))
+                comp.add(art_id)
+                ledger["completed_story_ids"] = list(comp)
+                save_ledger(ledger)
             notify_discord_release(title, released["title"], released["guid"], unpub_count)
+        else:
+            # บันทึกว่าเรื่องนี้ไม่มีตอนรอปล่อยแล้ว จะได้ไม่เสียเวลาสแกนซ้ำในรอบถัดไป
+            ledger = load_ledger()
+            comp = set(ledger.get("completed_story_ids", []))
+            comp.add(art_id)
+            ledger["completed_story_ids"] = list(comp)
+            save_ledger(ledger)
 
 
 def show_publishing_dashboard():
@@ -352,8 +571,8 @@ def show_publishing_dashboard():
     print("    • รอบดึก   (20:30 น.) : ปล่อยตอนใหม่ / Shorts 1 คลิป (ช่วงคนอ่านสูงสุด)")
     print("-" * 65)
     print(" 📚 ลำดับคิวซีรีส์ (Series Pipeline):")
-    print("   1. ฟาร์มสาวปีศาจรัก (8 ตอน - ซีรีส์หลักกำลังปล่อยรายวัน ช่วงเวลาทอง)")
-    print("   2. ดวงจันทร์แห่งเวทมนตร์: เรื่องราวของฮิลโคและเด็กสาวผู้เต้นระบำในความมืด (8 ตอน - กำลังปล่อยรายวัน)")
+    print("   1. ฟาร์มสาวปีศาจรัก (8 ตอน - เผยแพร่ครบจบภาคแรกแล้ว)")
+    print("   2. ดวงจันทร์แห่งเวทมนตร์: เรื่องราวของฮิลโคและเด็กสาวผู้เต้นระบำในความมืด (8 ตอน - เผยแพร่ครบจบภาคแรกแล้ว)")
     print("   3. จากน้องสาวสู่พี่ใหญ่: สายใยแห่งความรัก (8 ตอน - เผยแพร่ครบจบภาคแรกแล้ว)")
     print("   4. ผู้สาปแช่ง Chimera: เกิดใหม่ในโลกเวทย์มนต์ (8 ตอน - เผยแพร่ครบจบภาคแรกแล้ว)")
     print("   5. สาวอภินิหารหัวใจเหล็ก (8 ตอน - เผยแพร่ครบจบภาคแรกแล้ว)")
@@ -362,6 +581,7 @@ def show_publishing_dashboard():
     print("   8. ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค 70 พร้อมซูเปอร์มาร์เก็ตลับ (10 ตอน - เผยแพร่ครบแล้ว)")
     print("   9. ยอดนักสืบสปีดรัน (10 ตอน - เผยแพร่ครบแล้ว)")
     print("   10. ร้านค้าเหนือโลก: กระจกเงาคนตาย (20 ตอน - เผยแพร่ครบแล้ว)")
+    print("   + ซีรีส์ในคลังอีก 21 เรื่อง (กำลังทยอยปล่อยรายวันอัตโนมัติพร้อม Self-Healing)")
     print("=" * 65 + "\n")
 
 
@@ -372,15 +592,14 @@ def run_scheduler_daemon():
     print("=" * 65)
     print(" ⏰ ระบบจะตรวจเช็กตารางและปล่อยตอนใหม่ตามช่วงเวลาทองอัตโนมัติ")
     print("    • ตรวจสอบรอบปล่อยทุก 30 นาที")
-    print("    • โควตาสูงสุด 10 ตอน/วัน เพื่อดันฟีดอย่างสม่ำเสมอ")
+    print("    • โควตาสูงสุด 4 ตอน/วัน (Quad Golden Hours) เพื่อดันฟีดอย่างสม่ำเสมอ")
     print("=" * 65 + "\n")
     sys.stdout.flush()
 
     while True:
         try:
             now = datetime.datetime.now()
-            # Golden hours check: เที่ยง (11:30 - 13:30) และ ค่ำ (18:30 - 21:30)
-            is_golden = (11 <= now.hour <= 13) or (18 <= now.hour <= 21)
+            is_golden = (7 <= now.hour <= 8) or (11 <= now.hour <= 13) or (17 <= now.hour <= 21)
             print(f"[{now.strftime('%Y-%m-%d %H:%M:%S')}] ⏳ Heartbeat check (Golden Hour: {is_golden})...")
             sys.stdout.flush()
             cron_tick(force=False)

@@ -41,6 +41,15 @@ def caption_cover(cover_path: str, title: str, hook: str = "", tiktok_safe: bool
     รองรับปกทุกอัตราส่วน: เติมพื้นหลังด้วยปกที่เบลอ+มืด แล้ววางปกคมชัดกลางเฟรม (ไม่บีบเพี้ยน)
     tiktok_safe=True: ดัน hook ขึ้นโซนปลอดภัย (~66% ของจอ) เลี่ยง UI TikTok ล่าง (caption/ปุ่ม) บัง
     คืน path ภาพใหม่ (.jpg) — ไม่ง้อ libass"""
+    # ล้างข้อความ draft / markdown หลุด
+    if title:
+        title = re.sub(r"^#+\s*", "", title)
+        title = re.sub(r"\(Thai Working Titles\)", "", title, flags=re.I)
+        title = re.sub(r"ชื่อเรื่องภาษาไทยที่แนะนำ", "", title).strip()
+    if hook:
+        hook = re.sub(r"^#+\s*", "", hook)
+        hook = re.sub(r"\(Thai Working Titles\)", "", hook, flags=re.I)
+        hook = re.sub(r"ชื่อเรื่องภาษาไทยที่แนะนำ", "", hook).strip()
     try:
         from PIL import Image, ImageDraw, ImageFont, ImageFilter
     except Exception:

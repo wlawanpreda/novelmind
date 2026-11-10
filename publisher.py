@@ -429,6 +429,22 @@ def publish_youtube(teaser_path: str, meta: dict, dry: bool, as_shorts: bool = T
             _, resp = req.next_chunk()
         vid = resp.get("id")
         log(f"  [youtube] ✅ uploaded: https://youtu.be/{vid}")
+
+        # อัปโหลด High-CTR Thumbnail อัตโนมัติสำหรับคลิปยาว / Audiobook
+        thumb_fp = meta.get("thumbnail")
+        if not thumb_fp and not as_shorts:
+            safe_story = re.sub(r'[^\w\-_\s฀-๿]', '', meta.get('story_name', '')).strip().replace(' ', '_')
+            cand = os.path.join(ROOT, "SecondBrain", "05_Active_Projects", "Exports", "Audiobooks", f"{safe_story}_Thumbnail_16x9.jpg")
+            if os.path.exists(cand):
+                thumb_fp = cand
+        if thumb_fp and os.path.exists(thumb_fp):
+            try:
+                t_media = MediaFileUpload(thumb_fp, mimetype="image/jpeg")
+                yt.thumbnails().set(videoId=vid, media_body=t_media).execute()
+                log(f"  [youtube] 🎨 custom thumbnail uploaded: {os.path.basename(thumb_fp)}")
+            except Exception as e_thumb:
+                log(f"  [youtube] ⚠️ failed to upload custom thumbnail: {e_thumb}")
+
         return f"https://youtu.be/{vid}"
     except Exception as e:  # noqa: BLE001
         err_str = str(e)
