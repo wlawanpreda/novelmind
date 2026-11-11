@@ -327,6 +327,9 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
                       [py, "youtube_ab_optimizer.py", "--max", "5"])
         _growth_stage("ypp_tracker", "last_ypp_ts", _cfg_int("ANSRE_YPP_HOURS", 24),
                       [py, "ypp_velocity_tracker.py"])
+        # Mega Audiobook อัตโนมัติ (opt-in: งานหนัก ffmpeg + อัปโหลดยาว) — เลือกเรื่อง/เวลาเอง มี cooldown ในตัว
+        if os.environ.get("ANSRE_AUTO_MEGA", "0").lower() in ("1", "true", "yes", "on"):
+            run_stage("auto_mega", [py, "auto_mega.py"], dry)
     else:
         log("[growth] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE")
 
@@ -334,6 +337,12 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     run_stage("portfolio", [py, "portfolio_manager.py"], dry)
 
     log_event("cycle_end", cycle_id=CYCLE_ID, duration_s=round(time.time() - cycle_t0, 1))
+    if not dry:
+        try:
+            import dashboard_gen
+            dashboard_gen.main()
+        except Exception as e:
+            log(f"[dashboard] ข้าม: {e}")
     log("######## ORCHESTRATOR CYCLE END ########\n")
     # สำรองข้อมูลอัตโนมัติ (เฉพาะถ้าเกิน 24 ชม.จากครั้งก่อน)
     if not dry:
