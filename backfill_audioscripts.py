@@ -21,6 +21,7 @@ from collections import defaultdict
 ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 PROJ = os.path.join(ROOT, "SecondBrain", "05_Active_Projects")
+AU_DIR = os.path.join(PROJ, "Audio_Output")
 CH_DIR = os.path.join(PROJ, "Chapters")
 AS_DIR = os.path.join(PROJ, "Audio_Scripts")
 MEGA_MIN = int(os.environ.get("ANSRE_MEGA_MIN_CHAPTERS", "15"))
@@ -49,13 +50,20 @@ def find_missing():
     except Exception:
         has_mega = lambda t: False
 
+    # ตอนที่มีไฟล์เสียงอยู่แล้ว (แม้บทเสียงหาย) ไม่ต้องเติม — เสียงนับครบเกณฑ์ Mega ได้แล้ว
+    audio = defaultdict(set)
+    for p in glob.glob(os.path.join(AU_DIR, "*_Audiobook_*.mp3")):
+        m = re.match(r"^(.*)_Audiobook_(\d+)\.mp3$", os.path.basename(p))
+        if m:
+            audio[m[1]].add(int(m[2]))
+
     out = []
     for title, chs in chapters.items():
         mega_done = has_mega(title)
-        have = len(scripts[title])
+        have = len(audio[title])
         total = len(chs)
         for n, path in sorted(chs.items()):
-            if n in scripts[title]:
+            if n in scripts[title] or n in audio[title]:
                 continue
             # priority: (กลุ่ม: ยังไม่มี Mega & ตอนพอ → ยังไม่มี Mega → มี Mega แล้ว), ขาดน้อยสุดก่อน
             reachable = total >= MEGA_MIN

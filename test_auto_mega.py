@@ -22,3 +22,10 @@ def test_slot_skips_taken():
     first = am.next_free_slot({"items": []}, now=now)
     second = am.next_free_slot({"items": [{"publish_at": first}]}, now=now)
     assert second != first
+
+
+def test_contiguity():
+    f = lambda ns: [f"x_Audiobook_{n:02d}.mp3" for n in ns]
+    assert am._is_contiguous(f(range(1, 16)))
+    assert not am._is_contiguous(f([1, 2, 3, 5]))
+    assert not am._is_contiguous([])

@@ -15,6 +15,7 @@ auto_mega.py — เลือกเรื่อง + กำหนดเวลา
 from __future__ import annotations
 
 import os
+import re
 import sys
 import json
 import glob
@@ -98,12 +99,20 @@ def built_story_names(ledger: dict) -> Set[str]:
     return names
 
 
+def _is_contiguous(files) -> bool:
+    """ตอนต้องเรียงต่อเนื่อง 1..N ไม่ขาดกลางเรื่อง (Mega ที่ข้ามตอนจะเนื้อเรื่องกระโดด)"""
+    nums = sorted(int(m.group(1)) for f in files
+                  if (m := re.search(r"_Audiobook_(\d+)\.mp3$", f)))
+    return bool(nums) and nums == list(range(1, len(nums) + 1))
+
+
 def pick_story(min_chapters: int, built: Set[str]) -> Optional[str]:
     from mega_audiobook_pipeline import scan_available_series
     series = scan_available_series()
     pub_keys = published_mega_keys()
     cands = [(len(files), name) for name, files in series.items()
              if len(files) >= min_chapters and name != "Mock"
+             and _is_contiguous(files)
              and not _already_built(name, built, pub_keys)]
     if not cands:
         return None
