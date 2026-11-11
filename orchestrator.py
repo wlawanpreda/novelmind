@@ -281,6 +281,9 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
                                "--max-per-run", str(CONTINUE_PER_RUN),
                                "--max-stories", str(CONTINUE_STORIES)], dry)
     run_stage("cover",   [py, "cover_generator.py", SECOND_BRAIN], dry)
+    # เติมบทเสียงที่ขาด (ตอนมีนิยายแต่ไม่มี AudioScript) ทีละน้อย/รอบ เรียงตามเรื่องที่ใกล้ถึงเกณฑ์ Mega — ปิดได้ด้วย ANSRE_AUDIOSCRIPT_BACKFILL=0
+    if os.environ.get("ANSRE_AUDIOSCRIPT_BACKFILL", "1").lower() in ("1", "true", "yes", "on"):
+        run_stage("audioscript_backfill", [py, "backfill_audioscripts.py"], dry)
     run_stage("audio",   [py, "audio_engine.py", SECOND_BRAIN], dry)
     run_stage("teaser",  [py, "teaser_generator.py", SECOND_BRAIN, str(TEASER_DURATION)], dry)
 
