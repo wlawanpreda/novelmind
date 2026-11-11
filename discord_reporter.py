@@ -357,6 +357,30 @@ def send_pipeline_error_to_discord(stage: str, error_msg: str, channel_id: str =
     return send_discord_message(payload, channel_id=channel_id)
 
 
+def send_ypp_velocity_to_discord(snapshot: Dict[str, Any], top_longform: List[Dict[str, Any]],
+                                 channel_id: str = DEFAULT_CHANNEL_ID) -> bool:
+    """ส่งสรุปความเร็วสู่เป้า YPP (จาก ypp_velocity_tracker) เข้า Discord"""
+    top_lines = "\n".join(
+        f"{i}. [{v.get('views', 0)} วิว] {str(v.get('title', ''))[:55]}"
+        for i, v in enumerate(top_longform, 1)
+    ) or "-"
+    payload = {
+        "embeds": [{
+            "title": "📈 YPP Velocity Report",
+            "color": 0x8B5CF6,
+            "fields": [
+                {"name": "👁️ วิวรวม", "value": f"{snapshot.get('total_views', 0):,} ({snapshot.get('delta_total_views', 0):+d})", "inline": True},
+                {"name": "🎬 คลิปยาว", "value": f"{snapshot.get('longform_views', 0):,} ({snapshot.get('delta_longform_views', 0):+d}) • {snapshot.get('longform_count', 0)} เรื่อง", "inline": True},
+                {"name": "⚡ Shorts", "value": f"{snapshot.get('shorts_views', 0):,} • {snapshot.get('shorts_count', 0)} คลิป", "inline": True},
+                {"name": "🗓️ คิวรอปล่อย", "value": f"{snapshot.get('scheduled_queue_count', 0)} คลิป", "inline": True},
+                {"name": "🏆 Top คลิปยาว", "value": f"```{top_lines[:900]}```", "inline": False},
+            ],
+            "footer": {"text": "ANSRE Autonomous Monitor"}
+        }]
+    }
+    return send_discord_message(payload, channel_id=channel_id)
+
+
 def send_token_revoked_alert(platform: str, error_detail: str, channel_id: str = DEFAULT_CHANNEL_ID) -> bool:
     """ส่งการแจ้งเตือนระดับวิกฤตเมื่อ Token หลุด หรือ invalid_grant เข้า Discord (พร้อมระบบ Cooldown 6 ชม.)"""
     import time

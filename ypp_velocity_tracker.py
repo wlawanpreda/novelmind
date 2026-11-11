@@ -92,6 +92,13 @@ def run_velocity_report():
         print(f"   {idx}. [{lv['views']} วิว] {lv['title'][:58]} ({lv['vid']})")
     print("=" * 72)
 
+    # ส่งสรุปเข้า Discord (ไม่ทำให้ stage ล้มถ้าส่งไม่ได้)
+    try:
+        from discord_reporter import send_ypp_velocity_to_discord
+        send_ypp_velocity_to_discord(snapshot, longform_public[:5])
+    except Exception as e:
+        print(f"[ypp] discord report skipped: {e}")
+
 
 if __name__ == "__main__":
     run_velocity_report()

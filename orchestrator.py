@@ -31,6 +31,7 @@ import json
 import time
 import subprocess
 from datetime import datetime, timedelta
+from run_log import log_event, rotate_if_large
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 SECOND_BRAIN = os.path.join(ROOT, "SecondBrain")
@@ -73,11 +74,15 @@ CONTINUE_PER_RUN = _cfg_int("ANSRE_CONTINUE_PER_RUN", 1)
 CONTINUE_STORIES = _cfg_int("ANSRE_CONTINUE_STORIES", 3)
 
 
+CYCLE_ID = None  # ตั้งใหม่ทุกรอบใน run_cycle เพื่อผูก event ทั้งรอบเข้าด้วยกัน
+
+
 def log(msg: str):
     line = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {msg}"
     print(line, flush=True)
     try:
         os.makedirs(SECOND_BRAIN, exist_ok=True)
+        rotate_if_large(LOG_FILE)
         with open(LOG_FILE, "a", encoding="utf-8") as f:
             f.write(line + "\n")
     except Exception:
@@ -162,39 +167,62 @@ def count_status(status_values) -> int:
     return n
 
 
+def _tail(lines, n=40, max_chars=3000) -> str:
+    return "\n".join(lines[-n:])[-max_chars:]
+
+
 def run_stage(name: str, cmd, dry: bool) -> bool:
     log(f"=== STAGE: {name} ===")
     if dry:
         log(f"[dry-run] would run: {' '.join(cmd)}")
         return True
+    t0 = time.time()
+    tail = []
+    rc = None
+    err = None
     try:
         sub_env = dict(os.environ, PYTHONUNBUFFERED="1")
-        proc = subprocess.run(cmd, cwd=ROOT, env=sub_env)
-        ok = proc.returncode == 0
-        log(f"[{name}] {'OK' if ok else 'FAILED (rc=%d)' % proc.returncode}")
-        if not ok:
-            try:
-                from discord_reporter import send_pipeline_error_to_discord
-                send_pipeline_error_to_discord(name, f"Stage '{name}' failed with returncode {proc.returncode}\nCommand: {' '.join(cmd)}")
-            except Exception:
-                pass
-        return ok
+        # stream output สดเหมือนเดิม แต่เก็บท้ายไว้ใน event เมื่อ stage ล้ม (เพื่อรู้สาเหตุย้อนหลัง)
+        proc = subprocess.Popen(cmd, cwd=ROOT, env=sub_env, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, errors="replace")
+        for line in proc.stdout:
+            print(line, end="", flush=True)
+            tail.append(line.rstrip("\n"))
+            if len(tail) > 200:
+                del tail[:100]
+        rc = proc.wait()
+        ok = rc == 0
+        log(f"[{name}] {'OK' if ok else 'FAILED (rc=%d)' % rc}")
     except Exception as e:
+        ok = False
+        err = f"{type(e).__name__}: {e}"
         log(f"[{name}] EXCEPTION: {e}")
+
+    duration = round(time.time() - t0, 2)
+    log_event("stage", cycle_id=CYCLE_ID, stage=name, ok=ok, rc=rc, duration_s=duration,
+              cmd=" ".join(cmd[1:]), error=err, output_tail=None if ok else _tail(tail))
+    if not ok:
         try:
             from discord_reporter import send_pipeline_error_to_discord
-            send_pipeline_error_to_discord(name, f"Stage '{name}' crashed with exception: {e}")
+            detail = err or f"returncode {rc}"
+            send_pipeline_error_to_discord(
+                name, f"Stage '{name}' failed: {detail}\nCommand: {' '.join(cmd)}\n--- output tail ---\n{_tail(tail, 12, 700)}")
         except Exception:
             pass
-        return False
+    return ok
 
 
 # ---------------------------------------------------------------------------
 # หนึ่งรอบของ pipeline
 # ---------------------------------------------------------------------------
 def run_cycle(do_scout: bool = True, dry: bool = False):
+    global CYCLE_ID
     py = python_bin()
     state = load_state()
+    CYCLE_ID = datetime.now().strftime("%Y%m%d-%H%M%S")
+    cycle_t0 = time.time()
+    log_event("cycle_start", cycle_id=CYCLE_ID, dry=dry,
+              pool=count_status(["Scouted", "Analyzed"]) if not dry else None)
     log("######## ORCHESTRATOR CYCLE START ########")
 
     # 0) Budget hard-cap guard: ถ้าใช้เกินเพดานแข็งวันนี้ → หยุดทั้งรอบ + แจ้งเตือน (ครั้งเดียว/วัน)
@@ -215,6 +243,7 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
                                 "⛔ แตะเพดานงบรายวัน — หยุดอัตโนมัติ", "warn")
                     except Exception:
                         pass
+                log_event("cycle_end", cycle_id=CYCLE_ID, aborted="budget_hard_cap")
                 return
         except Exception:
             pass
@@ -275,9 +304,36 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
     if os.environ.get("PUBLISH_YOUTUBE", "0").lower() in ("1", "true", "yes", "on"):
         run_stage("privacy_drip", [py, "update_privacy.py", "--public", "--limit", "2"], dry)
 
+    # 3.2) YouTube Growth Loop: คิว Double Drip → เชื่อม Funnel Shorts→Mega → A/B ชื่อคลิป → วัดความเร็ว YPP
+    #      จำกัดความถี่ด้วย state เพื่อประหยัด YouTube API quota (ตั้งชม.ผ่าน .env ได้)
+    if os.environ.get("PUBLISH_YOUTUBE", "0").lower() in ("1", "true", "yes", "on"):
+        def _due(key: str, hours: float) -> bool:
+            return (time.time() - state.get(key, 0)) >= hours * 3600
+
+        def _growth_stage(name: str, key: str, hours: float, cmd):
+            if dry or _due(key, hours):
+                if run_stage(name, cmd, dry) and not dry:
+                    state[key] = time.time()
+                    save_state(state)
+            else:
+                log(f"[{name}] ข้าม — ยังไม่ครบ {hours:g} ชม.")
+                log_event("stage", cycle_id=CYCLE_ID, stage=name, skipped=True, reason="interval")
+
+        # คิวปล่อยงานรันทุกรอบ (ภายในคงบัฟเฟอร์ 3 คลิปเอง)
+        run_stage("double_drip", [py, "scheduled_drip_publisher.py", "--cron-tick"], dry)
+        _growth_stage("funnel_sync", "last_funnel_sync_ts", _cfg_int("ANSRE_FUNNEL_SYNC_HOURS", 12),
+                      [py, "channel_wide_funnel_syncer.py", "--limit", "25"])
+        _growth_stage("ab_optimizer", "last_ab_opt_ts", _cfg_int("ANSRE_AB_OPT_HOURS", 24),
+                      [py, "youtube_ab_optimizer.py", "--max", "5"])
+        _growth_stage("ypp_tracker", "last_ypp_ts", _cfg_int("ANSRE_YPP_HOURS", 24),
+                      [py, "ypp_velocity_tracker.py"])
+    else:
+        log("[growth] ข้าม — ยังไม่เปิด PUBLISH_YOUTUBE")
+
     # 3.6) ปรับปรุงพอร์ตโฟลิโอธุรกิจ (Portfolio Matrix & Flagship Tracking)
     run_stage("portfolio", [py, "portfolio_manager.py"], dry)
 
+    log_event("cycle_end", cycle_id=CYCLE_ID, duration_s=round(time.time() - cycle_t0, 1))
     log("######## ORCHESTRATOR CYCLE END ########\n")
     # สำรองข้อมูลอัตโนมัติ (เฉพาะถ้าเกิน 24 ชม.จากครั้งก่อน)
     if not dry:
