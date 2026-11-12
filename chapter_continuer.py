@@ -127,8 +127,8 @@ def write_next_chapter(sb, title, n):
         beats = json.loads(raw_beats)
         if isinstance(beats, dict):
             beats = beats.get("scenes") or beats.get("beats") or list(beats.values())
-        if not isinstance(beats, list):
-            raise ValueError("beats is not a list")
+        if not isinstance(beats, list) or not all(isinstance(x, dict) for x in beats):
+            raise ValueError("beats is not a list of dicts")
     except Exception:
         beats = [{"scene_number": str(i + 1), "setting": f"ฉาก {i+1}", "goal": "เดินเรื่อง",
                   "action": "เหตุการณ์ต่อเนื่อง", "climax": "ปมตอน"} for i in range(4)]

@@ -38,10 +38,7 @@ MIN_LEAD_HOURS = 36
 PUBLISH_LEDGER = os.path.join(PROJ, "publish_ledger.json")
 
 
-def _norm(name: str) -> str:
-    """ตัด _ ช่องว่าง เครื่องหมาย เหลือแต่ตัวอักษร/ตัวเลข เพื่อจับคู่ชื่อเรื่องที่สะกดต่างกันเล็กน้อย"""
-    return "".join(ch for ch in name if ch.isalnum())
-
+import story_normalizer as sn
 
 def published_mega_keys() -> Set[str]:
     """Mega ที่ผลิต/ตั้งเวลาไว้แล้วในอดีตผ่าน publish_ledger (type=mega_audiobook) → ชื่อเรื่อง normalize"""
@@ -51,7 +48,7 @@ def published_mega_keys() -> Set[str]:
             for fname, v in json.load(f).items():
                 if isinstance(v, dict) and v.get("type") == "mega_audiobook":
                     base = fname.split("_Mega", 1)[0]
-                    keys.add(_norm(base))
+                    keys.add(sn.normalize_key(base))
     except Exception:
         pass
     return keys
@@ -60,8 +57,7 @@ def published_mega_keys() -> Set[str]:
 def _already_built(story: str, built: Set[str], pub_keys: Set[str]) -> bool:
     if story in built:
         return True
-    ns = _norm(story)
-    return any(k and (k in ns or ns in k) for k in pub_keys)
+    return any(sn.is_same_story(story, k) for k in pub_keys)
 
 
 def _int_env(name: str, default: int) -> int:

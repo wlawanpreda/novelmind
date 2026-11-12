@@ -4,9 +4,8 @@ import auto_mega as am
 
 
 def test_norm_matches_variants():
-    a = am._norm("คุณแม่ลูกแฝดยุค70")
-    b = am._norm("ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค_70_พร้อมซูเปอร์มาร์เก็ตลับ")
-    assert a in b
+    import story_normalizer as sn
+    assert sn.is_same_story("คุณแม่ลูกแฝดยุค70", "ทะลุมิติไปเป็นคุณแม่ลูกแฝดยุค_70_พร้อมซูเปอร์มาร์เก็ตลับ")
 
 
 def test_slot_is_golden_hour_and_lead_time():

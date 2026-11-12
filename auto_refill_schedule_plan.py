@@ -24,6 +24,7 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT)
 
 from channel_wide_funnel_syncer import STORY_TO_FULL_URL
+import story_normalizer as sn
 
 SB = os.path.join(ROOT, "SecondBrain")
 PROJ = os.path.join(SB, "05_Active_Projects")
@@ -68,7 +69,7 @@ def get_available_teasers(scheduled_videos: Set[str]) -> List[Dict[str, Any]]:
         
         matched_url = None
         for key, url in STORY_TO_FULL_URL.items():
-            if key in story_guess:
+            if sn.is_same_story(key, story_guess):
                 matched_url = url
                 break
                 
@@ -78,7 +79,7 @@ def get_available_teasers(scheduled_videos: Set[str]) -> List[Dict[str, Any]]:
         # แยกตอน (ถ้ามี)
         ep_match = re.search(r"_Teaser_(\d+)", base_name)
         ep_num = int(ep_match.group(1)) if ep_match else 1
-        clean_title = story_guess.replace("_", " ")
+        clean_title = sn.get_canonical_title(story_guess)
 
         candidates.append({
             "story_title": clean_title,

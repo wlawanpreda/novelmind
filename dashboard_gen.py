@@ -20,6 +20,15 @@ OUT = os.path.join(SB, "Live_Dashboard.md")
 
 
 def _count(subdir: str, pattern: str, recursive: bool = False) -> int:
+    d = os.path.join(PROJ, subdir)
+    if not os.path.exists(d):
+        return 0
+    if not recursive and "*" in pattern and pattern.startswith("*."):
+        ext = pattern[1:] # e.g. .md
+        try:
+            return sum(1 for entry in os.scandir(d) if entry.is_file() and entry.name.endswith(ext))
+        except Exception:
+            pass
     pat = os.path.join(PROJ, subdir, "**" if recursive else "", pattern)
     return len(glob.glob(pat, recursive=recursive))
 
@@ -58,8 +67,12 @@ def build() -> str:
     L = [f"# 🏭 ANSRE Live Dashboard", f"> สร้างอัตโนมัติ: {now} • ข้อมูลจริงจากไฟล์/ log (ไม่แก้ด้วยมือ)", ""]
 
     # --- คลังผลงาน
-    story_names = {os.path.basename(p).rsplit("_Chapter_", 1)[0]
-                   for p in glob.glob(os.path.join(PROJ, "Chapters", "*_Chapter_*.md"))}
+    ch_dir = os.path.join(PROJ, "Chapters")
+    story_names = set()
+    if os.path.exists(ch_dir):
+        for entry in os.scandir(ch_dir):
+            if entry.is_file() and "_Chapter_" in entry.name and entry.name.endswith(".md"):
+                story_names.add(entry.name.rsplit("_Chapter_", 1)[0])
     L += ["## 📦 คลังผลงาน", "| หมวด | จำนวน |", "|---|---:|",
           f"| เรื่อง | {len(story_names)} |",
           f"| ตอนนิยาย | {_count('Chapters', '*.md')} |",
