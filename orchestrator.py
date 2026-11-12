@@ -322,8 +322,11 @@ def run_cycle(do_scout: bool = True, dry: bool = False):
                 log(f"[{name}] ข้าม — ยังไม่ครบ {hours:g} ชม.")
                 log_event("stage", cycle_id=CYCLE_ID, stage=name, skipped=True, reason="interval")
 
-        # คิวปล่อยงานรันทุกรอบ (ภายในคงบัฟเฟอร์ 3 คลิปเอง)
+        # คิวปล่อยงาน & เติมสต็อกตารางอัตโนมัติ (Rolling Schedule 30 Days)
+        run_stage("plan_refill", [py, "auto_refill_schedule_plan.py", "--days", "30"], dry)
         run_stage("double_drip", [py, "scheduled_drip_publisher.py", "--cron-tick"], dry)
+        _growth_stage("community_growth", "last_community_growth_ts", _cfg_int("ANSRE_COMMUNITY_GROWTH_HOURS", 24),
+                      [py, "community_growth_engine.py"])
         _growth_stage("funnel_sync", "last_funnel_sync_ts", _cfg_int("ANSRE_FUNNEL_SYNC_HOURS", 12),
                       [py, "channel_wide_funnel_syncer.py", "--limit", "25"])
         _growth_stage("ab_optimizer", "last_ab_opt_ts", _cfg_int("ANSRE_AB_OPT_HOURS", 24),
