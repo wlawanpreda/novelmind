@@ -193,7 +193,7 @@ def generate_image_via_flow(
                     src = img.get_attribute("src") or ""
                     box = img.bounding_box()
                     w = box["width"] if box else 0
-                    if ("media.getMediaUrlRedirect" in src or "googleusercontent" in src) and w > 200:
+                    if ("media.getMediaUrlRedirect" in src or "googleusercontent" in src or "flow.google.com/asb/" in src) and w > 200:
                         if src not in initial_imgs or (time.time() - start_time > 15):
                             img_src = src
                             break
