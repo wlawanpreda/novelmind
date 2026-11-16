@@ -22,7 +22,7 @@ ANSRE เผยแพร่ teaser/นิยายออกแพลตฟอร
 4. เปลี่ยนชื่อไฟล์ที่ดาวน์โหลดเป็น `client_secret.json` วางในโฟลเดอร์โปรเจกต์
 5. authorize ครั้งเดียว (มีสคริปต์ช่วยแล้ว):
    ```bash
-   .venv/bin/python authorize_youtube.py
+   .venv/bin/python scripts/auth/authorize_youtube.py
    ```
    เบราว์เซอร์จะเปิดให้ล็อกอิน + อนุญาต → ได้ `youtube_token.json` (มี `refresh_token`) อัตโนมัติ
 6. ตั้งใน `.env`:

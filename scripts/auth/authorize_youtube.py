@@ -8,7 +8,7 @@ ANSRE — YouTube OAuth Authorizer (รันครั้งเดียว)
   1. ดาวน์โหลด client_secret.json จาก Google Cloud Console
      (APIs & Services → Credentials → OAuth client ID ชนิด "Desktop app")
      วางไว้ในโฟลเดอร์นี้
-  2. รัน:  .venv/bin/python authorize_youtube.py
+  2. รัน:  .venv/bin/python scripts/auth/authorize_youtube.py
   3. เบราว์เซอร์จะเปิดให้ล็อกอิน + อนุญาต → ได้ youtube_token.json
   4. ตั้งใน .env:  PUBLISH_YOUTUBE=1
 
@@ -17,7 +17,7 @@ ANSRE — YouTube OAuth Authorizer (รันครั้งเดียว)
 import os
 import sys
 
-ROOT = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))  # รากโปรเจกต์
 CLIENT_SECRET = os.path.join(ROOT, "client_secret.json")
 TOKEN_OUT = os.path.join(ROOT, "youtube_token.json")
 # upload (อัปคลิป) + readonly (อ่านสถิติ) + youtube (จัดการสถานะ/privacy ของคลิป)
